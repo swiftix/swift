@@ -78,7 +78,7 @@ addReleasesForConvertedOwnedParameter(SILBuilder &Builder,
   for (auto &ArgDesc : ArgDescs) {
     if (ArgDesc.CalleeRelease.empty())
       continue;
-    Builder.createReleaseValue(Loc, Parameters[ArgDesc.Index]);
+    Builder.createReleaseValue(Loc, Parameters[ArgDesc.Index], false);
   }
 }
 
@@ -95,12 +95,12 @@ addReleasesForConvertedOwnedParameter(SILBuilder &Builder,
     if (ArgDesc.IsEntirelyDead && 
         ArgDesc.Arg->getKnownParameterInfo().getConvention() ==
         ParameterConvention::Direct_Owned) {
-       Builder.createReleaseValue(Loc, Parameters[ArgDesc.Index]);
+       Builder.createReleaseValue(Loc, Parameters[ArgDesc.Index], false);
        continue;
     }
     if (ArgDesc.CalleeRelease.empty())
       continue;
-    Builder.createReleaseValue(Loc, Parameters[ArgDesc.Index]);
+    Builder.createReleaseValue(Loc, Parameters[ArgDesc.Index], false);
   }
 }
 
@@ -128,7 +128,7 @@ addRetainsForConvertedDirectResults(SILBuilder &Builder,
     if (DirectResults.size() != 1)
       SpecificResultValue = Builder.createTupleExtract(Loc, ReturnValue, I);
 
-    Builder.createRetainValue(Loc, SpecificResultValue);
+    Builder.createRetainValue(Loc, SpecificResultValue, false);
   }
 }
 

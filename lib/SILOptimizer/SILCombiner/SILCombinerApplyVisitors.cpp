@@ -245,7 +245,7 @@ void PartialApplyCombiner::releaseTemporaries() {
       Builder.setInsertionPoint(EndPoint);
       if (!TmpType.isAddressOnly(PAI->getModule())) {
         auto *Load = Builder.createLoad(PAI->getLoc(), Op);
-        Builder.createReleaseValue(PAI->getLoc(), Load);
+        Builder.createReleaseValue(PAI->getLoc(), Load, false);
       } else {
         Builder.createDestroyAddr(PAI->getLoc(), Op);
       }
@@ -340,20 +340,20 @@ bool PartialApplyCombiner::processSingleApply(FullApplySite AI) {
     for (auto Arg : ToBeReleasedArgs) {
       Builder.emitReleaseValueOperation(PAI->getLoc(), Arg);
     }
-    Builder.createStrongRelease(AI.getLoc(), PAI);
+    Builder.createStrongRelease(AI.getLoc(), PAI, false);
     Builder.setInsertionPoint(TAI->getErrorBB()->begin());
     // Release the non-consumed parameters.
     for (auto Arg : ToBeReleasedArgs) {
       Builder.emitReleaseValueOperation(PAI->getLoc(), Arg);
     }
-    Builder.createStrongRelease(AI.getLoc(), PAI);
+    Builder.createStrongRelease(AI.getLoc(), PAI, false);
     Builder.setInsertionPoint(AI.getInstruction());
   } else {
     // Release the non-consumed parameters.
     for (auto Arg : ToBeReleasedArgs) {
       Builder.emitReleaseValueOperation(PAI->getLoc(), Arg);
     }
-    Builder.createStrongRelease(AI.getLoc(), PAI);
+    Builder.createStrongRelease(AI.getLoc(), PAI, false);
   }
 
   SilCombiner->replaceInstUsesWith(*AI.getInstruction(), NAI.getInstruction());
@@ -519,7 +519,7 @@ void SILCombiner::eraseApply(FullApplySite FAS, const UserListTy &Users) {
         Builder.createDestroyAddr(FAS.getLoc(), Arg);
         break;
       case ParameterConvention::Direct_Owned:
-        Builder.createReleaseValue(FAS.getLoc(), Arg);
+        Builder.createReleaseValue(FAS.getLoc(), Arg, false);
         break;
       case ParameterConvention::Indirect_In_Guaranteed:
       case ParameterConvention::Indirect_Inout:
@@ -989,7 +989,7 @@ static void emitMatchingRCAdjustmentsForCall(ApplyInst *Call, SILValue OnX) {
 
   // Emit a retain for the @owned return.
   SILBuilderWithScope Builder(Call);
-  Builder.createRetainValue(Call->getLoc(), OnX);
+  Builder.createRetainValue(Call->getLoc(), OnX, false);
 
   // Emit a release for the @owned parameter, or none for a @guaranteed
   // parameter.
@@ -1001,7 +1001,7 @@ static void emitMatchingRCAdjustmentsForCall(ApplyInst *Call, SILValue OnX) {
          ParamInfo == ParameterConvention::Direct_Guaranteed);
 
   if (ParamInfo == ParameterConvention::Direct_Owned)
-    Builder.createReleaseValue(Call->getLoc(), OnX);
+    Builder.createReleaseValue(Call->getLoc(), OnX, false);
 }
 
 static bool isCastTypeKnownToSucceed(SILType Type, SILModule &Mod) {
@@ -1055,12 +1055,12 @@ bool SILCombiner::optimizeIdentityCastComposition(ApplyInst *FInverse,
     // X might not be strong_retain/release'able. Replace it by a
     // retain/release_value on X instead.
     if (isa<StrongRetainInst>(User)) {
-      SILBuilderWithScope(User).createRetainValue(User->getLoc(), X);
+      SILBuilderWithScope(User).createRetainValue(User->getLoc(), X, false);
       eraseInstFromFunction(*User);
       continue;
     }
     if (isa<StrongReleaseInst>(User)) {
-      SILBuilderWithScope(User).createReleaseValue(User->getLoc(), X);
+      SILBuilderWithScope(User).createReleaseValue(User->getLoc(), X, false);
       eraseInstFromFunction(*User);
       continue;
     }

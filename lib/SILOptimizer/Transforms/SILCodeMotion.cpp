@@ -74,12 +74,12 @@ static void createRefCountOpForPayload(SILBuilder &Builder, SILInstruction *I,
     // And our payload is refcounted, insert a strong_retain onto the
     // payload.
     if (UEDITy.isReferenceCounted(Mod)) {
-      Builder.createStrongRetain(I->getLoc(), UEDI);
+      Builder.createStrongRetain(I->getLoc(), UEDI, false);
       return;
     }
 
     // Otherwise, insert a retain_value on the payload.
-    Builder.createRetainValue(I->getLoc(), UEDI);
+    Builder.createRetainValue(I->getLoc(), UEDI, false);
     return;
   }
 
@@ -90,13 +90,13 @@ static void createRefCountOpForPayload(SILBuilder &Builder, SILInstruction *I,
 
   // If our payload has reference semantics, insert the strong release.
   if (UEDITy.isReferenceCounted(Mod)) {
-    Builder.createStrongRelease(I->getLoc(), UEDI);
+    Builder.createStrongRelease(I->getLoc(), UEDI, false);
     return;
   }
 
   // Otherwise if our payload is non-trivial but lacking reference semantics,
   // insert the release_value.
-  Builder.createReleaseValue(I->getLoc(), UEDI);
+  Builder.createReleaseValue(I->getLoc(), UEDI, false);
 }
 
 //===----------------------------------------------------------------------===//
@@ -859,10 +859,10 @@ static bool tryToSinkRefCountInst(SILBasicBlock::iterator T,
 
     Builder.setInsertionPoint(&*SuccBB->begin());
     if (isa<StrongRetainInst>(I)) {
-      Builder.createStrongRetain(I->getLoc(), Ptr);
+      Builder.createStrongRetain(I->getLoc(), Ptr, false);
     } else {
       assert(isa<RetainValueInst>(I) && "This can only be retain_value");
-      Builder.createRetainValue(I->getLoc(), Ptr);
+      Builder.createRetainValue(I->getLoc(), Ptr, false);
     }
   }
 
@@ -963,10 +963,10 @@ static bool hoistDecrementsToPredecessors(SILBasicBlock *BB, AliasAnalysis *AA,
       Builder.setInsertionPoint(PredBB->getTerminator());
       SILInstruction *Release;
       if (isa<StrongReleaseInst>(Inst)) {
-        Release = Builder.createStrongRelease(Inst->getLoc(), Ptr);
+        Release = Builder.createStrongRelease(Inst->getLoc(), Ptr, false);
       } else {
         assert(isa<ReleaseValueInst>(Inst) && "This can only be retain_value");
-        Release = Builder.createReleaseValue(Inst->getLoc(), Ptr);
+        Release = Builder.createReleaseValue(Inst->getLoc(), Ptr, false);
       }
       // Update the last instruction to consider when looking for ARC uses or
       // decrements in predecessor blocks.
@@ -1648,7 +1648,7 @@ sinkIncrementsOutOfSwitchRegions(AliasAnalysis *AA,
     // TODO: Which debug loc should we use here? Using one of the locs from the
     // delete list seems reasonable for now...
     SILBuilder(getBB()->begin()).createRetainValue(DeleteList[0]->getLoc(),
-                                                   EnumValue);
+                                                   EnumValue, false);
     for (auto *I : DeleteList)
       I->eraseFromParent();
     ++NumSunk;
