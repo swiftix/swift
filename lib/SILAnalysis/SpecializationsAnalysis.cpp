@@ -186,7 +186,7 @@ void SpecializationsInfo::unregisterGeneric(SILFunction *F) {
 /// with the given substitution.
 SILFunction *SpecializationsInfo::findSpecialization(SILModule &M, SILFunction *F,
                                ArrayRef<Substitution> Substitutions) {
-  return nullptr;
+  //return nullptr;
   llvm::dbgs() << "\n\nSearching an existing specialization for function: " << F->getName() << "\n";
   llvm::dbgs() << "With Substitutions:\n";
   for (auto Sub: Substitutions) {
@@ -252,8 +252,20 @@ SILFunction *SpecializationsInfo::findSpecialization(SILModule &M, SILFunction *
         llvm::dbgs() << "\tLayout1: (" << SpecInfo.getLayouts()[k] << ") Layout2: (" << SpecInfoF.getLayouts()[k] << ")\n";
       }
 
-      if (SpecInfo.isLayoutCompatibleWith(SpecInfoF))
-        return M.lookUpFunction(Spec);
+      if (SpecInfo.isLayoutCompatibleWith(SpecInfoF)) {
+#if 1
+		// Check that all substitutions are classes.
+		// TODO: May be it should check if all resulting bound types are classes?
+		for (auto Sub : SpecInfo.getSubstitutions())
+		  if (!Sub.getReplacement()->getClassOrBoundGenericClass())
+			return nullptr;
+
+		for (auto Sub : SpecInfoF.getSubstitutions())
+		  if (!Sub.getReplacement()->getClassOrBoundGenericClass())
+			return nullptr;
+#endif
+		return M.lookUpFunction(Spec);
+	  }
     }
   }
 

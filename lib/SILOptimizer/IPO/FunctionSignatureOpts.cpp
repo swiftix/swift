@@ -976,6 +976,7 @@ public:
   FunctionSignatureOpts() {}
 
   void run() override {
+	return;
     SILModule *M = getModule();
     auto *BCA = getAnalysis<BasicCalleeAnalysis>();
     auto *RCIA = getAnalysis<RCIdentityAnalysis>();
