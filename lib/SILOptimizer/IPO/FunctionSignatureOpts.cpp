@@ -16,6 +16,7 @@
 #include "swift/SILOptimizer/Analysis/FunctionOrder.h"
 #include "swift/SILOptimizer/Analysis/RCIdentityAnalysis.h"
 #include "swift/SILOptimizer/Analysis/ARCAnalysis.h"
+#include "swift/SILOptimizer/Analysis/SpecializationsAnalysis.h"
 #include "swift/SILOptimizer/PassManager/Transforms.h"
 #include "swift/SILOptimizer/Utils/Local.h"
 #include "swift/Basic/LLVM.h"
@@ -851,7 +852,8 @@ moveFunctionBodyToNewFunctionWithName(SILFunction *F,
 static bool optimizeFunctionSignature(llvm::BumpPtrAllocator &BPA,
                                       RCIdentityFunctionInfo *RCIA,
                                       SILFunction *F,
-                                      const ApplyList &CallSites) {
+									  SpecializationsInfo &SI,
+									  const ApplyList &CallSites) {
   DEBUG(llvm::dbgs() << "Optimizing Function Signature of " << F->getName()
                      << "\n");
 
@@ -889,6 +891,13 @@ static bool optimizeFunctionSignature(llvm::BumpPtrAllocator &BPA,
   // Otherwise, move F over to NewF.
   SILFunction *NewF =
       moveFunctionBodyToNewFunctionWithName(F, NewFName, Analyzer);
+
+  auto GenericFunctionName = SI.getGenericFunction(F);
+  if (!GenericFunctionName.empty()) {
+    auto GenericF = F->getModule().lookUpFunction(GenericFunctionName);
+    assert(GenericF && "Generic function should be still present");
+    SI.registerSpecialization(GenericF, NewF, SI.getSpecializationInfo(F).getSubstitutions());
+  }
 
   // And remove all Callee releases that we found and made redundant via owned
   // to guaranteed conversion.
@@ -970,11 +979,12 @@ public:
     SILModule *M = getModule();
     auto *BCA = getAnalysis<BasicCalleeAnalysis>();
     auto *RCIA = getAnalysis<RCIdentityAnalysis>();
+	auto *SA = getAnalysis<SpecializationsAnalysis>();
     llvm::BumpPtrAllocator Allocator;
 
     DEBUG(llvm::dbgs() << "**** Optimizing Function Signatures ****\n\n");
 
-    // Construct a map from Callee -> Call Site Set.
+    SpecializationsInfo &SI = SA->getOrBuildSpecializationsInfo();
 
     // Process each function in the callgraph that we are able to optimize.
     //
@@ -1040,7 +1050,7 @@ public:
 
       // Otherwise, try to optimize the function signature of F.
       Changed |=
-          optimizeFunctionSignature(Allocator, RCIA->get(F), F, CallSites);
+          optimizeFunctionSignature(Allocator, RCIA->get(F), F, SI, CallSites);
     }
 
     // If we changed anything, invalidate the call graph.

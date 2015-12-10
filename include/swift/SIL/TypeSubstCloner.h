@@ -74,10 +74,16 @@ protected:
   }
 
   Substitution remapSubstitution(Substitution sub) {
-    auto newSub = sub.subst(SwiftMod,
-                            Original.getContextGenericParams(),
-                            ApplySubs);
-    // Remap opened archetypes into the cloned context.
+    Substitution newSub;
+    if (ApplySubs.empty()) {
+      newSub = sub;
+    } else {
+      newSub = sub.subst(SwiftMod,
+                         Original.getContextGenericParams(),
+                         ApplySubs);
+	}
+
+	// Remap opened archetypes into the cloned context.
     newSub = Substitution(newSub.getArchetype(),
                           getASTTypeInClonedContext(newSub.getReplacement()
                                                       ->getCanonicalType()),

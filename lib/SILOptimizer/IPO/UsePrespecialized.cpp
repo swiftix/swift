@@ -128,8 +128,9 @@ bool UsePrespecialized::replaceByPrespecialized(SILFunction &F) {
         llvm::dbgs() << "Found a specialization of " << ReferencedF->getName()
         << " : " << NewF->getName() << "\n");
 
-    auto NewAI = replaceWithSpecializedFunction(AI, NewF);
-    AI.getInstruction()->replaceAllUsesWith(NewAI.getInstruction());
+    auto SpecializedResult = replaceWithSpecializedFunction(AI, NewF);
+    if (!isa<TryApplyInst>(AI))
+      AI.getInstruction()->replaceAllUsesWith(SpecializedResult.first);
     recursivelyDeleteTriviallyDeadInstructions(AI.getInstruction(), true);
     Changed = true;
   }

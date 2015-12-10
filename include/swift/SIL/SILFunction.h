@@ -88,6 +88,12 @@ private:
   /// The source location and scope of the function.
   const SILDebugScope *DebugScope;
 
+  /// The information about layouts of generic types.
+  StringRef Layout;
+
+  /// The reference to the method, which can be shared with this one.
+  SILFunction *Sharing;
+
   /// The function's bare attribute. Bare means that the function is SIL-only
   /// and does not require debug info.
   unsigned Bare : 1;
@@ -241,6 +247,22 @@ public:
 
   /// Returns true if this function was inlined.
   bool isInlined() const { return Inlined; }
+
+  SILFunction *getSharing() const {
+    return Sharing;
+  }
+
+  void setSharing(SILFunction *F) {
+    Sharing = F;
+  }
+
+  StringRef getLayout() const {
+    return Layout;
+  }
+
+  void setLayout(StringRef L) {
+    Layout = L;
+  }
 
   /// Mark this function as removed from the module's function list, but kept
   /// as "zombie" for debug info or vtable stub generation.

@@ -36,6 +36,7 @@ ANALYSIS(PostDominance)
 ANALYSIS(PostOrder)
 ANALYSIS(RCIdentity)
 ANALYSIS(SideEffect)
+ANALYSIS(Specializations)
 ANALYSIS(TypeExpansion)
 
 #undef ANALYSIS

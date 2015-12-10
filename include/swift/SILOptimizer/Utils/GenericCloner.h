@@ -38,10 +38,15 @@ public:
   GenericCloner(SILFunction *F,
                 TypeSubstitutionMap &InterfaceSubs,
                 TypeSubstitutionMap &ContextSubs,
-                StringRef NewName,
+                CanSILFunctionType LoweredFnTy,
+                GenericParamList *ContextGenericParams,
+				StringRef NewName,
                 ArrayRef<Substitution> ApplySubs,
-                CloneCollector::CallbackType Callback)
-  : TypeSubstCloner(*initCloned(F, InterfaceSubs, NewName), *F, ContextSubs,
+                CloneCollector::CallbackType Callback,
+                bool DropGenerics = true)
+  : TypeSubstCloner(*initCloned(F, InterfaceSubs, NewName, DropGenerics,
+                                LoweredFnTy, ContextGenericParams),
+                    *F, ContextSubs,
                     ApplySubs), Callback(Callback) {
     assert(F->getDebugScope()->SILFn != getCloned()->getDebugScope()->SILFn);
   }
@@ -50,11 +55,15 @@ public:
   static SILFunction *cloneFunction(SILFunction *F,
                                     TypeSubstitutionMap &InterfaceSubs,
                                     TypeSubstitutionMap &ContextSubs,
+                                    CanSILFunctionType LoweredFnTy,
+                                    GenericParamList *ContextGenericParams,
                                     StringRef NewName, ApplySite Caller,
-                            CloneCollector::CallbackType Callback =nullptr) {
-    // Clone and specialize the function.
-    GenericCloner SC(F, InterfaceSubs, ContextSubs, NewName,
-                     Caller.getSubstitutions(), Callback);
+                                    ArrayRef<Substitution> Subs,
+                                    bool DropGenerics = true,
+                           CloneCollector::CallbackType Callback =nullptr) {
+	// Clone and specialize the function.
+    GenericCloner SC(F, InterfaceSubs, ContextSubs, LoweredFnTy, ContextGenericParams, NewName,
+                     Subs, Callback, DropGenerics);
     SC.populateCloned();
     SC.cleanUp(SC.getCloned());
     return SC.getCloned();
@@ -78,7 +87,10 @@ protected:
 private:
   static SILFunction *initCloned(SILFunction *Orig,
                                  TypeSubstitutionMap &InterfaceSubs,
-                                 StringRef NewName);
+                                 StringRef NewName,
+                                 bool DropGenerics = true,
+                                 CanSILFunctionType LoweredFnTy = CanSILFunctionType(),
+                                 GenericParamList *ContextGenericParams = nullptr); 
   /// Clone the body of the function into the empty function that was created
   /// by initCloned.
   void populateCloned();

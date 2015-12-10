@@ -27,14 +27,21 @@ using namespace swift;
 /// Create a new empty function with the correct arguments and a unique name.
 SILFunction *GenericCloner::initCloned(SILFunction *Orig,
                                        TypeSubstitutionMap &InterfaceSubs,
-                                       StringRef NewName) {
+                                       StringRef NewName,
+                                       bool DropGenerics,
+                                       CanSILFunctionType LoweredTy,
+                                       GenericParamList *ContextGenericParams) {
   SILModule &M = Orig->getModule();
   Module *SM = M.getSwiftModule();
 
-  CanSILFunctionType FTy =
-    SILType::substFuncType(M, SM, InterfaceSubs,
-                           Orig->getLoweredFunctionType(),
-                           /*dropGenerics = */ true);
+  CanSILFunctionType FTy = (!DropGenerics && LoweredTy) ? LoweredTy :
+     SILType::substFuncType(M, SM, InterfaceSubs,
+                            Orig->getLoweredFunctionType(),
+                           /*dropGenerics = */ DropGenerics);
+  if (DropGenerics)
+    ContextGenericParams = nullptr;
+  else if (!ContextGenericParams)
+    ContextGenericParams = Orig->getContextGenericParams();
 
   assert((Orig->isTransparent() || Orig->isBare() || Orig->getLocation())
          && "SILFunction missing location");
@@ -44,7 +51,7 @@ SILFunction *GenericCloner::initCloned(SILFunction *Orig,
 
   // Create a new empty function.
   SILFunction *NewF = M.getOrCreateFunction(
-      getSpecializedLinkage(Orig, Orig->getLinkage()), NewName, FTy, nullptr,
+	getSpecializedLinkage(Orig, Orig->getLinkage()), NewName, FTy, ContextGenericParams,
       Orig->getLocation(), Orig->isBare(), Orig->isTransparent(),
       Orig->isFragile(), Orig->isThunk(), Orig->getClassVisibility(),
       Orig->getInlineStrategy(), Orig->getEffectsKind(), Orig,

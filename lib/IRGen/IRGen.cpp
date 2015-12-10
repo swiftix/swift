@@ -124,6 +124,7 @@ void swift::performLLVMOptimizations(IRGenOptions &Opts, llvm::Module *Module,
     PMBuilder.Inliner = llvm::createFunctionInliningPass(200);
     PMBuilder.SLPVectorize = true;
     PMBuilder.LoopVectorize = true;
+	PMBuilder.MergeFunctions = true;
   } else {
     PMBuilder.OptLevel = 0;
     if (!Opts.DisableLLVMOptzns)

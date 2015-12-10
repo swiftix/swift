@@ -27,6 +27,7 @@
 #include "swift/SILOptimizer/Utils/Devirtualize.h"
 #include "swift/SILOptimizer/Utils/Generics.h"
 #include "swift/SILOptimizer/Utils/SILInliner.h"
+#include "swift/SILOptimizer/Analysis/SpecializationsAnalysis.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -254,11 +255,13 @@ namespace {
 
     bool devirtualizeAndSpecializeApplies(
         llvm::SmallVectorImpl<ApplySite> &Applies,
+        SpecializationsAnalysis *SA,
         SILModuleTransform *MT,
         ClassHierarchyAnalysis *CHA,
         llvm::SmallVectorImpl<SILFunction *> &WorkList);
 
     ApplySite specializeGeneric(ApplySite Apply,
+                                SpecializationsAnalysis *SA,
                                 llvm::SmallVectorImpl<ApplySite> &NewApplies);
 
     bool
@@ -276,7 +279,8 @@ namespace {
                                          SILModuleTransform *MT,
                                          DominanceAnalysis *DA,
                                          SILLoopAnalysis *LA,
-                                         ClassHierarchyAnalysis *CHA);
+                                         ClassHierarchyAnalysis *CHA,
+                                         SpecializationsAnalysis *SA);
   };
 }
 
@@ -875,7 +879,9 @@ FullApplySite SILPerformanceInliner::devirtualize(FullApplySite Apply,
 }
 
 ApplySite SILPerformanceInliner::specializeGeneric(
-    ApplySite Apply, llvm::SmallVectorImpl<ApplySite> &NewApplies) {
+    ApplySite Apply,
+	SpecializationsAnalysis *SA,
+	llvm::SmallVectorImpl<ApplySite> &NewApplies) {
   assert(NewApplies.empty() && "Expected out parameter for new applies!");
 
   if (!Apply.hasSubstitutions())
@@ -893,11 +899,12 @@ ApplySite SILPerformanceInliner::specializeGeneric(
   CloneCollector Collector(Filter);
 
   SILFunction *SpecializedFunction;
-  auto Specialized = trySpecializeApplyOfGeneric(Apply,
-                                                 SpecializedFunction,
-                                                 Collector);
+  auto SpecializedResult = trySpecializeApplyOfGeneric(Apply,
+                                                       SpecializedFunction,
+                                                       Collector,
+                                                       SA);
 
-  if (!Specialized)
+  if (!SpecializedResult.second)
     return ApplySite();
 
   // Track the new applies from the specialization.
@@ -907,19 +914,19 @@ ApplySite SILPerformanceInliner::specializeGeneric(
   auto FullApply = FullApplySite::isa(Apply.getInstruction());
 
   if (!FullApply) {
-    assert(!FullApplySite::isa(Specialized.getInstruction()) &&
+    assert(!FullApplySite::isa(SpecializedResult.second.getInstruction()) &&
            "Unexpected full apply generated!");
 
     // Replace the old apply with the new and delete the old.
-    replaceDeadApply(Apply, Specialized.getInstruction());
+    replaceDeadApply(Apply, SpecializedResult.first);
 
-    return ApplySite(Specialized);
+    return ApplySite(SpecializedResult.second);
   }
 
   // Replace the old apply with the new and delete the old.
-  replaceDeadApply(Apply, Specialized.getInstruction());
+  replaceDeadApply(Apply, SpecializedResult.first);
 
-  return Specialized;
+  return ApplySite(SpecializedResult.second);
 }
 
 static void collectAllAppliesInFunction(SILFunction *F,
@@ -943,6 +950,7 @@ static void collectAllAppliesInFunction(SILFunction *F,
 // Returns true if any changes were made.
 bool SILPerformanceInliner::devirtualizeAndSpecializeApplies(
                                   llvm::SmallVectorImpl<ApplySite> &Applies,
+                                  SpecializationsAnalysis *SA,
                                   SILModuleTransform *MT,
                                   ClassHierarchyAnalysis *CHA,
                                llvm::SmallVectorImpl<SILFunction *> &WorkList) {
@@ -970,7 +978,7 @@ bool SILPerformanceInliner::devirtualizeAndSpecializeApplies(
     }
 
     llvm::SmallVector<ApplySite, 4> NewApplies;
-    if (auto NewApply = specializeGeneric(Apply, NewApplies)) {
+    if (auto NewApply = specializeGeneric(Apply, SA, NewApplies)) {
       ChangedApply = true;
 
       Apply = NewApply;
@@ -1159,7 +1167,8 @@ void SILPerformanceInliner::inlineDevirtualizeAndSpecialize(
                                                        SILModuleTransform *MT,
                                                         DominanceAnalysis *DA,
                                                           SILLoopAnalysis *LA,
-                                                  ClassHierarchyAnalysis *CHA) {
+                                                  ClassHierarchyAnalysis *CHA,
+                                                  SpecializationsAnalysis *SA) {
   assert(Caller->isDefinition() && "Expected only functions with bodies!");
 
   llvm::SmallVector<SILFunction *, 4> WorkList;
@@ -1175,7 +1184,7 @@ void SILPerformanceInliner::inlineDevirtualizeAndSpecialize(
     // and collect new functions we should inline into as we do
     // so.
     llvm::SmallVector<SILFunction *, 4> NewFuncs;
-    if (devirtualizeAndSpecializeApplies(WorkItemApplies, MT, CHA, NewFuncs)) {
+    if (devirtualizeAndSpecializeApplies(WorkItemApplies, SA, MT, CHA, NewFuncs)) {
       WorkList.insert(WorkList.end(), NewFuncs.begin(), NewFuncs.end());
       NewFuncs.clear();
     }
@@ -1220,7 +1229,7 @@ void SILPerformanceInliner::inlineDevirtualizeAndSpecialize(
         collectAllAppliesInFunction(WorkItem, WorkItemApplies);
 
         bool Modified =
-            devirtualizeAndSpecializeApplies(WorkItemApplies, MT,
+            devirtualizeAndSpecializeApplies(WorkItemApplies, SA, MT,
                                              CHA, NewFuncs);
         if (Modified) {
           WorkList.insert(WorkList.end(), NewFuncs.begin(), NewFuncs.end());
@@ -1306,6 +1315,7 @@ public:
     DominanceAnalysis *DA = PM->getAnalysis<DominanceAnalysis>();
     SILLoopAnalysis *LA = PM->getAnalysis<SILLoopAnalysis>();
     ClassHierarchyAnalysis *CHA = PM->getAnalysis<ClassHierarchyAnalysis>();
+    SpecializationsAnalysis *SA = PM->getAnalysis<SpecializationsAnalysis>();
 
     if (getOptions().InlineThreshold == 0) {
       DEBUG(llvm::dbgs() << "*** The Performance Inliner is disabled ***\n");
@@ -1328,7 +1338,7 @@ public:
 
     // Inline functions bottom up from the leafs.
     while (!WorkList.empty()) {
-      Inliner.inlineDevirtualizeAndSpecialize(WorkList.back(), this, DA, LA, CHA);
+      Inliner.inlineDevirtualizeAndSpecialize(WorkList.back(), this, DA, LA, CHA, SA);
       WorkList.pop_back();
     }
   }

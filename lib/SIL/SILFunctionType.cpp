@@ -1982,7 +1982,8 @@ CanSILFunctionType SILType::substFuncType(SILModule &silModule,
 CanSILFunctionType
 SILFunctionType::substGenericArgs(SILModule &silModule,
                                            Module *astModule,
-                                           ArrayRef<Substitution> subs) {
+                                           ArrayRef<Substitution> subs,
+                                           bool dropGenerics) {
   if (subs.empty()) {
     assert(!isPolymorphic() && "no args for polymorphic substitution");
     return CanSILFunctionType(this);
@@ -1993,7 +1994,7 @@ SILFunctionType::substGenericArgs(SILModule &silModule,
   SILTypeSubstituter substituter(silModule, astModule, map);
 
   return substituter.visitSILFunctionType(CanSILFunctionType(this),
-                                          /*dropGenerics*/ true);
+                                          /*dropGenerics*/ dropGenerics);
 }
 
 /// Fast path for bridging types in a function type without uncurrying.

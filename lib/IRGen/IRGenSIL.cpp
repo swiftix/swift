@@ -33,6 +33,7 @@
 #include "swift/AST/Pattern.h"
 #include "swift/AST/Types.h"
 #include "swift/SIL/PrettyStackTrace.h"
+#include "swift/SIL/SILBuilder.h"
 #include "swift/SIL/SILDebugScope.h"
 #include "swift/SIL/SILDeclRef.h"
 #include "swift/SIL/SILLinkage.h"
@@ -1291,6 +1292,80 @@ void IRGenSILFunction::emitSILFunction() {
         != SILFunctionTypeRepresentation::WitnessMethod) {
     IGM.DebugInfo->emitFunction(*CurSILFn, CurFn);
   }
+
+  if (CurSILFn->getSharing()) {
+      assert(CurSILFn->getSharing()->isDefinition() &&
+      CurSILFn->getModule().lookUpFunction(CurSILFn->getSharing()->getName()) &&
+      "Sharing function should be present");
+    llvm::dbgs() << "Sharing of specializations:\n"
+                 << "Replaced body of " << CurSILFn->getName() << " by jump to "
+                 << CurSILFn->getSharing()->getName() << "\n";
+    llvm::dbgs() << "Current function type: " << CurSILFn->getLoweredFunctionType() << "\n";
+    llvm::dbgs() << "Sharing function type: " << CurSILFn->getSharing()->getLoweredFunctionType() << "\n";
+
+    SILBuilder B(CurSILFn->begin()->begin());
+
+//    B.setInsertionPoint(CurSILFn->begin()->begin());
+    auto I = CurSILFn->begin()->begin();
+    auto Loc = CurSILFn->begin()->begin()->getLoc();
+    auto Callee = B.createFunctionRef(Loc, CurSILFn->getSharing());
+//    visitFunctionRefInst(Callee);
+
+    SmallVector<SILValue, 8> Args;
+    for (auto Arg : CurSILFn->getArguments()) {
+      Args.push_back(Arg);
+//      visitSILArgument(Arg);
+    }
+
+    auto Apply = B.createApply(CurSILFn->begin()->begin()->getLoc(), Callee, Args, CurSILFn->getLoweredFunctionType()->hasErrorResult());
+//    visitApplyInst(Apply);
+
+    SILType RetTy;
+    ReturnInst *Ret;
+    if (SILValue(Apply, 0).getType().isVoid()) {
+      RetTy = SILType::getPrimitiveObjectType(CurSILFn->getASTContext().TheEmptyTupleType.getCanonicalTypeOrNull());
+      auto *RetVal = B.createTuple(Loc, RetTy, {});
+      Ret = B.createReturn(Loc, RetVal);
+//      visitTupleInst(RetVal);
+    } else {
+      Ret = B.createReturn(Loc, Apply);
+    }
+
+    // Remove all instructions after the inserted ones.
+    while (I != CurSILFn->begin()->end()) {
+      auto CurI = I++;
+      CurI->dropAllReferences();
+      CurI->replaceAllUsesWithUndef();
+      CurI->eraseFromParent();
+    }
+
+    for (auto BB = CurSILFn->begin(), EndBB = CurSILFn->end(); BB != EndBB;) {
+      auto CurBB = BB++;
+      if (CurBB != CurSILFn->begin()) {
+        auto I = CurBB->begin();
+        while(I != CurBB->end()) {
+          auto CurI = I++;
+          CurI->dropAllReferences();
+          CurI->replaceAllUsesWithUndef();
+          CurI->eraseFromParent();
+        }
+        CurBB->eraseFromParent();
+      }
+    }
+
+//    visitReturnInst(Ret);
+
+//    // Get the address of the function it can be shared with.
+//    llvm::Function *fnptr =
+//      IGM.getAddrOfSILFunction(CurSILFn->getSharing(), NotForDefinition);
+//
+//    auto *CallI = Builder.CreateCall(fnptr, {});
+//    // This is a tail call.
+//    CallI->setTailCall(true);
+  }
+
+
+  
 
   // Map the entry bb.
   LoweredBBs[&*CurSILFn->begin()] = LoweredBB(&*CurFn->begin(), {});

@@ -27,18 +27,26 @@
 #include "llvm/Support/Debug.h"
 
 namespace swift {
+class SpecializationsAnalysis;
 
-ApplySite trySpecializeApplyOfGeneric(ApplySite Apply,
-                                      SILFunction *&NewFunction,
-                                      CloneCollector &Collector);
+typedef std::pair<ValueBase *, ApplySite> SpecializationResult;
+
+SpecializationResult trySpecializeApplyOfGeneric(ApplySite Apply,
+                                       SILFunction *&NewFunction,
+                                      CloneCollector &Collector,
+                                    SpecializationsAnalysis *SA);
+
+SILFunction *findSpecialization(SILModule &M, SILFunction *F,
+                               ArrayRef<Substitution> Substitutions,
+                               SpecializationsAnalysis *SA);
 
 /// Checks if a given mangled name could be a name of a whitelisted specialization.
 bool isWhitelistedSpecialization(StringRef SpecName);
 
 /// Create a new apply based on an old one, but with a different
 /// function being applied.
-ApplySite replaceWithSpecializedFunction(ApplySite AI, SILFunction *NewF);
-
+SpecializationResult replaceWithSpecializedFunction(ApplySite AI, SILFunction *NewF);
+ 
 SILFunction *getExistingSpecialization(SILModule &M, StringRef FunctionName);
 
 } // end namespace swift

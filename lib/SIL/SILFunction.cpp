@@ -99,6 +99,8 @@ SILFunction::SILFunction(SILModule &Module, SILLinkage Linkage,
   // Set our BB list to have this function as its parent. This enables us to
   // splice efficiently basic blocks in between functions.
   BlockList.Parent = this;
+  Sharing = nullptr;
+  Layout = StringRef();
 }
 
 SILFunction::~SILFunction() {

@@ -3085,7 +3085,8 @@ public:
 
   CanSILFunctionType substGenericArgs(SILModule &silModule,
                                                ModuleDecl *astModule,
-                                               ArrayRef<Substitution> subs);
+                                               ArrayRef<Substitution> subs,
+											   bool dropGenerics = true);
 
   void Profile(llvm::FoldingSetNodeID &ID) {
     Profile(ID, getGenericSignature(), getExtInfo(), getCalleeConvention(),
