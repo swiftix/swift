@@ -12,8 +12,8 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
-#include "swift/SILAnalysis/Analysis.h"
-#include "swift/SILPasses/Utils/Generics.h"
+#include "swift/SILOptimizer/Analysis/Analysis.h"
+#include "swift/SILOptimizer/Utils/Generics.h"
 
 using namespace swift;
 

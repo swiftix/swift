@@ -9,14 +9,14 @@
 
 #define DEBUG_TYPE "sil-specializations-analysis"
 
-#include "swift/SILPasses/Utils/Local.h"
-#include "swift/SILPasses/PassManager.h"
+#include "swift/SILOptimizer/Utils/Local.h"
+#include "swift/SILOptimizer/PassManager/PassManager.h"
 #include "swift/SIL/SILValue.h"
 #include "swift/SIL/SILInstruction.h"
 #include "swift/SIL/SILArgument.h"
 #include "swift/SIL/SILFunction.h"
 #include "swift/SIL/SILModule.h"
-#include "swift/SILAnalysis/SpecializationsAnalysis.h"
+#include "swift/SILOptimizer/Analysis/SpecializationsAnalysis.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
