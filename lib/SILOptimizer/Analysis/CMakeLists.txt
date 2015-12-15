@@ -17,6 +17,7 @@ set(ANALYSIS_SOURCES
   Analysis/RCIdentityAnalysis.cpp
   Analysis/SideEffectAnalysis.cpp
   Analysis/SimplifyInstruction.cpp
+  Analysis/SpecializationsAnalysis.cpp
   Analysis/TypeExpansionAnalysis.cpp
   Analysis/ValueTracking.cpp
   PARENT_SCOPE)
