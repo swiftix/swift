@@ -13,7 +13,7 @@
 #define DEBUG_TYPE "generic-specializer"
 
 #include "swift/Strings.h"
-#include "swift/SILOptimizer/SpecializationsAnalysis.h"
+#include "swift/SILOptimizer/Analysis/SpecializationsAnalysis.h"
 #include "swift/SILOptimizer/Utils/Generics.h"
 #include "swift/SILOptimizer/Utils/GenericCloner.h"
 
