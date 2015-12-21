@@ -1373,10 +1373,16 @@ public:
     *this << "copy_block " << getIDAndType(RI->getOperand());
   }
   void visitStrongRetainInst(StrongRetainInst *RI) {
-    *this << "strong_retain " << getIDAndType(RI->getOperand());
+    *this << "strong_retain ";
+    if (RI->isNonAtomic())
+      *this << "[ nonatomic ] ";
+    *this << getIDAndType(RI->getOperand());
   }
   void visitStrongReleaseInst(StrongReleaseInst *RI) {
-    *this << "strong_release " << getIDAndType(RI->getOperand());
+    *this << "strong_release ";
+    if (RI->isNonAtomic())
+      *this << "[ nonatomic ] ";
+    *this << getIDAndType(RI->getOperand());
   }
   void visitStrongPinInst(StrongPinInst *PI) {
     *this << "strong_pin " << getIDAndType(PI->getOperand());

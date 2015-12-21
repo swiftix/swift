@@ -2285,15 +2285,20 @@ public:
 /// RefCountingInst - An abstract class of instructions which
 /// manipulate the reference count of their object operand.
 class RefCountingInst : public SILInstruction {
+private:
+  bool nonatomic;
 protected:
-  RefCountingInst(ValueKind Kind, SILDebugLocation DebugLoc)
-      : SILInstruction(Kind, DebugLoc) {}
+  RefCountingInst(ValueKind Kind, SILDebugLocation *DebugLoc)
+      : SILInstruction(Kind, DebugLoc), nonatomic(false) {}
 
 public:
   static bool classof(const ValueBase *V) {
     return V->getKind() >= ValueKind::First_RefCountingInst &&
            V->getKind() <= ValueKind::Last_RefCountingInst;
   }
+
+  void setNonAtomic(bool flag) { nonatomic = flag; }
+  bool isNonAtomic() { return nonatomic; }
 };
 
 /// RetainValueInst - Copies a loadable value.
