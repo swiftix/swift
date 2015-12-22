@@ -90,6 +90,7 @@ SILFunction::SILFunction(SILModule &Module, SILLinkage Linkage,
     Linkage(unsigned(Linkage)),
     KeepAsPublic(false),
     ForeignBody(false),
+    Epoch(0),
     EK(E) {
   if (InsertBefore)
     Module.functions.insert(SILModule::iterator(InsertBefore), this);

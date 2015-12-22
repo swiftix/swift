@@ -174,16 +174,29 @@ void SILPassManager::runPassesOnFunction(PassList FuncTransforms,
   const SILOptions &Options = getOptions();
 
   CompletedPasses &completedPasses = CompletedPassesMap[F];
+  auto &epochs = EpochsMap[F];
 
   for (auto SFT : FuncTransforms) {
     PrettyStackTraceSILFunctionTransform X(SFT);
     SFT->injectPassManager(this);
     SFT->injectFunction(F);
 
+    auto passKind = (size_t)SFT->getPassKind();
     // If nothing changed since the last run of this pass, we can skip this
     // pass.
-    if (completedPasses.test((size_t)SFT->getPassKind()))
+    if (completedPasses.test(passKind))
       continue;
+
+    // If nothing was changed in this function since last run,
+    // we can skip this pass.
+    // TODO: Check that this pass supports epochs.
+    if (epochs.empty())
+      epochs.resize((size_t)PassKind::AllPasses_Last + 1);
+
+    if (F->getEpoch() && epochs[passKind] == F->getEpoch()) {
+      llvm::dbgs() << SFT->getName() << " : skip for function " << F->getName() << "\n";
+      continue;
+    }
 
     if (isDisabled(SFT))
       continue;
@@ -207,6 +220,9 @@ void SILPassManager::runPassesOnFunction(PassList FuncTransforms,
     SFT->run();
     Mod->removeDeleteNotificationHandler(SFT);
 
+    // Remember the epoch after the completion of this pass.
+    epochs[passKind] = F->getEpoch();
+
     // Did running the transform result in new functions being added
     // to the top of our worklist?
     bool newFunctionsAdded = (F != FunctionWorklist.back());
@@ -228,7 +244,7 @@ void SILPassManager::runPassesOnFunction(PassList FuncTransforms,
 
     // Remember if this pass didn't change anything.
     if (!currentPassHasInvalidated)
-      completedPasses.set((size_t)SFT->getPassKind());
+      completedPasses.set(passKind);
 
     if (Options.VerifyAll &&
         (currentPassHasInvalidated || SILVerifyWithoutInvalidation)) {

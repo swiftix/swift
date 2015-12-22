@@ -182,6 +182,7 @@ public:
     auto &Blocks = F->getBlocks();
     Blocks.remove(BB);
     Blocks.insert(IP, BB);
+    F->nextEpoch();
   }
 
   /// moveBlockTo - Move \p BB to immediately before \p Before.
@@ -1435,6 +1436,7 @@ private:
       InsertedInstrs->push_back(TheInst);
 
     BB->insert(InsertPt, TheInst);
+    getFunction().nextEpoch();
   }
 
   void cacheDebugLoc(SILDebugLocation &Loc) {

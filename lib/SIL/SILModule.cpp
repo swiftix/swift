@@ -700,4 +700,6 @@ void SILModule::notifyDeleteHandlers(ValueBase *V) {
   for (auto *Handler : NotificationHandlers) {
     Handler->handleDeleteNotification(V);
   }
+  // Increase epoch on each instruction removal.
+  V->getParentBB()->getParent()->nextEpoch();
 }

@@ -62,6 +62,13 @@ class SILPassManager {
   /// A completed-passes mask for each function.
   llvm::DenseMap<SILFunction *, CompletedPasses> CompletedPassesMap;
 
+  /// A mapping from a pass to the epoch which was current when this pass
+  /// finished last time.
+  typedef SmallVector<unsigned, (size_t)PassKind::AllPasses_Last + 1> Epochs;
+  
+  /// A set of epochs for each function.
+  llvm::DenseMap<SILFunction *, Epochs> EpochsMap;
+
   /// Set to true when a pass invalidates an analysis.
   bool currentPassHasInvalidated = false;
   

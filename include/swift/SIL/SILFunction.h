@@ -136,6 +136,11 @@ private:
   /// The function's semantics attribute.
   std::string SemanticsAttr;
 
+  /// Epoch number of this function. Increased every time when
+  /// an instruction is removed from a function or an instruction
+  /// is added to the function.
+  unsigned Epoch;
+
   /// The function's effects attribute.
   EffectsKind EK;
     
@@ -419,6 +424,12 @@ public:
 
   /// \brief Set the function side effect information.
   void setEffectsKind(EffectsKind E) { EK = E; }
+
+  // \return current epoch
+  unsigned getEpoch() const { return Epoch; }
+
+  // \Brief Change the epoch
+  void nextEpoch() { ++Epoch; }
 
   /// Get this function's global_init attribute.
   ///
