@@ -27,9 +27,11 @@ using namespace swift;
 
 namespace {
 
+  // Bitvector implementation to be used for the dataflow analysis.
   typedef llvm::SmallBitVector StateBitVector;
 
-  llvm::raw_ostream& operator<< (llvm::raw_ostream& stream, llvm::BitVector& BV) {
+  llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
+                                llvm::BitVector &BV) {
     unsigned size = BV.size();
     stream << "[ ";
     for (unsigned i = 0; i < size; ++i)
@@ -38,7 +40,8 @@ namespace {
     return stream;
   }
 
-  llvm::raw_ostream& operator<< (llvm::raw_ostream& stream, llvm::SmallBitVector& BV) {
+  llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
+                                llvm::SmallBitVector &BV) {
     unsigned size = BV.size();
     stream << "[ ";
     for (unsigned i = 0; i < size; ++i)
@@ -47,49 +50,8 @@ namespace {
     return stream;
   }
 
-
-
-// Region where a given object is unique and thread-safe.
-class Region {
-public:
-  typedef SmallVector<SILInstruction *, 4> RegionEndPoints;
-
-private:
-  // The COW value tracked by this region
-  SILValue CowValue;
-  // Where the region starts.
-  SILInstruction *StartPoint;
-  // Where the region ends.
-  RegionEndPoints EndPoints;
-
-  llvm::DenseSet<SILBasicBlock *> LiveThrough;
-
-  // The index of this region in the dataflow bit vectors.
-  unsigned Id;
-
-public:
-  Region(SILInstruction *StartPoint, SILValue CowValue, unsigned Id)
-      : CowValue(CowValue), StartPoint(StartPoint), Id(Id) {}
-
-  SILValue getCowValue() const { return CowValue; }
-  SILInstruction *getStartPoint() const { return StartPoint; }
-  const RegionEndPoints &getEndPoints() const { return EndPoints; }
-  unsigned getId() const { return Id; }
-
-  void addEndPoint(SILInstruction *EndPoint) {
-    EndPoints.push_back(EndPoint);
-  }
-
-  // true if the COW value maintains its property through this
-  // basic block, i.e. it has this property on entry and on
-  // exit to/from this basic block.
-  bool isLiveThrough(SILBasicBlock *BB);
-  // true if COW value maintains its property at this point.
-  bool isLiveAt(SILInstruction *I);
-};
-
-// Representation of a BB state during the dataflow analysis.
-// Bit vectors are indexed by the id of a COW value.
+/// Representation of a BB state during the dataflow analysis.
+/// Bit vectors are indexed by the id of a COW value.
 struct BlockState {
   StateBitVector In;
   StateBitVector Out;
@@ -157,7 +119,7 @@ void Dataflow::initStates() {
 */
 }
 
-// Perform a logical AND on the OUT sets of all predecessors.
+/// Perform a logical AND on the OUT sets of all predecessors.
 StateBitVector Dataflow::mergePredecessorStates(SILBasicBlock *BB) {
   if (BB->pred_empty())
     return getBlockState(BB).In;
@@ -168,8 +130,10 @@ StateBitVector Dataflow::mergePredecessorStates(SILBasicBlock *BB) {
   return Result;
 }
 
+/// Main loop of the dataflow analysis.
 void Dataflow::compute() {
   bool Changed;
+  // Iterate until a fixpoint is reached.
   do {
     Changed = false;
     // Visit all BBs
@@ -199,6 +163,8 @@ void Dataflow::compute() {
   } while(Changed);
 }
 
+/// Helper function to dump the results of
+/// the dataflow analysis.
 void Dataflow::dump() {
   for (auto &BB : *F) {
     auto &BlockState = getBlockState(&BB);
@@ -217,7 +183,6 @@ void Dataflow::dump() {
 // Customization of a general dataflow analysis
 // for tracking the uniguqness.
 class UniquenessDataflow : public Dataflow {
-  //ArrayRef<Region> Regions;
 public:
   UniquenessDataflow(SILFunction *F) : Dataflow(F) {}
 
@@ -234,21 +199,11 @@ public:
     // Entry block does not have any bits set for the In set.
     getBlockState(&*F->begin()).In.reset();
 
-#if 0
-    // Initialize the Gen sets.
-    for (auto &Region : Regions) {
-      auto *RegionBB = Region.getStartPoint()->getParent();
-      auto &BBState = getBlockState(RegionBB);
-      BBState.Gen[Region.getId()] = true;
-    }
-#endif
   }
 
-  void compute(ArrayRef<Region> Regions) {
+  void compute() {
     Dataflow::compute();
     dump();
-    // Update regions using the resuls of the dataflow
-    // analysis.
   }
 };
 
@@ -261,7 +216,6 @@ class NonAtomicRCTransformer {
   EscapeAnalysis *EA;
   RCIdentityFunctionInfo *RCIFI;
 
-  SmallVector<Region, 8> Regions;
   UniquenessDataflow DF;
 
   // Map the CowValue to the assigned id.
@@ -295,6 +249,8 @@ private:
 }
 ;
 
+/// Returns true, if a given array semantics call does not
+/// change the uniqueness of the array buffer.
 static bool doesNotChangeUniquness(ArraySemanticsCall &C) {
   switch (C.getKind()) {
   default: return false;
@@ -310,10 +266,14 @@ static bool doesNotChangeUniquness(ArraySemanticsCall &C) {
   }
 }
 
+/// Is it a reference counting instruction that is eligable to
+/// be promoted to a non-atomic version?
 bool NonAtomicRCTransformer::isEligableRefCountingInst(SILInstruction *I) {
   return isa<RefCountingInst>(I) && !cast<RefCountingInst>(I)->isNonAtomic();
 }
 
+/// Try to promote a reference counting instruction to its non-atomic
+/// variant.
 StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
   assert(isa<RefCountingInst>(I));
   auto *RCInst = cast<RefCountingInst>(I);
@@ -338,6 +298,8 @@ StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
   return SILAnalysis::InvalidationKind::Instructions;
 }
 
+/// Is it an instruction that creates a uniquelly referenced
+/// object?
 static ArraySemanticsCall isMakeUniqueCall(SILInstruction *I) {
   ArraySemanticsCall Call(I);
   if (Call && Call.getKind() == ArrayCallKind::kMakeMutable)
@@ -384,6 +346,8 @@ bool checkUniqueArrayContainer(SILFunction *Function, SILValue ArrayContainer) {
 bool NonAtomicRCTransformer::isArrayValue(ValueBase *ArrayStruct,
                                           SILValue Value) {
   auto Root = RCIFI->getRCIdentityRoot(Value);
+  if (Root.getDef() == ArrayStruct)
+    return true;
   auto *ArrayLoad = dyn_cast<LoadInst>(Root);
   if (!ArrayLoad)
     return false;
@@ -583,7 +547,9 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
         if (Args.empty())
           continue;
         for (auto Arg : Args) {
-          if (EA->canParameterEscape(AI, Arg, false)) {
+          auto FnTy = AI.getSubstCalleeType();
+          auto isIndirect = FnTy->getParameters()[Arg].isIndirect();
+          if (EA->canParameterEscape(AI, Arg, isIndirect)) {
             LastSeenOp[Id] = Kill;
             KilledCowValues[Id] = true;
             DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n" << CowValue;
@@ -777,7 +743,9 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           if (Args.empty())
             continue;
           for (auto Arg : Args) {
-            if (EA->canParameterEscape(AI, Arg, false)) {
+            auto FnTy = AI.getSubstCalleeType();
+            auto isIndirect = FnTy->getParameters()[Arg].isIndirect();
+            if (EA->canParameterEscape(AI, Arg, isIndirect)) {
               // The region is not active anymore after this point.
               CurrentlyActive[Id] = false;
               break;
@@ -911,11 +879,10 @@ StateChanges NonAtomicRCTransformer::processNonEscapingRefCountingInsts() {
 }
 
 StateChanges NonAtomicRCTransformer::processUniqenessRegions() {
-  // Identify the beginning of all regions.
+  // Identify the beginning of all uniqueness regions.
   findAllMakeUnique();
   if (CowValueId.empty())
     return SILAnalysis::InvalidationKind::Nothing;
-  // DF.initStates(Regions);
   DF.initStates(CowValueId.size());
   // Find the places where regions end.
   scanAllBlocks();
