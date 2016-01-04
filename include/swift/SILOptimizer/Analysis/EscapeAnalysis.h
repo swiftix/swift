@@ -376,7 +376,10 @@ public:
     /// The allocator for nodes.
     llvm::SpecificBumpPtrAllocator<CGNode> NodeAllocator;
 
+<<<<<<< 953df3b5e1595351a1656259d49c6dd2c52f7372
     /// True if this is a summary graph.
+=======
+>>>>>>> Fix from Erik for the escape analysis of function arguments
     bool isSummaryGraph;
     
     /// Constructs a connection graph for a function.
@@ -754,11 +757,14 @@ public:
   /// to \p V.
   bool canEscapeToValue(SILValue V, SILValue To);
 
+<<<<<<< 953df3b5e1595351a1656259d49c6dd2c52f7372
   /// Returns true if the parameter with index \p ParamIdx can escape in the
   /// called function of apply site \p FAS.
   /// If it is an indirect parameter and \p checkContentOfIndirectParam is true
   /// then the escape status is not checked for the address itself but for the
   /// referenced pointer (if the referenced type is a pointer).
+=======
+>>>>>>> Fix from Erik for the escape analysis of function arguments
   bool canParameterEscape(FullApplySite FAS, int ParamIdx,
                           bool checkContentOfIndirectParam);
 

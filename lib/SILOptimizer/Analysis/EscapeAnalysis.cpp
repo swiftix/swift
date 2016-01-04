@@ -1827,6 +1827,7 @@ bool EscapeAnalysis::canParameterEscape(FullApplySite FAS, int ParamIdx,
 
     if (checkContentOfIndirectParam) {
       Node = Node->getContentNodeOrNull();
+      //Node = Node->getPointsToOrNull();
       if (!Node)
         continue;
     }

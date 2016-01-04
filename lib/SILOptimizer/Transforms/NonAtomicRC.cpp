@@ -888,7 +888,7 @@ StateChanges NonAtomicRCTransformer::processUniqenessRegions() {
   scanAllBlocks();
   // Perform a datafow analysis to find out the span
   // of each region.
-  DF.compute(Regions);
+  DF.compute();
   // Now walk the regions and perform the transformations.
   return transformAllBlocks();
 }
