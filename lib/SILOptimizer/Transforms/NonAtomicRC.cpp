@@ -859,12 +859,10 @@ void NonAtomicRCTransformer::findAllMakeUnique() {
   // of differrent CowValues which are made unique
   // in the function.
   for (SILBasicBlock &BB : *F) {
-    SILInstruction *LastNonMatching = &*BB.begin();
     SILInstruction *LastMatching = nullptr;
     for (auto Iter = BB.begin(); Iter != BB.end();) {
       SILInstruction *I = &*Iter++;
-      if (!isa<ApplyInst>(I) || I == LastMatching) {
-        LastNonMatching = I;
+      if (!isa<ApplyInst>(I)) {
         continue;
       }
       auto Call = isMakeUniqueCall(I);
