@@ -133,6 +133,7 @@ StateBitVector Dataflow::mergePredecessorStates(SILBasicBlock *BB) {
 
 /// Main loop of the dataflow analysis.
 void Dataflow::compute() {
+  // TODO: Use a worklist for a faster convergence
   bool Changed;
   // Iterate until a fixpoint is reached.
   do {
