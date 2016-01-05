@@ -19,6 +19,7 @@
 #include "swift/SILOptimizer/Analysis/RCIdentityAnalysis.h"
 #include "swift/SIL/SILArgument.h"
 #include "swift/SIL/SILBuilder.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 
 STATISTIC(NumNonAtomicRC, "Number of non-atomic RC operations");
@@ -224,6 +225,14 @@ class NonAtomicRCTransformer {
   // Map the assigned id to CowValue.
   llvm::SmallVector<SILValue, 32> IdToCowValue;
 
+  // The set of instructions that are interesting for this
+  // optimization.
+  llvm::SmallPtrSet<SILInstruction *, 32> Candidates;
+
+  // The set of basic blocks containing instructions
+  // that are interesting for this optimization.
+  llvm::SmallPtrSet<SILBasicBlock *, 32> CandidateBBs;
+
 public:
   NonAtomicRCTransformer(SILFunction *F,
                          EscapeAnalysis::ConnectionGraph *ConGraph,
@@ -246,6 +255,7 @@ private:
   void scanBasicBlock(SILBasicBlock *BB);
   StateChanges transformAllBlocks();
   void getCowValueArgsOfApply(FullApplySite AI, SILValue CowValue, SmallVectorImpl<int> &Args);
+  void markAsCandidate(SILInstruction *I);
 }
 ;
 
@@ -407,6 +417,12 @@ void NonAtomicRCTransformer::getCowValueArgsOfApply(FullApplySite AI, SILValue C
   }
 }
 
+void NonAtomicRCTransformer::markAsCandidate(SILInstruction *I) {
+  Candidates.insert(I);
+  CandidateBBs.insert(I->getParent());
+}
+
+
 // Scan a basic block. Find all the "kill" instructions
 // which may kill one of the CowValues being tracked.
 // If there are any CowValues that become unique and then
@@ -416,6 +432,9 @@ void NonAtomicRCTransformer::getCowValueArgsOfApply(FullApplySite AI, SILValue C
 // then the Gen bit should be set.
 // If the last thing seen is the Kill of a given CowValue,
 // its Kill Set should be set.
+//
+// During the scan, remember the "interesting" instructions so
+// that anything else can be skipped during the transformation stage.
 void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
   // Remember if the last thing for a given CowValue
   // was kill or set.
@@ -456,6 +475,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
           isAliasingDest = true;
+          markAsCandidate(I);
           DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
                 I->dumpInContext());
           break;
@@ -474,6 +494,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
+          markAsCandidate(I);
           DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
                 I->dumpInContext());
           break;
@@ -493,6 +514,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
         // and uses the same CowValue.If this is the case, this
         // make unique call can be just removed and ignored.
         LastSeenOp[CowValueId[CowValue]] = Gen;
+        markAsCandidate(I);
 
         DEBUG(llvm::dbgs() << "Gen operation for CowValue\n" << CowValue;
               I->dumpInContext());
@@ -514,9 +536,10 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           SmallVector<int, 8> Args;
           getCowValueArgsOfApply(AI, CowValue, Args);
           if (Args.size()) {
-            DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n" << CowValue);
-            I->dumpInContext();
+            DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n" << CowValue;
+                  I->dumpInContext());
             LastSeenOp[Id] = Kill;
+            markAsCandidate(I);
             break;
           }
         }
@@ -552,6 +575,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           if (EA->canParameterEscape(AI, Arg, isIndirect)) {
             LastSeenOp[Id] = Kill;
             KilledCowValues[Id] = true;
+            markAsCandidate(I);
             DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n" << CowValue;
                   I->dumpInContext());
             break;
@@ -572,6 +596,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
+          markAsCandidate(I);
           DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
                 I->dumpInContext());
           break;
@@ -579,6 +604,9 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       }
       continue;
     }
+
+    if (isa<RefCountingInst>(I))
+      markAsCandidate(I);
 
 #if 0
     if (isa<StrongRetainInst>(I) || isa<RetainValueInst>(I)) {
@@ -622,6 +650,10 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
 StateChanges NonAtomicRCTransformer::transformAllBlocks() {
   StateChanges Changes = SILAnalysis::InvalidationKind::Nothing;
   for (auto &BB : *F) {
+    // Skip a BB if it does not contain any interesting instructions.
+    if (!CandidateBBs.count(&BB))
+      continue;
+
     auto &BBState = DF.getBlockState(&BB);
     // The set of currently active uniqness regions.
     // Indexed by the id of a CowValue being tracked.
@@ -631,6 +663,33 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
     auto II = BB.begin();
     while (II != BB.end()) {
       auto I = &*II++;
+
+      // If this instruction is not marked as "interesting" during the scan phase, bail.
+      if (Candidates.count(I))
+        continue;
+
+      if (auto *RC = dyn_cast<RefCountingInst>(I)) {
+        auto Ref = RC->getOperand(0);
+        // If the region for a given CowValue is active and
+        // if this is the array buffer reference or if this is
+        // the array container itself, then it can be replaced
+        // by a non-atomic variant.
+        for (auto &KV : CowValueId) {
+          auto CowValue = KV.getFirst();
+          auto Id = KV.getSecond();
+          // Check if it kills any non-local region.
+          if (CurrentlyActive.test(Id) &&
+              isRCofArrayValueAt(CowValue.getDef(), I)) {
+            Changes = StateChanges( Changes | SILAnalysis::InvalidationKind::Instructions);
+            RC->setNonAtomic(true);
+            DEBUG(llvm::dbgs()
+                  << "RC operation inside make_mutable region can be "
+                     "non-atomic: ";
+                  RC->dump());
+            break;
+          }
+        }
+      }
 
       // Check if instruction may overwrite the array buffer reference in the
       // container.
@@ -769,29 +828,6 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           }
         }
         continue;
-      }
-
-      if (auto *RC = dyn_cast<RefCountingInst>(I)) {
-        auto Ref = RC->getOperand(0);
-        // If the region for a given CowValue is active and
-        // if this is the array buffer reference or if this is
-        // the array container itself, then it can be replaced
-        // by a non-atomic variant.
-        for (auto &KV : CowValueId) {
-          auto CowValue = KV.getFirst();
-          auto Id = KV.getSecond();
-          // Check if it kills any non-local region.
-          if (CurrentlyActive.test(Id) &&
-              isRCofArrayValueAt(CowValue.getDef(), I)) {
-            Changes = StateChanges( Changes | SILAnalysis::InvalidationKind::Instructions);
-            RC->setNonAtomic(true);
-            DEBUG(llvm::dbgs()
-                  << "RC operation inside make_mutable region can be "
-                     "non-atomic: ";
-                  RC->dump());
-            break;
-          }
-        }
       }
 
       // Nothing else can change or escape the array buffer reference.
