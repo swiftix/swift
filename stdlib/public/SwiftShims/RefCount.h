@@ -140,16 +140,24 @@ class StrongRefCount {
 
   bool tryIncrementAndPinNonAtomic() {
     uint32_t oldval = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
-    // If the flag is already set, just fail.
-    if (oldval & RC_PINNED_FLAG) {
-      return false;
-    }
+    while (true) {
+      // If the flag is already set, just fail.
+      if (oldval & RC_PINNED_FLAG) {
+        return false;
+      }
 
-    // Try to simultaneously set the flag and increment the reference count.
-    uint32_t newval = oldval + (RC_PINNED_FLAG + RC_ONE);
-    __atomic_store_n(&refCount, newval, __ATOMIC_RELAXED);
-    return true;
+      // Try to simultaneously set the flag and increment the reference count.
+      uint32_t newval = oldval + (RC_PINNED_FLAG + RC_ONE);
+      // Use store __ATOMIC_RELAXED here?
+      if (__atomic_compare_exchange(&refCount, &oldval, &newval, 0,
+                                    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+        return true;
+      }
+
+      // Try again; oldval has been updated with the value we saw.
+    }
   }
+
 
   // Increment the reference count, unless the object is deallocating.
   bool tryIncrement() {
