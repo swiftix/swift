@@ -384,7 +384,18 @@ bool NonAtomicRCTransformer::isRCofArrayValueAt(ValueBase *ArrayStruct,
   auto *RCI = dyn_cast<RefCountingInst>(Inst);
   if (!RCI)
     return false;
-  return isArrayValue(ArrayStruct, RCI->getOperand(0));
+  if (isArrayValue(ArrayStruct, RCI->getOperand(0)))
+    return true;
+  // Check if this is the "array.owner" of the array.
+  SILValue Op = RCI->getOperand(0);
+  ArraySemanticsCall Call(Op.getDef());
+  if (!Call)
+    return false;
+  if (Call.getKind() != ArrayCallKind::kGetArrayOwner)
+    return false;
+  if (isArrayValue(ArrayStruct, Call.getSelf()))
+    return true;
+  return false;
 }
 
 bool NonAtomicRCTransformer::isStoreAliasingArrayValue(ValueBase *ArrayStruct,
