@@ -391,20 +391,24 @@ void swift::swift_setDeallocating(HeapObject *object) {
   object->refCount.decrementFromOneAndDeallocateNonAtomic();
 }
 
-SWIFT_RT_ENTRY_VISIBILITY
-void swift::swift_nonatomic_release_n(HeapObject *object, uint32_t n)
-    SWIFT_CC(RegisterPreservingCC_IMPL) {
-  return SWIFT_RT_ENTRY_REF(swift_nonatomic_release_n)(object, n);
+void swift::swift_nonatomic_retain(HeapObject *object) {
+  _swift_nonatomic_retain(object);
 }
+static void _swift_nonatomic_retain_(HeapObject *object) {
+  _swift_nonatomic_retain_inlined(object);
+}
+auto swift::_swift_nonatomic_retain = _swift_nonatomic_retain_;
 
-SWIFT_RT_ENTRY_IMPL_VISIBILITY
-extern "C"
-void SWIFT_RT_ENTRY_IMPL(swift_nonatomic_release_n)(HeapObject *object, uint32_t n)
-    SWIFT_CC(RegisterPreservingCC_IMPL) {
-  if (object && object->refCount.decrementShouldDeallocateNNonAtomic(n)) {
+void swift::swift_nonatomic_release(HeapObject *object) {
+  return _swift_nonatomic_release(object);
+}
+static void _swift_nonatomic_release_(HeapObject *object) {
+  if (object  &&  object->refCount.decrementShouldDeallocateNonAtomic()) {
+    // TODO: Use non-atomic _swift_release_dealloc?
     _swift_release_dealloc(object);
   }
 }
+auto swift::_swift_nonatomic_release = _swift_nonatomic_release_;
 
 size_t swift::swift_retainCount(HeapObject *object) {
   return object->refCount.getCount();

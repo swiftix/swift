@@ -96,9 +96,7 @@ class StrongRefCount {
   }
 
   void incrementNonAtomic() {
-    uint32_t val = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
-    val += RC_ONE;
-    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
+    refCount += RC_ONE;
   }
 
   // Increment the reference count by n.
@@ -281,10 +279,7 @@ private:
     // it's already set.
     constexpr uint32_t quantum =
       (ClearPinnedFlag ? RC_ONE + RC_PINNED_FLAG : RC_ONE);
-    uint32_t val = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
-    val -= quantum;
-    __atomic_store_n(&refCount, val, __ATOMIC_RELEASE);
-    uint32_t newval = refCount;
+    uint32_t newval = refCount - quantum;
 
     assert((!ClearPinnedFlag || !(newval & RC_PINNED_FLAG)) &&
            "unpinning reference that was not pinned");
@@ -311,8 +306,7 @@ private:
                   "fix decrementShouldDeallocate() if you add more flags");
     uint32_t oldval = 0;
     newval = RC_DEALLOCATING_FLAG;
-    return __atomic_compare_exchange(&refCount, &oldval, &newval, 0,
-                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+    return (refCount == oldval) ? newval : 0;
   }
 
   template <bool ClearPinnedFlag>

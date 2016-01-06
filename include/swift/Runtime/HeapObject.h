@@ -221,15 +221,6 @@ SWIFT_RUNTIME_EXPORT
 extern "C"
 void (*SWIFT_CC(RegisterPreservingCC) _swift_nonatomic_retain)(HeapObject *object);
 
-SWIFT_RT_ENTRY_VISIBILITY
-extern "C"
-void swift_nonatomic_retain_n(HeapObject *object, uint32_t n)
-    SWIFT_CC(RegisterPreservingCC);
-
-SWIFT_RUNTIME_EXPORT
-extern "C"
-void (*SWIFT_CC(RegisterPreservingCC) _swift_nonatomic_retain_n)(HeapObject *object,
-                                                       uint32_t n);
 
 static inline void _swift_retain_inlined(HeapObject *object) {
   if (object) {
