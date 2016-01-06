@@ -1385,10 +1385,16 @@ public:
     *this << getIDAndType(RI->getOperand());
   }
   void visitStrongPinInst(StrongPinInst *PI) {
-    *this << "strong_pin " << getIDAndType(PI->getOperand());
+    *this << "strong_pin ";
+    if (PI->isNonAtomic())
+      *this << "[ nonatomic ] ";
+    *this << getIDAndType(PI->getOperand());
   }
   void visitStrongUnpinInst(StrongUnpinInst *UI) {
-    *this << "strong_unpin " << getIDAndType(UI->getOperand());
+    *this << "strong_unpin ";
+    if (UI->isNonAtomic())
+      *this << "[ nonatomic ] ";
+    *this << getIDAndType(UI->getOperand());
   }
   void visitStrongRetainUnownedInst(StrongRetainUnownedInst *RI) {
     *this << "strong_retain_unowned " << getIDAndType(RI->getOperand());
