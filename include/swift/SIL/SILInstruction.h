@@ -2291,6 +2291,9 @@ protected:
   RefCountingInst(ValueKind Kind, SILDebugLocation *DebugLoc)
       : SILInstruction(Kind, DebugLoc), nonatomic(false) {}
 
+  RefCountingInst(ValueKind Kind, SILDebugLocation *DebugLoc, SILType Type)
+      : SILInstruction(Kind, DebugLoc, Type), nonatomic(false) {}
+
 public:
   static bool classof(const ValueBase *V) {
     return V->getKind() >= ValueKind::First_RefCountingInst &&
@@ -2354,7 +2357,7 @@ class SetDeallocatingInst
 /// unpin may be conservatively assumed to have arbitrary
 /// side-effects.)
 class StrongPinInst
-  : public UnaryInstructionBase<ValueKind::StrongPinInst, SILInstruction,
+  : public UnaryInstructionBase<ValueKind::StrongPinInst, RefCountingInst,
                                 /*HasResult*/ true>
 {
   friend class SILBuilder;
@@ -2365,7 +2368,7 @@ class StrongPinInst
 /// StrongUnpinInst - Given that the operand is the result of a
 /// strong_pin instruction, unpin it.
 class StrongUnpinInst
-  : public UnaryInstructionBase<ValueKind::StrongUnpinInst, SILInstruction,
+  : public UnaryInstructionBase<ValueKind::StrongUnpinInst, RefCountingInst,
                                 /*HasResult*/ false>
 {
   friend class SILBuilder;
