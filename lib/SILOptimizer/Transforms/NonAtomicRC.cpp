@@ -666,7 +666,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
       auto I = &*II++;
 
       // If this instruction is not marked as "interesting" during the scan phase, bail.
-      if (Candidates.count(I))
+      if (!Candidates.count(I))
         continue;
 
       if (auto *RC = dyn_cast<RefCountingInst>(I)) {
