@@ -294,7 +294,7 @@ StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
     return SILAnalysis::InvalidationKind::Nothing;
 
   // As long as the value does not escape the function, it is fine.
-  if (Node->escapes())
+  if (Node->escapesInsideFunction(false))
     return SILAnalysis::InvalidationKind::Nothing;
 
   // This value does not escape, which means that it is
