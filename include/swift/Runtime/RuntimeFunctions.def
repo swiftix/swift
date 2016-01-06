@@ -243,8 +243,7 @@ FUNCTION(NativeTryPin, swift_tryPin, RegisterPreservingCC,
          ATTRS(NoUnwind))
 
 // void swift_nonatomic_release(void *ptr);
-FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(NativeNonAtomicStrongRelease, swift_nonatomic_release,
-         _swift_nonatomic_release, _swift_nonatomic_release_, RegisterPreservingCC,
+FUNCTION(NativeNonAtomicStrongRelease, swift_nonatomic_release, RuntimeCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
@@ -270,13 +269,13 @@ FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(IsDeallocating, swift_isDeallocating,
          ATTRS(NoUnwind, ZExt))
 
 // void *swift_nonatomic_tryPin(void *ptr);
-FUNCTION(NonAtomicNativeTryPin, swift_nonatomic_tryPin, RegisterPreservingCC,
+FUNCTION(NonAtomicNativeTryPin, swift_nonatomic_tryPin, RuntimeCC,
          RETURNS(RefCountedPtrTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_nonatomic_unpin(void *ptr);
-FUNCTION(NonAtomicNativeUnpin, swift_nonatomic_unpin, RegisterPreservingCC,
+FUNCTION(NonAtomicNativeUnpin, swift_nonatomic_unpin, RuntimeCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))

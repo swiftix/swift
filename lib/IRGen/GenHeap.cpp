@@ -1264,8 +1264,10 @@ void IRGenFunction::emitErrorStrongRelease(llvm::Value *value) {
   emitUnaryRefCountCall(*this, IGM.getErrorStrongReleaseFn(), value);
 }
 
-llvm::Value *IRGenFunction::emitNativeTryPin(llvm::Value *value) {
-  llvm::CallInst *call = Builder.CreateCall(IGM.getNativeTryPinFn(), value);
+llvm::Value *IRGenFunction::emitNativeTryPin(llvm::Value *value, bool IsAtomic) {
+  llvm::CallInst *call =
+      (IsAtomic) ? Builder.CreateCall(IGM.getNativeTryPinFn(), value)
+                 : Builder.CreateCall(IGM.getNonAtomicNativeTryPinFn(), value);
   call->setDoesNotThrow();
 
   // Builtin.NativeObject? has representation i32/i64.
@@ -1273,11 +1275,13 @@ llvm::Value *IRGenFunction::emitNativeTryPin(llvm::Value *value) {
   return handle;
 }
 
-void IRGenFunction::emitNativeUnpin(llvm::Value *value) {
+void IRGenFunction::emitNativeUnpin(llvm::Value *value, bool IsAtomic) {
   // Builtin.NativeObject? has representation i32/i64.
   value = Builder.CreateIntToPtr(value, IGM.RefCountedPtrTy);
 
-  llvm::CallInst *call = Builder.CreateCall(IGM.getNativeUnpinFn(), value);
+  llvm::CallInst *call =
+      (IsAtomic) ? Builder.CreateCall(IGM.getNativeUnpinFn(), value)
+                 : Builder.CreateCall(IGM.getNonAtomicNativeUnpinFn(), value);
   call->setDoesNotThrow();
 }
 

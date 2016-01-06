@@ -313,8 +313,8 @@ public:
   void emitNativeWeakCopyAssign(Address destAddr, Address srcAddr);
   void emitNativeWeakTakeAssign(Address destAddr, Address srcAddr);
   //   - other operations
-  llvm::Value *emitNativeTryPin(llvm::Value *object);
-  void emitNativeUnpin(llvm::Value *handle);
+  llvm::Value *emitNativeTryPin(llvm::Value *object, bool isAtomic);
+  void emitNativeUnpin(llvm::Value *handle, bool isAtomic);
 
   // Routines for the ObjC reference-counting style.
   void emitObjCStrongRetain(llvm::Value *value);
