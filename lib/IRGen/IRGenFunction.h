@@ -230,8 +230,10 @@ public:
 
   // Routines that are generic over the reference-counting style:
   //   - strong references
-  void emitStrongRetain(llvm::Value *value, ReferenceCounting refcounting);
-  void emitStrongRelease(llvm::Value *value, ReferenceCounting refcounting);
+  void emitStrongRetain(llvm::Value *value, ReferenceCounting refcounting,
+                        bool isAtomic);
+  void emitStrongRelease(llvm::Value *value, ReferenceCounting refcounting,
+                         bool isAtomic);
   llvm::Value *emitLoadRefcountedPtr(Address addr, ReferenceCounting style);
 
   //   - unowned references
@@ -282,8 +284,8 @@ public:
   //   - strong references
   void emitNativeStrongAssign(llvm::Value *value, Address addr);
   void emitNativeStrongInit(llvm::Value *value, Address addr);
-  void emitNativeStrongRetain(llvm::Value *value);
-  void emitNativeStrongRelease(llvm::Value *value);
+  void emitNativeStrongRetain(llvm::Value *value, bool isAtomic = true);
+  void emitNativeStrongRelease(llvm::Value *value, bool isAtomic = true);
   void emitNativeSetDeallocating(llvm::Value *value);
   //   - unowned references
   void emitNativeUnownedRetain(llvm::Value *value);

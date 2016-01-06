@@ -127,7 +127,7 @@ public:
                   Explosion &out) const override {
     addr = asDerived().projectScalar(IGF, addr);
     llvm::Value *value = IGF.Builder.CreateLoad(addr);
-    asDerived().emitScalarRetain(IGF, value);
+    asDerived().emitScalarRetain(IGF, value, /* isAtomic */ true);
     out.add(value);
   }
 
@@ -153,19 +153,19 @@ public:
 
     // Release the old value if we need to.
     if (!Derived::IsScalarPOD) {
-      asDerived().emitScalarRelease(IGF, oldValue);
+      asDerived().emitScalarRelease(IGF, oldValue, /* isAtomic */ true);
     }
   }
 
   void copy(IRGenFunction &IGF, Explosion &in, Explosion &out) const override {
     llvm::Value *value = in.claimNext();
-    asDerived().emitScalarRetain(IGF, value);
+    asDerived().emitScalarRetain(IGF, value, /* isAtomic */ true);
     out.add(value);
   }
   
   void consume(IRGenFunction &IGF, Explosion &in) const override {
     llvm::Value *value = in.claimNext();
-    asDerived().emitScalarRelease(IGF, value);
+    asDerived().emitScalarRelease(IGF, value, /* isAtomic */ true);
   }
 
   void fixLifetime(IRGenFunction &IGF, Explosion &in) const override {
@@ -177,7 +177,7 @@ public:
     if (!Derived::IsScalarPOD) {
       addr = asDerived().projectScalar(IGF, addr);
       llvm::Value *value = IGF.Builder.CreateLoad(addr, "toDestroy");
-      asDerived().emitScalarRelease(IGF, value);
+      asDerived().emitScalarRelease(IGF, value, /* isAtomic */ true);
     }
   }
   
@@ -214,10 +214,10 @@ private:
   friend class SingleScalarTypeInfo<Derived, Base>;
   static const bool IsScalarPOD = true;
 
-  void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value, bool isAtomic) const {
   }
 
-  void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value, bool isAtomic) const {
   }
 
   void emitScalarFixLifetime(IRGenFunction &IGF, llvm::Value *value) const {

@@ -830,8 +830,10 @@ namespace {
       return IGF.Builder.CreateStructGEP(addr, 0, Size(0));
     }
 
-    void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value) const {}
-    void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value) const {}
+    void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value,
+                          bool isAtomic) const {}
+    void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value,
+                           bool isAtomic) const {}
     void emitScalarFixLifetime(IRGenFunction &IGF, llvm::Value *value) const {}
 
     void initializeWithTake(IRGenFunction &IGF, Address dest, Address src,
@@ -2012,7 +2014,7 @@ namespace {
                                  llvm::Value *ptr) const {
       switch (CopyDestroyKind) {
       case NullableRefcounted:
-        IGF.emitStrongRetain(ptr, Refcounting);
+        IGF.emitStrongRetain(ptr, Refcounting, /* isAtomic */ true);
         return;
       case POD:
       case Normal:
@@ -2036,7 +2038,7 @@ namespace {
                                   llvm::Value *ptr) const {
       switch (CopyDestroyKind) {
       case NullableRefcounted:
-        IGF.emitStrongRelease(ptr, Refcounting);
+        IGF.emitStrongRelease(ptr, Refcounting, /* isAtomic */ true);
         return;
       case POD:
       case Normal:
@@ -2883,7 +2885,7 @@ namespace {
                                  llvm::Value *ptr) const {
       switch (CopyDestroyKind) {
       case TaggedRefcounted:
-        IGF.emitStrongRetain(ptr, Refcounting);
+        IGF.emitStrongRetain(ptr, Refcounting, /* isAtomic */ true);
         return;
       case POD:
       case BitwiseTakable:
@@ -2909,7 +2911,7 @@ namespace {
                                   llvm::Value *ptr) const {
       switch (CopyDestroyKind) {
       case TaggedRefcounted:
-        IGF.emitStrongRelease(ptr, Refcounting);
+        IGF.emitStrongRelease(ptr, Refcounting, /* isAtomic */ true);
         return;
       case POD:
       case BitwiseTakable:

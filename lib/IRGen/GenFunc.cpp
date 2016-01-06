@@ -290,14 +290,16 @@ namespace {
       IGF.emitFixLifetime(src.claimNext());
     }
 
-    void strongRetain(IRGenFunction &IGF, Explosion &e) const override {
+    void strongRetain(IRGenFunction &IGF, Explosion &e,
+                      bool isAtomic) const override {
       e.claimNext();
-      IGF.emitNativeStrongRetain(e.claimNext());
+      IGF.emitNativeStrongRetain(e.claimNext(), isAtomic);
     }
-    
-    void strongRelease(IRGenFunction &IGF, Explosion &e) const override {
+
+    void strongRelease(IRGenFunction &IGF, Explosion &e,
+                       bool isAtomic) const override {
       e.claimNext();
-      IGF.emitNativeStrongRelease(e.claimNext());
+      IGF.emitNativeStrongRelease(e.claimNext(), isAtomic);
     }
 
     void strongRetainUnowned(IRGenFunction &IGF, Explosion &e) const override {

@@ -230,23 +230,8 @@ FUNCTION(BridgeObjectReleaseN, swift_bridgeObjectRelease_n,
          ARGS(BridgeObjectPtrTy, Int32Ty),
          ATTRS(NoUnwind))
 
-// void swift_nonatomic_bridgeObjectRetain_n(void *ptr, int32_t n);
-FUNCTION(NonAtomicBridgeObjectRetainN, swift_nonatomic_bridgeObjectRetain_n,
-         DefaultCC,
-         RETURNS(BridgeObjectPtrTy),
-         ARGS(BridgeObjectPtrTy, Int32Ty),
-         ATTRS(NoUnwind))
-
-// void swift_nonatomic_bridgeObjectRelease_n(void *ptr, int32_t n);
-FUNCTION(NonAtomicBridgeObjectReleaseN, swift_nonatomic_bridgeObjectRelease_n,
-         DefaultCC,
-         RETURNS(VoidTy),
-         ARGS(BridgeObjectPtrTy, Int32Ty),
-         ATTRS(NoUnwind))
-
 // void swift_nonatomic_retain(void *ptr);
-FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(NativeNonAtomicStrongRetain, swift_nonatomic_retain,
-         _swift_nonatomic_retain, _swift_nonatomic_retain_, RegisterPreservingCC,
+FUNCTION(NativeNonAtomicStrongRetain, swift_nonatomic_retain, RuntimeCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))

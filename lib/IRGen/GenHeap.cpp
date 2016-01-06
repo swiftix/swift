@@ -406,11 +406,13 @@ namespace {
       return IGF.Builder.CreateBitCast(addr, ValueType->getPointerTo());
     }
 
-    void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value) const {
+    void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value,
+                          bool isAtomic) const {
       IGF.emitNativeUnownedRetain(value);
     }
 
-    void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value) const {
+    void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value,
+                           bool isAtomic) const {
       IGF.emitNativeUnownedRelease(value);
     }
 
@@ -928,7 +930,7 @@ static void emitStoreWeakLikeCall(IRGenFunction &IGF,
 }
 
 /// Emit a call to swift_retain.
-void IRGenFunction::emitNativeStrongRetain(llvm::Value *value) {
+void IRGenFunction::emitNativeStrongRetain(llvm::Value *value, bool isAtomic) {
   if (doesNotRequireRefCounting(value))
     return;
 
@@ -938,7 +940,9 @@ void IRGenFunction::emitNativeStrongRetain(llvm::Value *value) {
   
   // Emit the call.
   llvm::CallInst *call =
-    Builder.CreateCall(IGM.getNativeStrongRetainFn(), value);
+      (isAtomic)
+          ? Builder.CreateCall(IGM.getNativeStrongRetainFn(), value)
+          : Builder.CreateCall(IGM.getNativeNonAtomicStrongRetainFn(), value);
   call->setDoesNotThrow();
 }
 
@@ -964,7 +968,8 @@ void IRGenFunction::emitNativeStrongInit(llvm::Value *newValue,
 
 /// Emit a release of a live value with the given refcounting implementation.
 void IRGenFunction::emitStrongRelease(llvm::Value *value,
-                                      ReferenceCounting refcounting) {
+                                      ReferenceCounting refcounting,
+                                      bool isAtomic) {
   switch (refcounting) {
   case ReferenceCounting::Native:
     return emitNativeStrongRelease(value);
@@ -982,7 +987,8 @@ void IRGenFunction::emitStrongRelease(llvm::Value *value,
 }
 
 void IRGenFunction::emitStrongRetain(llvm::Value *value,
-                                     ReferenceCounting refcounting) {
+                                     ReferenceCounting refcounting,
+                                     bool isAtomic) {
   switch (refcounting) {
   case ReferenceCounting::Native:
     emitNativeStrongRetain(value);
@@ -1107,9 +1113,13 @@ void IRGenFunction::emitStrongRetainAndUnownedRelease(llvm::Value *value,
 }
 
 /// Emit a release of a live value.
-void IRGenFunction::emitNativeStrongRelease(llvm::Value *value) {
+void IRGenFunction::emitNativeStrongRelease(llvm::Value *value, bool isAtomic) {
   if (doesNotRequireRefCounting(value)) return;
-  emitUnaryRefCountCall(*this, IGM.getNativeStrongReleaseFn(), value);
+  if (isAtomic)
+    emitUnaryRefCountCall(*this, IGM.getNativeStrongReleaseFn(), value);
+  else
+    emitUnaryRefCountCall(*this, IGM.getNativeNonAtomicStrongReleaseFn(),
+                          value);
 }
 
 void IRGenFunction::emitNativeSetDeallocating(llvm::Value *value) {

@@ -88,28 +88,30 @@ public:
 
   // Emit the copy/destroy operations required by SingleScalarTypeInfo
   // using strong reference counting.
-  void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value) const {
-    IGF.emitStrongRelease(value, asDerived().getReferenceCounting());
+  void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value,
+                         bool isAtomic) const {
+    IGF.emitStrongRelease(value, asDerived().getReferenceCounting(), isAtomic);
   }
 
   void emitScalarFixLifetime(IRGenFunction &IGF, llvm::Value *value) const {
     return IGF.emitFixLifetime(value);
   }
 
-  void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value) const {
-    IGF.emitStrongRetain(value, asDerived().getReferenceCounting());
+  void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value,
+                        bool isAtomic) const {
+    IGF.emitStrongRetain(value, asDerived().getReferenceCounting(), isAtomic);
   }
 
   // Implement the primary retain/release operations of ReferenceTypeInfo
   // using basic reference counting.
-  void strongRetain(IRGenFunction &IGF, Explosion &e) const override {
+  void strongRetain(IRGenFunction &IGF, Explosion &e, bool isAtomic) const override {
     llvm::Value *value = e.claimNext();
-    asDerived().emitScalarRetain(IGF, value);
+    asDerived().emitScalarRetain(IGF, value, isAtomic);
   }
 
-  void strongRelease(IRGenFunction &IGF, Explosion &e) const override {
+  void strongRelease(IRGenFunction &IGF, Explosion &e, bool isAtomic) const override {
     llvm::Value *value = e.claimNext();
-    asDerived().emitScalarRelease(IGF, value);
+    asDerived().emitScalarRelease(IGF, value, isAtomic);
   }
 
   void strongRetainUnowned(IRGenFunction &IGF, Explosion &e) const override {
@@ -215,5 +217,3 @@ public:
 }
 
 #endif
-
-
