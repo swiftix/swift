@@ -518,13 +518,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
     if (auto AI = FullApplySite::isa(I)) {
       ArraySemanticsCall ArrayCall(AI.getInstruction());
       if (ArrayCall && ArrayCall.getKind() == ArrayCallKind::kMakeMutable) {
-        // Add to the set of makeUnique calls
-        // The COW object that is made a thread-local by this call.
+        // This is a GEN operation, it starts a region.
         auto CowValue = ArrayCall.getSelf();
-
-        // TODO: Check if there is an existing region which is alive
-        // and uses the same CowValue.If this is the case, this
-        // make unique call can be just removed and ignored.
         LastSeenOp[CowValueId[CowValue]] = Gen;
         markAsCandidate(I);
 
@@ -570,8 +565,6 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       // If it escapes inside the function, it also ends the region.
       // But what if it is only read inside the function? it would be nice if EA
       // would say it does not escape.
-      // TODO: We want an API to check if a given SILValue is an argument of a
-      // apply site and if it is escaping inside the function.
 
       // Check if it kills any non-local region.
       for (auto &KV : CowValueId) {
@@ -802,8 +795,6 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
         // But what if it is only read inside the function? it would be nice if
         // EA
         // would say it does not escape.
-        // TODO: We want an API to check if a given SILValue is an argument of a
-        // apply site and if it is escaping inside the function.
 
         // Check if it kills any non-local region.
         for (auto &KV : CowValueId) {
@@ -864,7 +855,6 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
 /// on the array can be non-atomic. Subsequent
 /// make_mutable calls on the same array can
 /// be eliminated.
-/// TODO: Handle GENs followed by KILLs.
 void NonAtomicRCTransformer::findAllMakeUnique() {
   unsigned UniqueIdx = 0;
   // Find all make_mutable. This gives us the number
