@@ -972,7 +972,7 @@ void IRGenFunction::emitStrongRelease(llvm::Value *value,
                                       bool isAtomic) {
   switch (refcounting) {
   case ReferenceCounting::Native:
-    return emitNativeStrongRelease(value);
+    return emitNativeStrongRelease(value, isAtomic);
   case ReferenceCounting::ObjC:
     return emitObjCStrongRelease(value);
   case ReferenceCounting::Block:
@@ -991,7 +991,7 @@ void IRGenFunction::emitStrongRetain(llvm::Value *value,
                                      bool isAtomic) {
   switch (refcounting) {
   case ReferenceCounting::Native:
-    emitNativeStrongRetain(value);
+    emitNativeStrongRetain(value, isAtomic);
     return;
   case ReferenceCounting::Bridge:
     emitBridgeStrongRetain(value);
