@@ -569,6 +569,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       // Check if this array semantics call takes one of the tracked
       // CowValues as its arguments.
       if (ArrayCall) {
+        if (ArrayCall.getKind() == ArrayCallKind::kArrayPropsIsNativeTypeChecked)
+          markAsCandidate(I);
         if (doesNotChangeUniquness(ArrayCall))
           continue;
 
@@ -798,6 +800,35 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           // Mark region as active.
           CurrentlyActive[Id] = true;
           continue;
+        }
+
+        if (ArrayCall &&
+            ArrayCall.getKind() ==
+                ArrayCallKind::kArrayPropsIsNativeTypeChecked) {
+#if 0
+          auto CowValue = ArrayCall.getKindetSelf();
+          // Check if this is_native_typecheck is inside an existing region for
+          // the
+          // same CowValue. If this is the case, then it can be removed, because
+          // the buffer is always native after a make_mutable call.
+          // The region may have started either in this BB or outside.
+          auto Id = CowValueId[CowValue];
+          if (CurrentlyActive.test(Id) && isArrayOfPods(CowValue)) {
+            DEBUG(llvm::dbgs()
+                      << "is_native_typecheck call can be eliminated:\n";
+                  (*ArrayCall).dumpInContext());
+            SILBuilder B(I);
+            auto TrueVal = B.createIntegerLiteral(I->getLoc(),
+                                   SILType::getBuiltinIntegerType(
+                                       1, I->getModule().getASTContext()),
+                                   -1);
+            ArrayCall.replaceByValue(SILValue(TrueVal));
+            Changes =
+                StateChanges(Changes | SILAnalysis::InvalidationKind::Calls);
+            // TODO: Rescan the release instruction?
+            continue;
+          }
+#endif
         }
 
         if (ArrayCall) {
