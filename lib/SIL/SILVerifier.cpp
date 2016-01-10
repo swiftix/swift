@@ -2364,8 +2364,8 @@ public:
             "bridge_object_to_ref must take a BridgeObject");
     require(RI->getType().isObject(),
             "bridge_object_to_ref must produce a value");
-    require(RI->getType().getSwiftRValueType()->isBridgeableObjectType(),
-            "bridge_object_to_ref must produce a heap object reference");
+    //require(RI->getType().getSwiftRValueType()->isBridgeableObjectType(),
+    //        "bridge_object_to_ref must produce a heap object reference");
   }
   void checkBridgeObjectToWordInst(BridgeObjectToWordInst *RI) {
     require(RI->getConverted()->getType()

@@ -257,8 +257,43 @@ private:
   StateChanges transformAllBlocks();
   void getCowValueArgsOfApply(FullApplySite AI, SILValue CowValue, SmallVectorImpl<int> &Args);
   void markAsCandidate(SILInstruction *I);
+};
+
+static void markAsNonAtomic(RefCountingInst *I) {
+  SILValue Op = I->getOperand(0);
+#if 1
+  if (Op.getType() ==
+      SILType::getBridgeObjectType(I->getModule().getASTContext())) {
+    // Convert this bridged object to a native object ref.
+    SILBuilder B(I);
+    SILValue NativeRef = B.createBridgeObjectToRef(
+        I->getLoc(), Op,
+        SILType::getNativeObjectType(I->getModule().getASTContext()));
+    RefCountingInst *NewI = nullptr;
+    switch (I->getKind()) {
+    default:
+      llvm_unreachable("This reference counting instruction is not supported");
+    case ValueKind::StrongRetainInst:
+      NewI = B.createStrongRetain(I->getLoc(), NativeRef);
+      break;
+    case ValueKind::StrongReleaseInst:
+      NewI = B.createStrongRelease(I->getLoc(), NativeRef);
+      break;
+    case ValueKind::StrongPinInst:
+      NewI = B.createStrongPin(I->getLoc(), NativeRef);
+      break;
+    case ValueKind::StrongUnpinInst:
+      NewI = B.createStrongUnpin(I->getLoc(), NativeRef);
+      break;
+    }
+    NewI->setNonAtomic(true);
+    I->replaceAllUsesWith(NewI);
+    I->eraseFromParent();
+    return;
+  }
+#endif
+  I->setNonAtomic(true);
 }
-;
 
 /// Returns true, if a given array semantics call does not
 /// change the uniqueness of the array buffer.
@@ -300,7 +335,7 @@ StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
   // This value does not escape, which means that it is
   // thread-local.
   // Use non-atomic RC instructions for it.
-  RCInst->setNonAtomic(true);
+  markAsNonAtomic(RCInst);
   NumNonAtomicRC++;
   DEBUG(
     llvm::dbgs() << "Marking the RC instruction as non-atomic:\n";
@@ -686,7 +721,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           if (CurrentlyActive.test(Id) &&
               isRCofArrayValueAt(CowValue.getDef(), I)) {
             Changes = StateChanges( Changes | SILAnalysis::InvalidationKind::Instructions);
-            RC->setNonAtomic(true);
+            markAsNonAtomic(RC);
             DEBUG(llvm::dbgs()
                   << "RC operation inside make_mutable region can be "
                      "non-atomic: ";
