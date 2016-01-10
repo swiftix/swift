@@ -375,7 +375,8 @@ bool checkUniqueArrayContainer(SILFunction *Function, SILValue ArrayContainer) {
         continue;
 
       if (!Params[ArgIdx].isIndirectInOut()) {
-        DEBUG(llvm::dbgs() << "    Skipping Array: Not an inout argument!\n");
+        DEBUG(llvm::dbgs() << "    Skipping Array: Not an inout argument!\n";
+              ArrayContainer.dump());
         return false;
       }
     }
@@ -385,7 +386,8 @@ bool checkUniqueArrayContainer(SILFunction *Function, SILValue ArrayContainer) {
     return true;
 
   DEBUG(llvm::dbgs()
-        << "    Skipping Array: Not an argument or local variable!\n");
+        << "    Skipping Array: Not an argument or local variable!\n";
+        ArrayContainer.dump());
   return false;
 }
 
@@ -971,7 +973,7 @@ StateChanges NonAtomicRCTransformer::process() {
   auto ChangesRefCounting = processNonEscapingRefCountingInsts();
 
   if (ChangesUniquness || ChangesRefCounting) {
-    DEBUG(llvm::dbgs() << "Function after the transformation:";
+    DEBUG(llvm::dbgs() << "\n\nFunction after the transformation:";
           F->dump());
   }
 
