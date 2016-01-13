@@ -354,6 +354,8 @@ IRGenModule::IRGenModule(IRGenModuleDispatcher &dispatcher, SourceFile *SF,
   
   // TODO: use "tinycc" on platforms that support it
   RuntimeCC = llvm::CallingConv::C;
+  RefCountingCC = llvm::CallingConv::PreserveMost;
+
 
   ABITypes = new CodeGenABITypes(clangASTContext, Module);
 

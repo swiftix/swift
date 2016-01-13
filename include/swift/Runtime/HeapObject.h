@@ -154,8 +154,8 @@ extern "C" void swift_slowDealloc(void *ptr, size_t bytes, size_t alignMask);
 ///      - maybe a variant that can assume a non-null object
 /// It may also prove worthwhile to have this use a custom CC
 /// which preserves a larger set of registers.
-extern "C" void swift_retain(HeapObject *object);
-extern "C" void swift_retain_n(HeapObject *object, uint32_t n);
+extern "C" void swift_retain(HeapObject *object) RUNTIME_CC;
+extern "C" void swift_retain_n(HeapObject *object, uint32_t n) RUNTIME_CC;
 
 static inline void _swift_retain_inlined(HeapObject *object) {
   if (object) {
@@ -165,7 +165,7 @@ static inline void _swift_retain_inlined(HeapObject *object) {
 
 /// Atomically increments the reference count of an object, unless it has
 /// already been destroyed. Returns nil if the object is dead.
-extern "C" HeapObject *swift_tryRetain(HeapObject *object);
+extern "C" HeapObject *swift_tryRetain(HeapObject *object) RUNTIME_CC;
 
 /// Returns true if an object is in the process of being deallocated.
 extern "C" bool swift_isDeallocating(HeapObject *object);
@@ -177,13 +177,13 @@ extern "C" bool swift_isDeallocating(HeapObject *object);
 /// calling swift_unpin on the return value.
 ///
 /// The object reference may not be nil.
-extern "C" HeapObject *swift_tryPin(HeapObject *object);
+extern "C" HeapObject *swift_tryPin(HeapObject *object) RUNTIME_CC;
 
 /// Given that an object is pinned, atomically unpin it and decrement
 /// the reference count.
 ///
 /// The object reference may be nil (to simplify the protocol).
-extern "C" void swift_unpin(HeapObject *object);
+extern "C" void swift_unpin(HeapObject *object) RUNTIME_CC;
   
 /// Atomically decrements the retain count of an object.  If the
 /// retain count reaches zero, the object is destroyed as follows:
@@ -200,11 +200,11 @@ extern "C" void swift_unpin(HeapObject *object);
 ///      - a variant that can safely use non-atomic operations
 ///      - maybe a variant that can assume a non-null object
 /// It's unlikely that a custom CC would be beneficial here.
-extern "C" void swift_release(HeapObject *object);
+extern "C" void swift_release(HeapObject *object) RUNTIME_CC;
 
 /// Atomically decrements the retain count of an object n times. If the retain
 /// count reaches zero, the object is destroyed
-extern "C" void swift_release_n(HeapObject *object, uint32_t n);
+extern "C" void swift_release_n(HeapObject *object, uint32_t n) RUNTIME_CC;
 
 /// Is this pointer a non-null unique reference to an object
 /// that uses Swift reference counting?
@@ -367,25 +367,25 @@ struct UnownedReference {
 };
 
 /// Increment the weak/unowned retain count.
-extern "C" void swift_unownedRetain(HeapObject *value);
+extern "C" void swift_unownedRetain(HeapObject *value) RUNTIME_CC;
 
 /// Decrement the weak/unowned retain count.
-extern "C" void swift_unownedRelease(HeapObject *value);
+extern "C" void swift_unownedRelease(HeapObject *value) RUNTIME_CC;
 
 /// Increment the weak/unowned retain count by n.
-extern "C" void swift_unownedRetain_n(HeapObject *value, int n);
+extern "C" void swift_unownedRetain_n(HeapObject *value, int n) RUNTIME_CC;
 
 /// Decrement the weak/unowned retain count by n.
-extern "C" void swift_unownedRelease_n(HeapObject *value, int n);
+extern "C" void swift_unownedRelease_n(HeapObject *value, int n) RUNTIME_CC;
 
 /// Increment the strong retain count of an object, aborting if it has
 /// been deallocated.
-extern "C" void swift_unownedRetainStrong(HeapObject *value);
+extern "C" void swift_unownedRetainStrong(HeapObject *value) RUNTIME_CC;
 
 /// Increment the strong retain count of an object which may have been
 /// deallocated, aborting if it has been deallocated, and decrement its
 /// weak/unowned reference count.
-extern "C" void swift_unownedRetainStrongAndRelease(HeapObject *value);
+extern "C" void swift_unownedRetainStrongAndRelease(HeapObject *value) RUNTIME_CC;
 
 /// Aborts if the object has been deallocated.
 extern "C" void swift_unownedCheck(HeapObject *value);
@@ -520,9 +520,9 @@ extern "C" void swift_weakTakeAssign(WeakReference *dest, WeakReference *src);
 /************************* OTHER REFERENCE-COUNTING **************************/
 /*****************************************************************************/
 
-extern "C" void *swift_bridgeObjectRetain(void *value);
+extern "C" void *swift_bridgeObjectRetain(void *value) RUNTIME_CC;
 /// Increment the strong retain count of a bridged object by n.
-extern "C" void *swift_bridgeObjectRetain_n(void *value, int n);
+extern "C" void *swift_bridgeObjectRetain_n(void *value, int n) RUNTIME_CC;
 
 /*****************************************************************************/
 /************************ UNKNOWN REFERENCE-COUNTING *************************/
@@ -532,10 +532,10 @@ extern "C" void *swift_bridgeObjectRetain_n(void *value, int n);
 
 /// Increment the strong retain count of an object which might not be a native
 /// Swift object.
-extern "C" void swift_unknownRetain(void *value);
+extern "C" void swift_unknownRetain(void *value) RUNTIME_CC;
 /// Increment the strong retain count of an object which might not be a native
 /// Swift object by n.
-extern "C" void swift_unknownRetain_n(void *value, int n);
+extern "C" void swift_unknownRetain_n(void *value, int n) RUNTIME_CC;
 
 #else
 
@@ -549,18 +549,18 @@ static inline void swift_unknownRetain_n(void *value, int n) {
 
 #endif /* SWIFT_OBJC_INTEROP */
 
-extern "C" void swift_bridgeObjectRelease(void *value);
+extern "C" void swift_bridgeObjectRelease(void *value) RUNTIME_CC;
 /// Decrement the strong retain count of a bridged object by n.
-extern "C" void swift_bridgeObjectRelease_n(void *value, int n);
+extern "C" void swift_bridgeObjectRelease_n(void *value, int n) RUNTIME_CC;
 
 #if SWIFT_OBJC_INTEROP
 
 /// Decrement the strong retain count of an object which might not be a native
 /// Swift object.
-extern "C" void swift_unknownRelease(void *value);
+extern "C" void swift_unknownRelease(void *value) RUNTIME_CC;
 /// Decrement the strong retain count of an object which might not be a native
 /// Swift object by n.
-extern "C" void swift_unknownRelease_n(void *value, int n);
+extern "C" void swift_unknownRelease_n(void *value, int n) RUNTIME_CC;
 
 #else
 
