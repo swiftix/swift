@@ -258,51 +258,51 @@ extern "C" LLVM_LIBRARY_VISIBILITY
 void _swift_release_dealloc(HeapObject *object)
   __attribute__((noinline,used));
 
-void swift::swift_retain(HeapObject *object) {
+void swift::swift_retain(HeapObject *object) RUNTIME_CC {
   _swift_retain(object);
 }
-static void _swift_retain_(HeapObject *object) {
+static void _swift_retain_(HeapObject *object) RUNTIME_CC {
   _swift_retain_inlined(object);
 }
 auto swift::_swift_retain = _swift_retain_;
 
-void swift::swift_retain_n(HeapObject *object, uint32_t n) {
+void swift::swift_retain_n(HeapObject *object, uint32_t n) RUNTIME_CC {
   _swift_retain_n(object, n);
 }
-static void _swift_retain_n_(HeapObject *object, uint32_t n) {
+static void _swift_retain_n_(HeapObject *object, uint32_t n) RUNTIME_CC {
   if (object) {
     object->refCount.increment(n);
   }
 }
 auto swift::_swift_retain_n = _swift_retain_n_;
 
-void swift::swift_release(HeapObject *object) {
+void swift::swift_release(HeapObject *object) RUNTIME_CC {
   return _swift_release(object);
 }
-static void _swift_release_(HeapObject *object) {
+static void _swift_release_(HeapObject *object) RUNTIME_CC {
   if (object  &&  object->refCount.decrementShouldDeallocate()) {
     _swift_release_dealloc(object);
   }
 }
 auto swift::_swift_release = _swift_release_;
 
-void swift::swift_release_n(HeapObject *object, uint32_t n) {
+void swift::swift_release_n(HeapObject *object, uint32_t n) RUNTIME_CC {
   return _swift_release_n(object, n);
 }
-static void _swift_release_n_(HeapObject *object, uint32_t n) {
+static void _swift_release_n_(HeapObject *object, uint32_t n) RUNTIME_CC {
   if (object && object->refCount.decrementShouldDeallocateN(n)) {
     _swift_release_dealloc(object);
   }
 }
 auto swift::_swift_release_n = _swift_release_n_;
 
-void swift::swift_unownedRetain(HeapObject *object) {
+void swift::swift_unownedRetain(HeapObject *object) RUNTIME_CC {
   if (!object) return;
 
   object->weakRefCount.increment();
 }
 
-void swift::swift_unownedRelease(HeapObject *object) {
+void swift::swift_unownedRelease(HeapObject *object) RUNTIME_CC {
   if (!object) return;
 
   if (object->weakRefCount.decrementShouldDeallocate()) {
@@ -316,13 +316,13 @@ void swift::swift_unownedRelease(HeapObject *object) {
   }
 }
 
-void swift::swift_unownedRetain_n(HeapObject *object, int n) {
+void swift::swift_unownedRetain_n(HeapObject *object, int n) RUNTIME_CC {
   if (!object) return;
 
   object->weakRefCount.increment(n);
 }
 
-void swift::swift_unownedRelease_n(HeapObject *object, int n) {
+void swift::swift_unownedRelease_n(HeapObject *object, int n) RUNTIME_CC {
   if (!object) return;
 
   if (object->weakRefCount.decrementShouldDeallocateN(n)) {
@@ -336,7 +336,7 @@ void swift::swift_unownedRelease_n(HeapObject *object, int n) {
   }
 }
 
-HeapObject *swift::swift_tryPin(HeapObject *object) {
+HeapObject *swift::swift_tryPin(HeapObject *object) RUNTIME_CC {
   assert(object);
 
   // Try to set the flag.  If this succeeds, the caller will be
@@ -350,16 +350,16 @@ HeapObject *swift::swift_tryPin(HeapObject *object) {
   return nullptr;
 }
 
-void swift::swift_unpin(HeapObject *object) {
+void swift::swift_unpin(HeapObject *object) RUNTIME_CC {
   if (object && object->refCount.decrementAndUnpinShouldDeallocate()) {
     _swift_release_dealloc(object);
   }
 }
 
-HeapObject *swift::swift_tryRetain(HeapObject *object) {
+HeapObject *swift::swift_tryRetain(HeapObject *object) RUNTIME_CC {
   return _swift_tryRetain(object);
 }
-static HeapObject *_swift_tryRetain_(HeapObject *object) {
+static HeapObject *_swift_tryRetain_(HeapObject *object) RUNTIME_CC {
   if (!object) return nullptr;
 
   if (object->refCount.tryIncrement()) return object;
@@ -376,7 +376,7 @@ static bool _swift_isDeallocating_(HeapObject *object) {
 }
 auto swift::_swift_isDeallocating = _swift_isDeallocating_;
 
-void swift::swift_unownedRetainStrong(HeapObject *object) {
+void swift::swift_unownedRetainStrong(HeapObject *object) RUNTIME_CC {
   if (!object) return;
   assert(object->weakRefCount.getCount() &&
          "object is not currently weakly retained");
@@ -385,7 +385,7 @@ void swift::swift_unownedRetainStrong(HeapObject *object) {
     _swift_abortRetainUnowned(object);
 }
 
-void swift::swift_unownedRetainStrongAndRelease(HeapObject *object) {
+void swift::swift_unownedRetainStrongAndRelease(HeapObject *object) RUNTIME_CC {
   if (!object) return;
   assert(object->weakRefCount.getCount() &&
          "object is not currently weakly retained");

@@ -54,8 +54,11 @@ class ARCEntryPointBuilder {
   NullablePtr<Type> ObjectPtrTy;
   NullablePtr<Type> BridgeObjectPtrTy;
 
+  llvm::CallingConv::ID RefCountingCC;
 public:
-  ARCEntryPointBuilder(Function &F) : B(&*F.begin()), Retain(), ObjectPtrTy() {}
+  ARCEntryPointBuilder(Function &F)
+      : B(&*F.begin()), Retain(), ObjectPtrTy(),
+        RefCountingCC(llvm::CallingConv::PreserveMost) {}
   ~ARCEntryPointBuilder() = default;
   ARCEntryPointBuilder(ARCEntryPointBuilder &&) = delete;
   ARCEntryPointBuilder(const ARCEntryPointBuilder &) = delete;
@@ -85,6 +88,7 @@ public:
 
     // Create the call.
     CallInst *CI = B.CreateCall(getRetain(), V);
+    CI->setCallingConv(RefCountingCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -95,6 +99,7 @@ public:
 
     // Create the call.
     CallInst *CI = B.CreateCall(getRelease(), V);
+    CI->setCallingConv(RefCountingCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -113,6 +118,7 @@ public:
     // Cast just to make sure that we have the right object type.
     V = B.CreatePointerCast(V, getObjectPtrTy());
     CallInst *CI = B.CreateCall(getRetainN(), {V, getIntConstant(n)});
+    CI->setCallingConv(RefCountingCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -121,6 +127,7 @@ public:
     // Cast just to make sure we have the right object type.
     V = B.CreatePointerCast(V, getObjectPtrTy());
     CallInst *CI = B.CreateCall(getReleaseN(), {V, getIntConstant(n)});
+    CI->setCallingConv(RefCountingCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -129,6 +136,7 @@ public:
     // Cast just to make sure that we have the right object type.
     V = B.CreatePointerCast(V, getObjectPtrTy());
     CallInst *CI = B.CreateCall(getUnknownRetainN(), {V, getIntConstant(n)});
+    CI->setCallingConv(RefCountingCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -137,6 +145,7 @@ public:
     // Cast just to make sure we have the right object type.
     V = B.CreatePointerCast(V, getObjectPtrTy());
     CallInst *CI = B.CreateCall(getUnknownReleaseN(), {V, getIntConstant(n)});
+    CI->setCallingConv(RefCountingCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -145,6 +154,7 @@ public:
     // Cast just to make sure we have the right object type.
     V = B.CreatePointerCast(V, getBridgeObjectPtrTy());
     CallInst *CI = B.CreateCall(getBridgeRetainN(), {V, getIntConstant(n)});
+    CI->setCallingConv(RefCountingCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -153,6 +163,7 @@ public:
     // Cast just to make sure we have the right object type.
     V = B.CreatePointerCast(V, getBridgeObjectPtrTy());
     CallInst *CI = B.CreateCall(getBridgeReleaseN(), {V, getIntConstant(n)});
+    CI->setCallingConv(RefCountingCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -333,4 +344,3 @@ private:
 } // end swift namespace
 
 #endif
-
