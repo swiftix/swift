@@ -127,49 +127,49 @@ FUNCTION(CopyPOD,        swift_copyPOD,       RuntimeCC,
          ATTRS(NoUnwind))
 
 // void swift_retain(void *ptr);
-FUNCTION(NativeStrongRetain, swift_retain, RuntimeCC,
+FUNCTION(NativeStrongRetain, swift_retain, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_release(void *ptr);
-FUNCTION(NativeStrongRelease, swift_release, RuntimeCC,
+FUNCTION(NativeStrongRelease, swift_release, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void *swift_tryPin(void *ptr);
-FUNCTION(NativeTryPin, swift_tryPin, RuntimeCC,
+FUNCTION(NativeTryPin, swift_tryPin, RefCountingCC,
          RETURNS(RefCountedPtrTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_unpin(void *ptr);
-FUNCTION(NativeUnpin, swift_unpin, RuntimeCC,
+FUNCTION(NativeUnpin, swift_unpin, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_unknownRetain(void *ptr);
-FUNCTION(UnknownRetain, swift_unknownRetain, RuntimeCC,
+FUNCTION(UnknownRetain, swift_unknownRetain, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(UnknownRefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_unknownRelease(void *ptr);
-FUNCTION(UnknownRelease, swift_unknownRelease, RuntimeCC,
+FUNCTION(UnknownRelease, swift_unknownRelease, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(UnknownRefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void *swift_bridgeObjectRetain(void *ptr);
-FUNCTION(BridgeObjectStrongRetain, swift_bridgeObjectRetain, RuntimeCC,
+FUNCTION(BridgeObjectStrongRetain, swift_bridgeObjectRetain, RefCountingCC,
          RETURNS(BridgeObjectPtrTy),
          ARGS(BridgeObjectPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_bridgeRelease(void *ptr);
-FUNCTION(BridgeObjectStrongRelease, swift_bridgeObjectRelease, RuntimeCC,
+FUNCTION(BridgeObjectStrongRelease, swift_bridgeObjectRelease, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(BridgeObjectPtrTy),
          ATTRS(NoUnwind))
@@ -187,26 +187,26 @@ FUNCTION(ErrorStrongRelease, swift_errorRelease, RuntimeCC,
          ATTRS(NoUnwind))
 
 // void swift_unownedRetain(void *ptr);
-FUNCTION(NativeUnownedRetain,  swift_unownedRetain, RuntimeCC,
+FUNCTION(NativeUnownedRetain,  swift_unownedRetain, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_unownedRelease(void *ptr);
-FUNCTION(NativeUnownedRelease, swift_unownedRelease,RuntimeCC,
+FUNCTION(NativeUnownedRelease, swift_unownedRelease, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_unownedRetainStrong(void *ptr);
-FUNCTION(NativeStrongRetainUnowned, swift_unownedRetainStrong, RuntimeCC,
+FUNCTION(NativeStrongRetainUnowned, swift_unownedRetainStrong, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_unownedRetainStrongAndRelease(void *ptr);
 FUNCTION(NativeStrongRetainAndUnownedRelease,
-         swift_unownedRetainStrongAndRelease, RuntimeCC,
+         swift_unownedRetainStrongAndRelease, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))

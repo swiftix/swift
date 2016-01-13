@@ -473,7 +473,7 @@ static bool usesNativeSwiftReferenceCounting_allocated(const void *object) {
   return usesNativeSwiftReferenceCounting(_swift_getClassOfAllocated(object));
 }
 
-void swift::swift_unknownRetain_n(void *object, int n) {
+void swift::swift_unknownRetain_n(void *object, int n) RUNTIME_CC {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object)) {
     swift_retain_n(static_cast<HeapObject *>(object), n);
@@ -483,7 +483,7 @@ void swift::swift_unknownRetain_n(void *object, int n) {
     objc_retain(static_cast<id>(object));
 }
 
-void swift::swift_unknownRelease_n(void *object, int n) {
+void swift::swift_unknownRelease_n(void *object, int n) RUNTIME_CC {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object))
     return swift_release_n(static_cast<HeapObject *>(object), n);
@@ -491,7 +491,7 @@ void swift::swift_unknownRelease_n(void *object, int n) {
     objc_release(static_cast<id>(object));
 }
 
-void swift::swift_unknownRetain(void *object) {
+void swift::swift_unknownRetain(void *object) RUNTIME_CC {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object)) {
     swift_retain(static_cast<HeapObject *>(object));
@@ -500,7 +500,7 @@ void swift::swift_unknownRetain(void *object) {
   objc_retain(static_cast<id>(object));
 }
 
-void swift::swift_unknownRelease(void *object) {
+void swift::swift_unknownRelease(void *object) RUNTIME_CC {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object))
     return swift_release(static_cast<HeapObject *>(object));
@@ -527,7 +527,7 @@ static void* toPlainObject_unTagged_bridgeObject(void *object) {
   return (void*)(uintptr_t(object) & ~unTaggedNonNativeBridgeObjectBits);
 }
 
-void *swift::swift_bridgeObjectRetain(void *object) {
+void *swift::swift_bridgeObjectRetain(void *object) RUNTIME_CC {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return object;
@@ -547,7 +547,7 @@ void *swift::swift_bridgeObjectRetain(void *object) {
 #endif
 }
 
-void swift::swift_bridgeObjectRelease(void *object) {
+void swift::swift_bridgeObjectRelease(void *object) RUNTIME_CC {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return;
@@ -564,7 +564,7 @@ void swift::swift_bridgeObjectRelease(void *object) {
 #endif
 }
 
-void *swift::swift_bridgeObjectRetain_n(void *object, int n) {
+void *swift::swift_bridgeObjectRetain_n(void *object, int n) RUNTIME_CC {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return object;
@@ -587,7 +587,7 @@ void *swift::swift_bridgeObjectRetain_n(void *object, int n) {
 #endif
 }
 
-void swift::swift_bridgeObjectRelease_n(void *object, int n) {
+void swift::swift_bridgeObjectRelease_n(void *object, int n) RUNTIME_CC {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return;

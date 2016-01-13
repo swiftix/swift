@@ -59,5 +59,8 @@
 # define SWIFT_ALLOWED_RUNTIME_GLOBAL_CTOR_END
 #endif
 
+//#define RUNTIME_CC
+#define RUNTIME_CC __attribute__((preserve_most))
+
 #endif // SWIFT_RUNTIME_CONFIG_H
 
