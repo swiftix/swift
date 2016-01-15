@@ -527,7 +527,7 @@ static void* toPlainObject_unTagged_bridgeObject(void *object) {
   return (void*)(uintptr_t(object) & ~unTaggedNonNativeBridgeObjectBits);
 }
 
-void *swift::swift_bridgeObjectRetain(void *object) RUNTIME_CC {
+void *swift::swift_bridgeObjectRetain(void *object) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return object;
@@ -564,7 +564,7 @@ void swift::swift_bridgeObjectRelease(void *object) RUNTIME_CC {
 #endif
 }
 
-void *swift::swift_bridgeObjectRetain_n(void *object, int n) RUNTIME_CC {
+void *swift::swift_bridgeObjectRetain_n(void *object, int n) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return object;

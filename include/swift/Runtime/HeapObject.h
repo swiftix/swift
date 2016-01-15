@@ -520,9 +520,9 @@ extern "C" void swift_weakTakeAssign(WeakReference *dest, WeakReference *src);
 /************************* OTHER REFERENCE-COUNTING **************************/
 /*****************************************************************************/
 
-extern "C" void *swift_bridgeObjectRetain(void *value) RUNTIME_CC;
+extern "C" void *swift_bridgeObjectRetain(void *value);
 /// Increment the strong retain count of a bridged object by n.
-extern "C" void *swift_bridgeObjectRetain_n(void *value, int n) RUNTIME_CC;
+extern "C" void *swift_bridgeObjectRetain_n(void *value, int n);
 
 /*****************************************************************************/
 /************************ UNKNOWN REFERENCE-COUNTING *************************/

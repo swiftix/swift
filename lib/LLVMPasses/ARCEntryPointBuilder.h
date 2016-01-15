@@ -55,10 +55,12 @@ class ARCEntryPointBuilder {
   NullablePtr<Type> BridgeObjectPtrTy;
 
   llvm::CallingConv::ID RefCountingCC;
+  llvm::CallingConv::ID RuntimeCC;
 public:
   ARCEntryPointBuilder(Function &F)
       : B(&*F.begin()), Retain(), ObjectPtrTy(),
-        RefCountingCC(llvm::CallingConv::PreserveMost) {}
+        RefCountingCC(llvm::CallingConv::PreserveMost),
+        RuntimeCC(llvm::CallingConv::C) {}
   ~ARCEntryPointBuilder() = default;
   ARCEntryPointBuilder(ARCEntryPointBuilder &&) = delete;
   ARCEntryPointBuilder(const ARCEntryPointBuilder &) = delete;
@@ -154,7 +156,7 @@ public:
     // Cast just to make sure we have the right object type.
     V = B.CreatePointerCast(V, getBridgeObjectPtrTy());
     CallInst *CI = B.CreateCall(getBridgeRetainN(), {V, getIntConstant(n)});
-    CI->setCallingConv(RefCountingCC);
+    CI->setCallingConv(RuntimeCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -163,7 +165,7 @@ public:
     // Cast just to make sure we have the right object type.
     V = B.CreatePointerCast(V, getBridgeObjectPtrTy());
     CallInst *CI = B.CreateCall(getBridgeReleaseN(), {V, getIntConstant(n)});
-    CI->setCallingConv(RefCountingCC);
+    CI->setCallingConv(RuntimeCC);
     CI->setTailCall(true);
     return CI;
   }
@@ -309,7 +311,7 @@ private:
                                           BridgeObjectPtrTy,
                                           Int32Ty, nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(BridgeRetainN.get()))
-      fn->setCallingConv(RefCountingCC);
+      fn->setCallingConv(RuntimeCC);
     return BridgeRetainN.get();
   }
 
@@ -328,7 +330,7 @@ private:
                                             BridgeObjectPtrTy, Int32Ty,
                                             nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(BridgeReleaseN.get()))
-      fn->setCallingConv(RefCountingCC);
+      fn->setCallingConv(RuntimeCC);
     return BridgeReleaseN.get();
   }
 

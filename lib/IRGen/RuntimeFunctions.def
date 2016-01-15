@@ -163,13 +163,13 @@ FUNCTION(UnknownRelease, swift_unknownRelease, RefCountingCC,
          ATTRS(NoUnwind))
 
 // void *swift_bridgeObjectRetain(void *ptr);
-FUNCTION(BridgeObjectStrongRetain, swift_bridgeObjectRetain, RefCountingCC,
+FUNCTION(BridgeObjectStrongRetain, swift_bridgeObjectRetain, RuntimeCC,
          RETURNS(BridgeObjectPtrTy),
          ARGS(BridgeObjectPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_bridgeRelease(void *ptr);
-FUNCTION(BridgeObjectStrongRelease, swift_bridgeObjectRelease, RefCountingCC,
+FUNCTION(BridgeObjectStrongRelease, swift_bridgeObjectRelease, RuntimeCC,
          RETURNS(VoidTy),
          ARGS(BridgeObjectPtrTy),
          ATTRS(NoUnwind))
