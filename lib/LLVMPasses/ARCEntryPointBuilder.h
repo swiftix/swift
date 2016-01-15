@@ -185,6 +185,8 @@ private:
     Retain = M.getOrInsertFunction("swift_retain", AttrList,
                                    Type::getVoidTy(M.getContext()),
                                    ObjectPtrTy, nullptr);
+    if (auto fn = llvm::dyn_cast<llvm::Function>(Retain.get()))
+      fn->setCallingConv(RefCountingCC);
     return Retain.get();
   }
 
@@ -200,6 +202,8 @@ private:
     Release = M.getOrInsertFunction("swift_release", AttrList,
                                    Type::getVoidTy(M.getContext()),
                                    ObjectPtrTy, nullptr);
+    if (auto fn = llvm::dyn_cast<llvm::Function>(Release.get()))
+      fn->setCallingConv(RefCountingCC);
     return Release.get();
   }
 
@@ -231,6 +235,8 @@ private:
     RetainN = M.getOrInsertFunction("swift_retain_n", AttrList,
                                     Type::getVoidTy(M.getContext()),
                                     ObjectPtrTy, Int32Ty, nullptr);
+    if (auto fn = llvm::dyn_cast<llvm::Function>(RetainN.get()))
+      fn->setCallingConv(RefCountingCC);
     return RetainN.get();
   }
 
@@ -247,6 +253,8 @@ private:
     ReleaseN = M.getOrInsertFunction("swift_release_n", AttrList,
                                      Type::getVoidTy(M.getContext()),
                                      ObjectPtrTy, Int32Ty, nullptr);
+    if (auto fn = llvm::dyn_cast<llvm::Function>(ReleaseN.get()))
+      fn->setCallingConv(RefCountingCC);
     return ReleaseN.get();
   }
 
@@ -263,6 +271,8 @@ private:
     UnknownRetainN = M.getOrInsertFunction("swift_unknownRetain_n", AttrList,
                                            Type::getVoidTy(M.getContext()),
                                            ObjectPtrTy, Int32Ty, nullptr);
+    if (auto fn = llvm::dyn_cast<llvm::Function>(UnknownRetainN.get()))
+      fn->setCallingConv(RefCountingCC);
     return UnknownRetainN.get();
   }
 
@@ -279,6 +289,8 @@ private:
     UnknownReleaseN = M.getOrInsertFunction("swift_unknownRelease_n", AttrList,
                                             Type::getVoidTy(M.getContext()),
                                             ObjectPtrTy, Int32Ty, nullptr);
+    if (auto fn = llvm::dyn_cast<llvm::Function>(UnknownReleaseN.get()))
+      fn->setCallingConv(RefCountingCC);
     return UnknownReleaseN.get();
   }
 
@@ -296,6 +308,8 @@ private:
                                           AttrList, BridgeObjectPtrTy,
                                           BridgeObjectPtrTy,
                                           Int32Ty, nullptr);
+    if (auto fn = llvm::dyn_cast<llvm::Function>(BridgeRetainN.get()))
+      fn->setCallingConv(RefCountingCC);
     return BridgeRetainN.get();
   }
 
@@ -313,6 +327,8 @@ private:
                                             Type::getVoidTy(M.getContext()),
                                             BridgeObjectPtrTy, Int32Ty,
                                             nullptr);
+    if (auto fn = llvm::dyn_cast<llvm::Function>(BridgeReleaseN.get()))
+      fn->setCallingConv(RefCountingCC);
     return BridgeReleaseN.get();
   }
 
