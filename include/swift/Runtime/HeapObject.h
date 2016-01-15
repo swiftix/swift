@@ -539,11 +539,11 @@ extern "C" void swift_unknownRetain_n(void *value, int n) RUNTIME_CC;
 
 #else
 
-static inline void swift_unknownRetain(void *value) {
+static inline void swift_unknownRetain(void *value) RUNTIME_CC {
   swift_retain(static_cast<HeapObject *>(value));
 }
 
-static inline void swift_unknownRetain_n(void *value, int n) {
+static inline void swift_unknownRetain_n(void *value, int n) RUNTIME_CC {
   swift_retain_n(static_cast<HeapObject *>(value), n);
 }
 
@@ -564,11 +564,11 @@ extern "C" void swift_unknownRelease_n(void *value, int n) RUNTIME_CC;
 
 #else
 
-static inline void swift_unknownRelease(void *value) {
+static inline void swift_unknownRelease(void *value) RUNTIME_CC {
   swift_release(static_cast<HeapObject *>(value));
 }
 
-static inline void swift_unknownRelease_n(void *value, int n) {
+static inline void swift_unknownRelease_n(void *value, int n) RUNTIME_CC {
   swift_release_n(static_cast<HeapObject *>(value), n);
 }
 
