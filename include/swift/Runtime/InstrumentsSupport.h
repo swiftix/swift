@@ -39,9 +39,9 @@ typedef size_t AllocIndex;
 extern "C" void *(*_swift_alloc)(AllocIndex idx);
 extern "C" void *(*_swift_tryAlloc)(AllocIndex idx);
 extern "C" void *(*_swift_slowAlloc)(size_t bytes, size_t alignMask,
-                                     uintptr_t flags);
+                                     uintptr_t flags) RUNTIME_CC;
 extern "C" void (*_swift_dealloc)(void *ptr, AllocIndex idx);
-extern "C" void (*_swift_slowDealloc)(void *ptr, size_t bytes, size_t alignMask);
+extern "C" void (*_swift_slowDealloc)(void *ptr, size_t bytes, size_t alignMask) RUNTIME_CC;
 extern "C" size_t _swift_indexToSize(AllocIndex idx);
 extern "C" int _swift_sizeToIndex(size_t size);
 extern "C" void _swift_zone_init(void);

@@ -136,11 +136,11 @@ extern "C" BoxPair::Return swift_allocBox(Metadata const *type);
 // Never returns nil. The returned memory is uninitialized. 
 //
 // An "alignment mask" is just the alignment (a power of 2) minus 1.
-extern "C" void *swift_slowAlloc(size_t bytes, size_t alignMask);
+extern "C" void *swift_slowAlloc(size_t bytes, size_t alignMask) RUNTIME_CC;
 
 // If the caller cannot promise to zero the object during destruction,
 // then call these corresponding APIs:
-extern "C" void swift_slowDealloc(void *ptr, size_t bytes, size_t alignMask);
+extern "C" void swift_slowDealloc(void *ptr, size_t bytes, size_t alignMask) RUNTIME_CC;
 
 /// Atomically increments the retain count of an object.
 ///

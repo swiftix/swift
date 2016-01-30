@@ -248,7 +248,7 @@ swift::swift_getResilientMetadata(GenericMetadata *pattern) {
 /// The primary entrypoint.
 const Metadata *
 swift::swift_getGenericMetadata(GenericMetadata *pattern,
-                                const void *arguments) {
+                                const void *arguments) RUNTIME_CC {
   auto genericArgs = (const void * const *) arguments;
   size_t numGenericArgs = pattern->NumKeyArguments;
 
@@ -266,14 +266,14 @@ swift::swift_getGenericMetadata(GenericMetadata *pattern,
 
 /// Fast entry points.
 const Metadata *
-swift::swift_getGenericMetadata1(GenericMetadata *pattern, const void*argument){
+swift::swift_getGenericMetadata1(GenericMetadata *pattern, const void*argument) RUNTIME_CC {
   assert(pattern->NumKeyArguments == 1);
   return swift_getGenericMetadata(pattern, &argument);
 }
 
 const Metadata *
 swift::swift_getGenericMetadata2(GenericMetadata *pattern,
-                                 const void *arg0, const void *arg1) {
+                                 const void *arg0, const void *arg1) RUNTIME_CC {
   const void *args[] = {arg0, arg1};
   assert(pattern->NumKeyArguments == 2);
   return swift_getGenericMetadata(pattern, args);
@@ -283,7 +283,7 @@ const Metadata *
 swift::swift_getGenericMetadata3(GenericMetadata *pattern,
                                  const void *arg0,
                                  const void *arg1,
-                                 const void *arg2) {
+                                 const void *arg2) RUNTIME_CC {
   const void *args[] = {arg0, arg1, arg2};
   assert(pattern->NumKeyArguments == 3);
   return swift_getGenericMetadata(pattern, args);
@@ -2230,7 +2230,7 @@ ExistentialTypeMetadata::getWitnessTable(const OpaqueValue *container,
 /// referenced by \c protocols will be sorted in-place.
 const ExistentialTypeMetadata *
 swift::swift_getExistentialTypeMetadata(size_t numProtocols,
-                                        const ProtocolDescriptor **protocols) {
+                                        const ProtocolDescriptor **protocols) RUNTIME_CC {
   // Sort the protocol set.
   std::sort(protocols, protocols + numProtocols);
 
@@ -2543,7 +2543,7 @@ static GenericWitnessTableCache &getCache(GenericWitnessTable *gen) {
 extern "C" const WitnessTable *
 swift::swift_getGenericWitnessTable(GenericWitnessTable *genericTable,
                                     const Metadata *type,
-                                    void * const *instantiationArgs) {
+                                    void * const *instantiationArgs) RUNTIME_CC {
   // Search the cache.
   constexpr const size_t numGenericArgs = 1;
   const void *args[] = { type };

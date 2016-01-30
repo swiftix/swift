@@ -2461,22 +2461,22 @@ swift_getResilientMetadata(GenericMetadata *pattern);
 ///   }
 extern "C" const Metadata *
 swift_getGenericMetadata(GenericMetadata *pattern,
-                         const void *arguments);
+                         const void *arguments) RUNTIME_CC;
 
 // Fast entry points for swift_getGenericMetadata with a small number of
 // template arguments.
 extern "C" const Metadata *
 swift_getGenericMetadata1(GenericMetadata *pattern,
-                          const void *arg0);
+                          const void *arg0) RUNTIME_CC;
 extern "C" const Metadata *
 swift_getGenericMetadata2(GenericMetadata *pattern,
                           const void *arg0,
-                          const void *arg1);
+                          const void *arg1) RUNTIME_CC;
 extern "C" const Metadata *
 swift_getGenericMetadata3(GenericMetadata *pattern,
                           const void *arg0,
                           const void *arg1,
-                          const void *arg2);
+                          const void *arg2) RUNTIME_CC;
 extern "C" const Metadata *
 swift_getGenericMetadata4(GenericMetadata *pattern,
                           const void *arg0,
@@ -2507,7 +2507,7 @@ swift_allocateGenericValueMetadata(GenericMetadata *pattern,
 extern "C" const WitnessTable *
 swift_getGenericWitnessTable(GenericWitnessTable *genericTable,
                              const Metadata *type,
-                             void * const *instantiationArgs);
+                             void * const *instantiationArgs) RUNTIME_CC;
   
 /// \brief Fetch a uniqued metadata for a function type.
 extern "C" const FunctionTypeMetadata *
@@ -2682,7 +2682,7 @@ swift_getExistentialMetatypeMetadata(const Metadata *instanceType);
 /// referenced by \c protocols will be sorted in-place.
 extern "C" const ExistentialTypeMetadata *
 swift_getExistentialTypeMetadata(size_t numProtocols,
-                                 const ProtocolDescriptor **protocols);
+                                 const ProtocolDescriptor **protocols) RUNTIME_CC;
 
 /// \brief Perform a checked dynamic cast of a value to a target type.
 ///
@@ -2704,7 +2704,7 @@ extern "C" bool
 swift_dynamicCast(OpaqueValue *dest, OpaqueValue *src,
                   const Metadata *srcType,
                   const Metadata *targetType,
-                  DynamicCastFlags flags);
+                  DynamicCastFlags flags) RUNTIME_CC;
 
 /// \brief Checked dynamic cast to a Swift class type.
 ///
@@ -2714,7 +2714,7 @@ swift_dynamicCast(OpaqueValue *dest, OpaqueValue *src,
 ///
 /// \returns the object if the cast succeeds, or null otherwise.
 extern "C" const void *
-swift_dynamicCastClass(const void *object, const ClassMetadata *targetType);
+swift_dynamicCastClass(const void *object, const ClassMetadata *targetType) RUNTIME_CC;
 
 /// \brief Unconditional, checked dynamic cast to a Swift class type.
 ///

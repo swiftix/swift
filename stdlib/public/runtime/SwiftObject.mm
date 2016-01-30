@@ -1164,7 +1164,7 @@ extern "C" void swift::swift_instantiateObjCClass(const ClassMetadata *_c) {
   (void)registered;
 }
 
-extern "C" Class swift_getInitializedObjCClass(Class c) {
+extern "C" Class swift_getInitializedObjCClass(Class c) RUNTIME_CC {
   // Used when we have class metadata and we want to ensure a class has been
   // initialized by the Objective C runtime. We need to do this because the
   // class "c" might be valid metadata, but it hasn't been initialized yet.

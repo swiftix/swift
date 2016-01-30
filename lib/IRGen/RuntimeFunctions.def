@@ -54,7 +54,7 @@ FUNCTION(ProjectBox,     swift_projectBox,    RuntimeCC,
          ATTRS(NoUnwind, ReadNone))
 
 // RefCounted *swift_allocObject(Metadata *type, size_t size, size_t alignMask);
-FUNCTION(AllocObject,    swift_allocObject,   RuntimeCC,
+FUNCTION(AllocObject,    swift_allocObject,   RefCountingCC,
          RETURNS(RefCountedPtrTy),
          ARGS(TypeMetadataPtrTy, SizeTy, SizeTy),
          ATTRS(NoUnwind))
@@ -91,13 +91,13 @@ FUNCTION(DeallocPartialClassInstance,  swift_deallocPartialClassInstance, Runtim
          ATTRS(NoUnwind))
 
 // void *swift_slowAlloc(size_t size, size_t alignMask);
-FUNCTION(SlowAlloc,      swift_slowAlloc,     RuntimeCC,
+FUNCTION(SlowAlloc,      swift_slowAlloc,     RefCountingCC,
          RETURNS(Int8PtrTy),
          ARGS(SizeTy, SizeTy),
          ATTRS(NoUnwind))
 
 // void swift_slowDealloc(void *ptr, size_t size, size_t alignMask);
-FUNCTION(SlowDealloc, swift_slowDealloc,RuntimeCC,
+FUNCTION(SlowDealloc, swift_slowDealloc, RefCountingCC,
          RETURNS(VoidTy),
          ARGS(Int8PtrTy, SizeTy, SizeTy),
          ATTRS(NoUnwind))
@@ -484,7 +484,7 @@ FUNCTION(GetResilientMetadata, swift_getResilientMetadata, RuntimeCC,
 
 // Metadata *swift_getGenericMetadata(GenericMetadata *pattern,
 //                                    const void *arguments);
-FUNCTION(GetGenericMetadata, swift_getGenericMetadata, RuntimeCC,
+FUNCTION(GetGenericMetadata, swift_getGenericMetadata, RefCountingCC,
          RETURNS(TypeMetadataPtrTy),
          ARGS(TypeMetadataPatternPtrTy, Int8PtrTy),
          ATTRS(NoUnwind, ReadOnly))
@@ -506,14 +506,14 @@ FUNCTION(AllocateGenericValueMetadata, swift_allocateGenericValueMetadata,
 
 // Metadata *swift_getGenericMetadata1(GenericMetadata *pattern,
 //                                     const void *arg0);
-FUNCTION(GetGenericMetadata1, swift_getGenericMetadata1, RuntimeCC,
+FUNCTION(GetGenericMetadata1, swift_getGenericMetadata1, RefCountingCC,
          RETURNS(TypeMetadataPtrTy),
          ARGS(TypeMetadataPatternPtrTy, Int8PtrTy),
          ATTRS(NoUnwind, ReadNone))
 
 // Metadata *swift_getGenericMetadata2(GenericMetadata *pattern,
 //                                     const void *arg0, const void *arg1);
-FUNCTION(GetGenericMetadata2, swift_getGenericMetadata2, RuntimeCC,
+FUNCTION(GetGenericMetadata2, swift_getGenericMetadata2, RefCountingCC,
          RETURNS(TypeMetadataPtrTy),
          ARGS(TypeMetadataPatternPtrTy, Int8PtrTy, Int8PtrTy),
          ATTRS(NoUnwind, ReadNone))
@@ -521,7 +521,7 @@ FUNCTION(GetGenericMetadata2, swift_getGenericMetadata2, RuntimeCC,
 // Metadata *swift_getGenericMetadata3(GenericMetadata *pattern,
 //                                     const void *arg0, const void *arg1,
 //                                     const void *arg2);
-FUNCTION(GetGenericMetadata3, swift_getGenericMetadata3, RuntimeCC,
+FUNCTION(GetGenericMetadata3, swift_getGenericMetadata3, RefCountingCC,
          RETURNS(TypeMetadataPtrTy),
          ARGS(TypeMetadataPatternPtrTy, Int8PtrTy, Int8PtrTy, Int8PtrTy),
          ATTRS(NoUnwind, ReadNone))
@@ -538,7 +538,7 @@ FUNCTION(GetGenericMetadata4, swift_getGenericMetadata4, RuntimeCC,
 // swift_getGenericWitnessTable(GenericProtocolWitnessTable *genericTable,
 //                              const Metadata *type,
 //                              void * const *otherData);
-FUNCTION(GetGenericWitnessTable, swift_getGenericWitnessTable, RuntimeCC,
+FUNCTION(GetGenericWitnessTable, swift_getGenericWitnessTable, RefCountingCC,
          RETURNS(WitnessTablePtrTy),
          ARGS(getGenericWitnessTableCacheTy()->getPointerTo(),
               TypeMetadataPtrTy,
@@ -595,7 +595,7 @@ FUNCTION(GetTupleMetadata3, swift_getTupleTypeMetadata3, RuntimeCC,
 // Metadata *swift_getExistentialTypeMetadata(size_t numProtocols,
 //                              const protocol_descriptor_t * const *protocols);
 FUNCTION(GetExistentialMetadata,
-         swift_getExistentialTypeMetadata, RuntimeCC,
+         swift_getExistentialTypeMetadata, RefCountingCC,
          RETURNS(TypeMetadataPtrTy),
          ARGS(SizeTy,
               ProtocolDescriptorPtrTy->getPointerTo()),
@@ -709,7 +709,7 @@ FUNCTION(GetDynamicType, swift_getDynamicType, RuntimeCC,
          ATTRS(NoUnwind, ReadOnly))
 
 // void *swift_dynamicCastClass(void*, void*);
-FUNCTION(DynamicCastClass, swift_dynamicCastClass, RuntimeCC,
+FUNCTION(DynamicCastClass, swift_dynamicCastClass, RefCountingCC,
          RETURNS(Int8PtrTy),
          ARGS(Int8PtrTy, Int8PtrTy),
          ATTRS(NoUnwind, ReadOnly))
@@ -775,7 +775,7 @@ FUNCTION(DynamicCastObjCClassMetatypeUnconditional,
          ATTRS(NoUnwind, ReadOnly))
 
 // bool swift_dynamicCast(opaque*, opaque*, type*, type*, size_t);
-FUNCTION(DynamicCast, swift_dynamicCast, RuntimeCC,
+FUNCTION(DynamicCast, swift_dynamicCast, RefCountingCC,
          RETURNS(Int1Ty),
          ARGS(OpaquePtrTy, OpaquePtrTy, TypeMetadataPtrTy, TypeMetadataPtrTy,
               SizeTy),
@@ -880,7 +880,7 @@ FUNCTION(InstantiateObjCClass, swift_instantiateObjCClass, RuntimeCC,
          RETURNS(VoidTy),
          ARGS(TypeMetadataPtrTy),
          ATTRS(NoUnwind))
-FUNCTION(GetInitializedObjCClass, swift_getInitializedObjCClass, RuntimeCC,
+FUNCTION(GetInitializedObjCClass, swift_getInitializedObjCClass, RefCountingCC,
          RETURNS(ObjCClassPtrTy),
          ARGS(ObjCClassPtrTy),
          ATTRS(NoUnwind))

@@ -498,7 +498,7 @@ _dynamicCastClassMetatype(const ClassMetadata *sourceType,
 /// Dynamically cast a class instance to a Swift class type.
 const void *
 swift::swift_dynamicCastClass(const void *object,
-                              const ClassMetadata *targetType) {
+                              const ClassMetadata *targetType) RUNTIME_CC {
 #if SWIFT_OBJC_INTEROP
   assert(!targetType->isPureObjC());
 
@@ -2044,7 +2044,7 @@ bool swift::swift_dynamicCast(OpaqueValue *dest,
                               OpaqueValue *src,
                               const Metadata *srcType,
                               const Metadata *targetType,
-                              DynamicCastFlags flags) {
+                              DynamicCastFlags flags) RUNTIME_CC {
   auto unwrapResult = checkDynamicCastFromOptional(dest, src, srcType,
                                                    targetType, flags);
   srcType = unwrapResult.payloadType;
