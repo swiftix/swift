@@ -2249,9 +2249,13 @@ void WitnessTableBuilder::buildAccessFunction(llvm::Constant *wtable) {
   };
   cache->setInitializer(llvm::ConstantStruct::get(cacheTy, cacheData));
 
-  auto call = IGF.Builder.CreateCall(IGM.getGetGenericWitnessTableFn(),
+  auto getGenericWitnessTableFn = IGM.getGetGenericWitnessTableFn();
+  auto cc = IGM.RuntimeCC;
+  if (auto fun = dyn_cast<llvm::Function>(getGenericWitnessTableFn))
+    cc = fun->getCallingConv();
+  auto call = IGF.Builder.CreateCall(getGenericWitnessTableFn,
                                      { cache, metadata, instantiationArgs });
-  call->setCallingConv(IGM.RuntimeCC);
+  call->setCallingConv(cc);
   call->setDoesNotThrow();
 
   IGF.Builder.CreateRet(call);

@@ -99,13 +99,19 @@ static llvm::Constant *getMangledTypeName(IRGenModule &IGM, CanType type,
 llvm::Value *irgen::emitObjCMetadataRefForMetadata(IRGenFunction &IGF,
                                                    llvm::Value *classPtr) {
   classPtr = IGF.Builder.CreateBitCast(classPtr, IGF.IGM.ObjCClassPtrTy);
-  
+
+  auto fn = IGF.IGM.getGetObjCClassMetadataFn();
+  auto cc = IGF.IGM.RuntimeCC;
+  if (auto fun = dyn_cast<llvm::Function>(fn))
+    cc = fun->getCallingConv();
+
+
   // Fetch the metadata for that class.
-  auto call = IGF.Builder.CreateCall(IGF.IGM.getGetObjCClassMetadataFn(),
+  auto call = IGF.Builder.CreateCall(fn,
                                      classPtr);
   call->setDoesNotThrow();
   call->setDoesNotAccessMemory();
-  call->setCallingConv(IGF.IGM.RuntimeCC);
+  call->setCallingConv(cc);
   return call;
 }
 
@@ -222,8 +228,15 @@ llvm::Value *irgen::emitObjCHeapMetadataRef(IRGenFunction &IGF,
   if (allowUninitialized) return classObject;
 
   // TODO: memoize this the same way that we memoize Swift type metadata?
-  return IGF.Builder.CreateCall(IGF.IGM.getGetInitializedObjCClassFn(),
-                                classObject);
+  auto fn = IGF.IGM.getGetInitializedObjCClassFn();
+  auto cc = IGF.IGM.RuntimeCC;
+  if (auto fun = dyn_cast<llvm::Function>(fn))
+    cc = fun->getCallingConv();
+
+  auto call = IGF.Builder.CreateCall(fn,
+                                     classObject);
+  call->setCallingConv(cc);
+  return call;
 }
 
 /// Emit a reference to the type metadata for a foreign type.
@@ -286,8 +299,15 @@ static llvm::Value *emitNominalMetadataRef(IRGenFunction &IGF,
     // but only if we're doing Objective-C interop.
     if (IGF.IGM.ObjCInterop && isa<ClassDecl>(theDecl)) {
       metadata = IGF.Builder.CreateBitCast(metadata, IGF.IGM.ObjCClassPtrTy);
-      metadata = IGF.Builder.CreateCall(IGF.IGM.getGetInitializedObjCClassFn(),
-                                        metadata);
+      auto fn = IGF.IGM.getGetInitializedObjCClassFn();
+      auto cc = IGF.IGM.RuntimeCC;
+      if (auto fun = dyn_cast<llvm::Function>(fn))
+        cc = fun->getCallingConv();
+
+      auto call = IGF.Builder.CreateCall(fn,
+                                         metadata);
+      call->setCallingConv(cc);
+      metadata = call;
       metadata = IGF.Builder.CreateBitCast(metadata, IGF.IGM.TypeMetadataPtrTy);
     }
 
@@ -302,7 +322,11 @@ static llvm::Value *emitNominalMetadataRef(IRGenFunction &IGF,
   if (isPattern && !theDecl->isGenericContext()) {
     llvm::Constant *getter = IGF.IGM.getGetResilientMetadataFn();
 
+    auto cc = IGF.IGM.RuntimeCC;
+    if (auto fun = dyn_cast<llvm::Function>(getter))
+      cc = fun->getCallingConv();
     auto result = IGF.Builder.CreateCall(getter, {metadata});
+    result->setCallingConv(cc);
     result->setDoesNotThrow();
     result->addAttribute(llvm::AttributeSet::FunctionIndex,
                          llvm::Attribute::ReadNone);
@@ -334,7 +358,11 @@ static llvm::Value *emitNominalMetadataRef(IRGenFunction &IGF,
     args.push_back(metadata);
     for (auto value : genericArgs.Values)
       args.push_back(IGF.Builder.CreateBitCast(value, IGF.IGM.Int8PtrTy));
+    auto cc = IGF.IGM.RuntimeCC;
+    if (auto fun = dyn_cast<llvm::Function>(fastGetter))
+      cc = fun->getCallingConv();
     auto result = IGF.Builder.CreateCall(fastGetter, args);
+    result->setCallingConv(cc);
     result->setDoesNotThrow();
     result->addAttribute(llvm::AttributeSet::FunctionIndex,
                          llvm::Attribute::ReadNone);
@@ -362,8 +390,14 @@ static llvm::Value *emitNominalMetadataRef(IRGenFunction &IGF,
     IGF.Builder.CreateBitCast(argsBuffer.getAddress(), IGF.IGM.Int8PtrTy);
 
   // Make the call.
-  auto result = IGF.Builder.CreateCall(IGF.IGM.getGetGenericMetadataFn(),
+  auto fn = IGF.IGM.getGetGenericMetadataFn();
+  auto cc = IGF.IGM.RuntimeCC;
+  if (auto fun = dyn_cast<llvm::Function>(fn))
+    cc = fun->getCallingConv();
+
+  auto result = IGF.Builder.CreateCall(fn,
                                        {metadata, arguments});
+  result->setCallingConv(cc);
   result->setDoesNotThrow();
   result->addAttribute(llvm::AttributeSet::FunctionIndex,
                        llvm::Attribute::ReadOnly);
@@ -636,10 +670,15 @@ namespace {
           llvm::ConstantPointerNull::get(IGF.IGM.WitnessTablePtrTy) // proposed
         };
 
-        auto call = IGF.Builder.CreateCall(IGF.IGM.getGetTupleMetadata2Fn(),
+        auto fn = IGF.IGM.getGetTupleMetadata2Fn();
+        auto cc = IGF.IGM.RuntimeCC;
+        if (auto fun = dyn_cast<llvm::Function>(fn))
+          cc = fun->getCallingConv();
+
+        auto call = IGF.Builder.CreateCall(fn,
                                            args);
         call->setDoesNotThrow();
-        call->setCallingConv(IGF.IGM.RuntimeCC);
+        call->setCallingConv(cc);
         return setLocal(CanType(type), call);
       }
 
@@ -655,10 +694,15 @@ namespace {
           llvm::ConstantPointerNull::get(IGF.IGM.WitnessTablePtrTy) // proposed
         };
 
-        auto call = IGF.Builder.CreateCall(IGF.IGM.getGetTupleMetadata3Fn(),
+        auto fn = IGF.IGM.getGetTupleMetadata3Fn();
+        auto cc = IGF.IGM.RuntimeCC;
+        if (auto fun = dyn_cast<llvm::Function>(fn))
+          cc = fun->getCallingConv();
+
+        auto call = IGF.Builder.CreateCall(fn,
                                            args);
         call->setDoesNotThrow();
-        call->setCallingConv(IGF.IGM.RuntimeCC);
+        call->setCallingConv(cc);
         return setLocal(CanType(type), call);
       }
       default:
@@ -694,10 +738,15 @@ namespace {
           llvm::ConstantPointerNull::get(IGF.IGM.WitnessTablePtrTy) // proposed
         };
 
-        auto call = IGF.Builder.CreateCall(IGF.IGM.getGetTupleMetadataFn(),
+        auto fn = IGF.IGM.getGetTupleMetadataFn();
+        auto cc = IGF.IGM.RuntimeCC;
+        if (auto fun = dyn_cast<llvm::Function>(fn))
+          cc = fun->getCallingConv();
+
+        auto call = IGF.Builder.CreateCall(fn,
                                            args);
         call->setDoesNotThrow();
-        call->setCallingConv(IGF.IGM.RuntimeCC);
+        call->setCallingConv(cc);
 
         IGF.Builder.CreateLifetimeEnd(buffer,
                                     IGF.IGM.getPointerSize() * elements.size());
@@ -787,22 +836,34 @@ namespace {
             extractAndMarkInOut(inputTuple.getElementType(0))
           : extractAndMarkInOut(type.getInput());
 
+          auto fn = IGF.IGM.getGetFunctionMetadata1Fn();
+          auto cc = IGF.IGM.RuntimeCC;
+          if (auto fun = dyn_cast<llvm::Function>(fn))
+            cc = fun->getCallingConv();
+
           auto call = IGF.Builder.CreateCall(
-                                            IGF.IGM.getGetFunctionMetadata1Fn(),
+                                            fn,
                                             {flags, arg0, resultMetadata});
           call->setDoesNotThrow();
-          call->setCallingConv(IGF.IGM.RuntimeCC);
+          call->setCallingConv(cc);
           return setLocal(CanType(type), call);
         }
 
         case 2: {
           auto arg0 = extractAndMarkInOut(inputTuple.getElementType(0));
           auto arg1 = extractAndMarkInOut(inputTuple.getElementType(1));
+
+          auto fn = IGF.IGM.getGetFunctionMetadata2Fn();
+          auto cc = IGF.IGM.RuntimeCC;
+          if (auto fun = dyn_cast<llvm::Function>(fn))
+            cc = fun->getCallingConv();
+
+
           auto call = IGF.Builder.CreateCall(
-                                            IGF.IGM.getGetFunctionMetadata2Fn(),
+                                            fn,
                                             {flags, arg0, arg1, resultMetadata});
           call->setDoesNotThrow();
-          call->setCallingConv(IGF.IGM.RuntimeCC);
+          call->setCallingConv(cc);
           return setLocal(CanType(type), call);
         }
 
@@ -810,12 +871,19 @@ namespace {
           auto arg0 = extractAndMarkInOut(inputTuple.getElementType(0));
           auto arg1 = extractAndMarkInOut(inputTuple.getElementType(1));
           auto arg2 = extractAndMarkInOut(inputTuple.getElementType(2));
+
+          auto fn = IGF.IGM.getGetFunctionMetadata3Fn();
+          auto cc = IGF.IGM.RuntimeCC;
+          if (auto fun = dyn_cast<llvm::Function>(fn))
+            cc = fun->getCallingConv();
+
+
           auto call = IGF.Builder.CreateCall(
-                                            IGF.IGM.getGetFunctionMetadata3Fn(),
+                                            fn,
                                             {flags, arg0, arg1, arg2,
                                              resultMetadata});
           call->setDoesNotThrow();
-          call->setCallingConv(IGF.IGM.RuntimeCC);
+          call->setCallingConv(cc);
           return setLocal(CanType(type), call);
         }
 
@@ -849,10 +917,16 @@ namespace {
                                      IGF.IGM.TypeMetadataPtrTy->getPointerTo());
           IGF.Builder.CreateStore(resultMetadata, resultPtr);
 
-          auto call = IGF.Builder.CreateCall(IGF.IGM.getGetFunctionMetadataFn(),
+          auto fn = IGF.IGM.getGetFunctionMetadataFn();
+          auto cc = IGF.IGM.RuntimeCC;
+          if (auto fun = dyn_cast<llvm::Function>(fn))
+            cc = fun->getCallingConv();
+
+
+          auto call = IGF.Builder.CreateCall(fn,
                                              pointerToFirstArg.getAddress());
           call->setDoesNotThrow();
-          call->setCallingConv(IGF.IGM.RuntimeCC);
+          call->setCallingConv(cc);
           
           IGF.Builder.CreateLifetimeEnd(buffer,
                                    IGF.IGM.getPointerSize() * arguments.size());
@@ -877,9 +951,13 @@ namespace {
       auto fn = isa<MetatypeType>(type)
                   ? IGF.IGM.getGetMetatypeMetadataFn()
                   : IGF.IGM.getGetExistentialMetatypeMetadataFn();
+      auto cc = IGF.IGM.RuntimeCC;
+      if (auto fun = dyn_cast<llvm::Function>(fn))
+        cc = fun->getCallingConv();
+
       auto call = IGF.Builder.CreateCall(fn, instMetadata);
       call->setDoesNotThrow();
-      call->setCallingConv(IGF.IGM.RuntimeCC);
+      call->setCallingConv(cc);
 
       return setLocal(type, call);
     }
@@ -917,12 +995,17 @@ namespace {
         IGF.Builder.CreateStore(ref, slot);
         ++index;
       }
-      
-      auto call = IGF.Builder.CreateCall(IGF.IGM.getGetExistentialMetadataFn(),
+
+      auto fn = IGF.IGM.getGetExistentialMetadataFn();
+      auto cc = IGF.IGM.RuntimeCC;
+      if (auto fun = dyn_cast<llvm::Function>(fn))
+        cc = fun->getCallingConv();
+
+      auto call = IGF.Builder.CreateCall(fn,
                                          {IGF.IGM.getSize(Size(protocols.size())),
                                           descriptorArray.getAddress()});
       call->setDoesNotThrow();
-      call->setCallingConv(IGF.IGM.RuntimeCC);
+      call->setCallingConv(cc);
       IGF.Builder.CreateLifetimeEnd(descriptorArray,
                                    IGF.IGM.getPointerSize() * protocols.size());
       return setLocal(type, call);
@@ -1248,10 +1331,15 @@ namespace {
           llvm::ConstantPointerNull::get(IGF.IGM.WitnessTablePtrTy) // proposed
         };
 
-        auto call = IGF.Builder.CreateCall(IGF.IGM.getGetTupleMetadata2Fn(),
+        auto fn = IGF.IGM.getGetTupleMetadata2Fn();
+        auto cc = IGF.IGM.RuntimeCC;
+        if (auto fun = dyn_cast<llvm::Function>(fn))
+          cc = fun->getCallingConv();
+
+        auto call = IGF.Builder.CreateCall(fn,
                                            args);
         call->setDoesNotThrow();
-        call->setCallingConv(IGF.IGM.RuntimeCC);
+        call->setCallingConv(cc);
         return setLocal(CanType(type), call);
       }
 
@@ -1268,10 +1356,15 @@ namespace {
           llvm::ConstantPointerNull::get(IGF.IGM.WitnessTablePtrTy) // proposed
         };
 
-        auto call = IGF.Builder.CreateCall(IGF.IGM.getGetTupleMetadata3Fn(),
+        auto fn = IGF.IGM.getGetTupleMetadata3Fn();
+        auto cc = IGF.IGM.RuntimeCC;
+        if (auto fun = dyn_cast<llvm::Function>(fn))
+          cc = fun->getCallingConv();
+
+        auto call = IGF.Builder.CreateCall(fn,
                                            args);
         call->setDoesNotThrow();
-        call->setCallingConv(IGF.IGM.RuntimeCC);
+        call->setCallingConv(cc);
         return setLocal(CanType(type), call);
       }
       default:
@@ -1308,10 +1401,16 @@ namespace {
           llvm::ConstantPointerNull::get(IGF.IGM.WitnessTablePtrTy) // proposed
         };
 
-        auto call = IGF.Builder.CreateCall(IGF.IGM.getGetTupleMetadataFn(),
+        auto fn = IGF.IGM.getGetTupleMetadataFn();
+        auto cc = IGF.IGM.RuntimeCC;
+        if (auto fun = dyn_cast<llvm::Function>(fn))
+          cc = fun->getCallingConv();
+
+
+        auto call = IGF.Builder.CreateCall(fn,
                                            args);
         call->setDoesNotThrow();
-        call->setCallingConv(IGF.IGM.RuntimeCC);
+        call->setCallingConv(cc);
 
         IGF.Builder.CreateLifetimeEnd(buffer,
                                     IGF.IGM.getPointerSize() * elements.size());
@@ -4218,10 +4317,15 @@ llvm::Value *irgen::emitHeapMetadataRefForHeapObject(IRGenFunction &IGF,
 llvm::Value *irgen::emitDynamicTypeOfOpaqueHeapObject(IRGenFunction &IGF,
                                                       llvm::Value *object) {
   object = IGF.Builder.CreateBitCast(object, IGF.IGM.ObjCPtrTy);
-  auto metadata = IGF.Builder.CreateCall(IGF.IGM.getGetObjectTypeFn(),
+  auto fn = IGF.IGM.getGetObjectTypeFn();
+  auto cc = IGF.IGM.RuntimeCC;
+  if (auto fun = dyn_cast<llvm::Function>(fn))
+    cc = fun->getCallingConv();
+
+  auto metadata = IGF.Builder.CreateCall(fn,
                                          object,
                                          object->getName() + ".Type");
-  metadata->setCallingConv(IGF.IGM.RuntimeCC);
+  metadata->setCallingConv(cc);
   metadata->setDoesNotThrow();
   metadata->setDoesNotAccessMemory();
   return metadata;

@@ -121,7 +121,12 @@ public:
     // class. If you try to add or replace a method to a class that isn't
     // initialized yet, the Objective C runtime will crash in the calls
     // to class_replaceMethod or class_addProtocol.
-    Builder.CreateCall(IGM.getGetInitializedObjCClassFn(), classMetadata);
+    auto fn = IGM.getGetInitializedObjCClassFn();
+    auto cc = IGM.RuntimeCC;
+    if (auto fun = dyn_cast<llvm::Function>(fn))
+      cc = fun->getCallingConv();
+    auto call = Builder.CreateCall(fn, classMetadata);
+    call->setCallingConv(cc);
 
     // Register ObjC protocol conformances.
     for (auto *p : ext->getLocalProtocols()) {
