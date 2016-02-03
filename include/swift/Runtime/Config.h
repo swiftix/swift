@@ -62,4 +62,29 @@
 // Bring in visibility attribute macros
 #include "../../../stdlib/public/SwiftShims/Visibility.h"
 
+// Define mappings for calling conventions.
+
+#define CALLING_CONVENTION(CC) CALLING_CONVENTION_##CC
+
+#define CALLING_CONVENTION_preserve_most __attribute__((preserve_most))
+#define CALLING_CONVENTION_preserve_all  __attribute__((preserve_all))
+#define CALLING_CONVENTION_c
+
+#if  defined(__arm64__) || defined(__x86_64__)
+#define RUNTIME_CC1 preserve_most
+#define CALLING_CONVENTION_RUNTIME_CC1 CALLING_CONVENTION_preserve_most
+#define RUNTIME_CC1_IMPL preserve_most
+#define CALLING_CONVENTION_RUNTIME_CC1_IMPL CALLING_CONVENTION_preserve_most
+#else
+#define RUNTIME_CC1 c
+#define CALLING_CONVENTION_RUNTIME_CC1 CALLING_CONVENTION_c
+#define RUNTIME_CC1_IMPL c
+#define CALLING_CONVENTION_RUNTIME_CC1_IMPL CALLING_CONVENTION_c
+#endif
+
+#define RUNTIME_CC0 c
+#define CALLING_CONVENTION_RUNTIME_CC0 CALLING_CONVENTION_c
+
+#endif // SWIFT_RUNTIME_CONFIG_H
+
 #endif // SWIFT_RUNTIME_CONFIG_H

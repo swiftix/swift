@@ -19,6 +19,7 @@
 #include "swift/Basic/LLVM.h"
 #include "swift/Basic/Range.h"
 #include "swift/Basic/Lazy.h"
+#include "swift/client-runtime/RuntimeWrappers.h"
 #include "swift/Runtime/HeapObject.h"
 #include "swift/Runtime/Metadata.h"
 #include "swift/Strings.h"
@@ -247,8 +248,9 @@ swift::swift_getResilientMetadata(GenericMetadata *pattern) {
 
 /// The primary entrypoint.
 const Metadata *
-swift::swift_getGenericMetadata(GenericMetadata *pattern,
-                                const void *arguments) {
+swift::_swift_getGenericMetadata_(GenericMetadata *pattern,
+                                const void *arguments)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   auto genericArgs = (const void * const *) arguments;
   size_t numGenericArgs = pattern->NumKeyArguments;
 
@@ -269,7 +271,8 @@ namespace {
     FullMetadata<ObjCClassWrapperMetadata> Metadata;
 
   public:
-    static const char *getName() { return "ObjCClassCache"; }
+
+static const char *getName() { return "ObjCClassCache"; }
 
     ObjCClassCacheEntry(size_t numArguments) {}
 
@@ -2196,8 +2199,9 @@ ExistentialTypeMetadata::getWitnessTable(const OpaqueValue *container,
 /// \brief Fetch a uniqued metadata for an existential type. The array
 /// referenced by \c protocols will be sorted in-place.
 const ExistentialTypeMetadata *
-swift::swift_getExistentialTypeMetadata(size_t numProtocols,
-                                        const ProtocolDescriptor **protocols) {
+swift::_swift_getExistentialTypeMetadata_(size_t numProtocols,
+                                        const ProtocolDescriptor **protocols)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   // Sort the protocol set.
   std::sort(protocols, protocols + numProtocols);
 
@@ -2595,17 +2599,18 @@ allocateWitnessTable(GenericWitnessTable *genericTable,
   return entry;
 }
 
-SWIFT_RUNTIME_EXPORT
 extern "C" const WitnessTable *
-swift::swift_getGenericWitnessTable(GenericWitnessTable *genericTable,
+swift::_swift_getGenericWitnessTable_(GenericWitnessTable *genericTable,
                                     const Metadata *type,
-                                    void * const *instantiationArgs) {
+                                    void * const *instantiationArgs)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (doesNotRequireInstantiation(genericTable)) {
     return genericTable->Pattern;
   }
 
   // If type is not nullptr, the witness table depends on the substituted
   // conforming type, so use that are the key.
+  // Search the cache.
   constexpr const size_t numGenericArgs = 1;
   const void *args[] = { type };
 

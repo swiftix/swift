@@ -26,6 +26,7 @@
 #include "swift/Basic/Demangle.h"
 #include "swift/Basic/LLVM.h"
 #include "swift/Basic/Lazy.h"
+#include "swift/client-runtime/RuntimeWrappers.h"
 #include "swift/Runtime/Heap.h"
 #include "swift/Runtime/HeapObject.h"
 #include "swift/Runtime/Metadata.h"
@@ -475,7 +476,18 @@ static bool usesNativeSwiftReferenceCounting_allocated(const void *object) {
   return usesNativeSwiftReferenceCounting(_swift_getClassOfAllocated(object));
 }
 
-void swift::swift_unknownRetain_n(void *object, int n) {
+id swift::_swift_objc_retain_(id object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  return objc_retain(object);
+}
+
+void swift::_swift_objc_release_(id object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  objc_release(object);
+}
+
+void swift::_swift_unknownRetain_n_(void *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object)) {
     swift_retain_n(static_cast<HeapObject *>(object), n);
@@ -485,7 +497,8 @@ void swift::swift_unknownRetain_n(void *object, int n) {
     objc_retain(static_cast<id>(object));
 }
 
-void swift::swift_unknownRelease_n(void *object, int n) {
+void swift::_swift_unknownRelease_n_(void *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object))
     return swift_release_n(static_cast<HeapObject *>(object), n);
@@ -493,7 +506,8 @@ void swift::swift_unknownRelease_n(void *object, int n) {
     objc_release(static_cast<id>(object));
 }
 
-void swift::swift_unknownRetain(void *object) {
+void swift::_swift_unknownRetain_(void *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object)) {
     swift_retain(static_cast<HeapObject *>(object));
@@ -502,7 +516,8 @@ void swift::swift_unknownRetain(void *object) {
   objc_retain(static_cast<id>(object));
 }
 
-void swift::swift_unknownRelease(void *object) {
+void swift::_swift_unknownRelease_(void *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object))
     return swift_release(static_cast<HeapObject *>(object));
@@ -529,7 +544,8 @@ static void* toPlainObject_unTagged_bridgeObject(void *object) {
   return (void*)(uintptr_t(object) & ~unTaggedNonNativeBridgeObjectBits);
 }
 
-void *swift::swift_bridgeObjectRetain(void *object) {
+void *swift::_swift_bridgeObjectRetain_(void *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return object;
@@ -549,7 +565,8 @@ void *swift::swift_bridgeObjectRetain(void *object) {
 #endif
 }
 
-void swift::swift_bridgeObjectRelease(void *object) {
+void swift::_swift_bridgeObjectRelease_(void *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return;
@@ -566,7 +583,8 @@ void swift::swift_bridgeObjectRelease(void *object) {
 #endif
 }
 
-void *swift::swift_bridgeObjectRetain_n(void *object, int n) {
+void *swift::_swift_bridgeObjectRetain_n_(void *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return object;
@@ -589,7 +607,8 @@ void *swift::swift_bridgeObjectRetain_n(void *object, int n) {
 #endif
 }
 
-void swift::swift_bridgeObjectRelease_n(void *object, int n) {
+void swift::_swift_bridgeObjectRelease_n_(void *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return;
@@ -1170,8 +1189,8 @@ void swift::swift_instantiateObjCClass(const ClassMetadata *_c) {
   (void)registered;
 }
 
-SWIFT_RUNTIME_EXPORT
-extern "C" Class swift_getInitializedObjCClass(Class c) {
+extern "C" Class _swift_getInitializedObjCClass_(Class c)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   // Used when we have class metadata and we want to ensure a class has been
   // initialized by the Objective C runtime. We need to do this because the
   // class "c" might be valid metadata, but it hasn't been initialized yet.
