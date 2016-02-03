@@ -603,6 +603,8 @@ static std::unique_ptr<llvm::Module> performIRGeneration(IRGenOptions &Opts,
       });
     }
 
+    IGM.addLinkLibrary(LinkLibrary("swiftClientRuntime", LibraryKind::Library));
+
     IGM.finalize();
 
     setModuleFlags(IGM);

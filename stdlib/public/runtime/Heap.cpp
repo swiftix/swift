@@ -14,6 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "swift/client-runtime/RuntimeWrappers.h"
 #include "swift/Runtime/HeapObject.h"
 #include "swift/Runtime/Heap.h"
 #include "Private.h"
@@ -22,13 +23,15 @@
 
 using namespace swift;
 
-void *swift::swift_slowAlloc(size_t size, size_t alignMask) {
+void *swift::_swift_slowAlloc_(size_t size, size_t alignMask)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   // FIXME: use posix_memalign if alignMask is larger than the system guarantee.
   void *p = malloc(size);
   if (!p) swift::crash("Could not allocate memory.");
   return p;
 }
 
-void swift::swift_slowDealloc(void *ptr, size_t bytes, size_t alignMask) {
+void swift::_swift_slowDealloc_(void *ptr, size_t bytes, size_t alignMask)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   free(ptr);
 }

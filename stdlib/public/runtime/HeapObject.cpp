@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "swift/Basic/Lazy.h"
+#include "swift/client-runtime/RuntimeWrappers.h"
 #include "swift/Runtime/HeapObject.h"
 #include "swift/Runtime/InstrumentsSupport.h"
 #include "swift/Runtime/Heap.h"
@@ -42,15 +43,19 @@
 
 using namespace swift;
 
+/*
 HeapObject *
 swift::swift_allocObject(HeapMetadata const *metadata,
                          size_t requiredSize,
                          size_t requiredAlignmentMask) {
   return _swift_allocObject(metadata, requiredSize, requiredAlignmentMask);
 }
-static HeapObject *
-_swift_allocObject_(HeapMetadata const *metadata, size_t requiredSize,
-                    size_t requiredAlignmentMask) {
+*/
+//static 
+HeapObject *
+swift::_swift_allocObject_(HeapMetadata const *metadata, size_t requiredSize,
+                    size_t requiredAlignmentMask)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   assert(isAlignmentMask(requiredAlignmentMask));
   auto object = reinterpret_cast<HeapObject *>(
                   swift_slowAlloc(requiredSize, requiredAlignmentMask));
@@ -64,7 +69,7 @@ _swift_allocObject_(HeapMetadata const *metadata, size_t requiredSize,
 
   return object;
 }
-auto swift::_swift_allocObject = _swift_allocObject_;
+//auto swift::_swift_allocObject = _swift_allocObject_;
 
 HeapObject *
 swift::swift_initStackObject(HeapMetadata const *metadata,
@@ -264,52 +269,61 @@ extern "C" LLVM_LIBRARY_VISIBILITY
 void _swift_release_dealloc(HeapObject *object)
   __attribute__((noinline,used));
 
-void swift::swift_retain(HeapObject *object) {
-  _swift_retain(object);
-}
-static void _swift_retain_(HeapObject *object) {
+//void swift::swift_retain(HeapObject *object) {
+//  _swift_retain(object);
+//}
+void swift::_swift_retain_(HeapObject *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   _swift_retain_inlined(object);
 }
-auto swift::_swift_retain = _swift_retain_;
+//auto swift::_swift_retain = _swift_retain_;
 
-void swift::swift_retain_n(HeapObject *object, uint32_t n) {
-  _swift_retain_n(object, n);
-}
-static void _swift_retain_n_(HeapObject *object, uint32_t n) {
+//void swift::swift_retain_n(HeapObject *object, uint32_t n) {
+//  _swift_retain_n(object, n);
+//}
+
+void swift::_swift_retain_n_(HeapObject *object, uint32_t n)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (object) {
     object->refCount.increment(n);
   }
 }
-auto swift::_swift_retain_n = _swift_retain_n_;
+//auto swift::_swift_retain_n = _swift_retain_n_;
 
-void swift::swift_release(HeapObject *object) {
-  return _swift_release(object);
-}
-static void _swift_release_(HeapObject *object) {
+//void swift::swift_release(HeapObject *object) {
+//  return _swift_release(object);
+//}
+void swift::_swift_release_(HeapObject *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (object  &&  object->refCount.decrementShouldDeallocate()) {
     _swift_release_dealloc(object);
   }
 }
-auto swift::_swift_release = _swift_release_;
+//auto swift::_swift_release = _swift_release_;
 
-void swift::swift_release_n(HeapObject *object, uint32_t n) {
-  return _swift_release_n(object, n);
-}
-static void _swift_release_n_(HeapObject *object, uint32_t n) {
+//void swift::swift_release_n(HeapObject *object, uint32_t n) {
+//  return _swift_release_n(object, n);
+//}
+void swift::_swift_release_n_(HeapObject *object, uint32_t n)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (object && object->refCount.decrementShouldDeallocateN(n)) {
     _swift_release_dealloc(object);
   }
 }
-auto swift::_swift_release_n = _swift_release_n_;
+//auto swift::_swift_release_n = _swift_release_n_;
 
-void swift::swift_unownedRetain(HeapObject *object) {
-  if (!object) return;
+void swift::_swift_unownedRetain_(HeapObject *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  if (!object)
+    return;
 
   object->weakRefCount.increment();
 }
 
-void swift::swift_unownedRelease(HeapObject *object) {
-  if (!object) return;
+void swift::_swift_unownedRelease_(HeapObject *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  if (!object)
+    return;
 
   if (object->weakRefCount.decrementShouldDeallocate()) {
     // Only class objects can be weak-retained and weak-released.
@@ -322,14 +336,18 @@ void swift::swift_unownedRelease(HeapObject *object) {
   }
 }
 
-void swift::swift_unownedRetain_n(HeapObject *object, int n) {
-  if (!object) return;
+void swift::_swift_unownedRetain_n_(HeapObject *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  if (!object)
+    return;
 
   object->weakRefCount.increment(n);
 }
 
-void swift::swift_unownedRelease_n(HeapObject *object, int n) {
-  if (!object) return;
+void swift::_swift_unownedRelease_n_(HeapObject *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  if (!object)
+    return;
 
   if (object->weakRefCount.decrementShouldDeallocateN(n)) {
     // Only class objects can be weak-retained and weak-released.
@@ -342,7 +360,8 @@ void swift::swift_unownedRelease_n(HeapObject *object, int n) {
   }
 }
 
-HeapObject *swift::swift_tryPin(HeapObject *object) {
+HeapObject *swift::_swift_tryPin_(HeapObject *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   assert(object);
 
   // Try to set the flag.  If this succeeds, the caller will be
@@ -356,22 +375,27 @@ HeapObject *swift::swift_tryPin(HeapObject *object) {
   return nullptr;
 }
 
-void swift::swift_unpin(HeapObject *object) {
+void swift::_swift_unpin_(HeapObject *object)
+  CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (object && object->refCount.decrementAndUnpinShouldDeallocate()) {
     _swift_release_dealloc(object);
   }
 }
 
-HeapObject *swift::swift_tryRetain(HeapObject *object) {
-  return _swift_tryRetain(object);
-}
-static HeapObject *_swift_tryRetain_(HeapObject *object) {
-  if (!object) return nullptr;
+//HeapObject *swift::_swift_tryRetain_(HeapObject *object) {
+//  return _swift_tryRetain(object);
+//}
+
+//static
+HeapObject *swift::_swift_tryRetain_(HeapObject *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  if (!object)
+    return nullptr;
 
   if (object->refCount.tryIncrement()) return object;
   else return nullptr;
 }
-auto swift::_swift_tryRetain = _swift_tryRetain_;
+//auto swift::_swift_tryRetain = _swift_tryRetain_;
 
 bool swift::swift_isDeallocating(HeapObject *object) {
   return _swift_isDeallocating(object);
@@ -382,8 +406,10 @@ static bool _swift_isDeallocating_(HeapObject *object) {
 }
 auto swift::_swift_isDeallocating = _swift_isDeallocating_;
 
-void swift::swift_unownedRetainStrong(HeapObject *object) {
-  if (!object) return;
+void swift::_swift_unownedRetainStrong_(HeapObject *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  if (!object)
+    return;
   assert(object->weakRefCount.getCount() &&
          "object is not currently weakly retained");
 
@@ -391,8 +417,10 @@ void swift::swift_unownedRetainStrong(HeapObject *object) {
     _swift_abortRetainUnowned(object);
 }
 
-void swift::swift_unownedRetainStrongAndRelease(HeapObject *object) {
-  if (!object) return;
+void swift::_swift_unownedRetainStrongAndRelease_(HeapObject *object)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+  if (!object)
+    return;
   assert(object->weakRefCount.getCount() &&
          "object is not currently weakly retained");
 
@@ -481,8 +509,9 @@ static inline void memset_pattern8(void *b, const void *pattern8, size_t len) {
 }
 #endif
 
-void swift::swift_deallocObject(HeapObject *object, size_t allocatedSize,
-                                size_t allocatedAlignMask) {
+void swift::_swift_deallocObject_(HeapObject *object, size_t allocatedSize,
+                                  size_t allocatedAlignMask)
+    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   assert(isAlignmentMask(allocatedAlignMask));
   assert(object->refCount.isDeallocating());
 #ifdef SWIFT_RUNTIME_CLOBBER_FREED_OBJECTS
