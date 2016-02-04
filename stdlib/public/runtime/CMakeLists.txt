@@ -17,6 +17,10 @@ if(SWIFT_RUNTIME_ENABLE_LEAK_CHECKER)
   set(swift_runtime_leaks_sources Leaks.mm)
 endif()
 
+# Enable shrink-wrapping.
+list(APPEND swift_runtime_compile_flags
+     "-mllvm" "-enable-shrink-wrap")
+
 # Acknowledge that the following sources are known.
 set(LLVM_OPTIONAL_SOURCES
     Remangle.cpp)
