@@ -42,7 +42,7 @@ extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_most[] = {
 };
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
-  (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
+  reinterpret_cast<RuntimeEntry>(RUNTIME_ENTRY_IMPL(Name)),
 
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_all[] = {
 #include "swift/client-runtime/RuntimeFunctions.def"
@@ -96,13 +96,14 @@ static RuntimeEntry * _local_all_swift_runtime_wrappers_c =
     _all_swift_runtime_wrappers_c;
 
 #define INVOKE_RT(CC, Entry, Proto)                                            \
-  ((Proto)(_all_swift_runtime_wrappers_##CC[Entry]))
+  (reinterpret_cast<Proto>(_all_swift_runtime_wrappers_##CC[Entry]))
 
 #define SYMBOL_NAME(Name) RT_SWIFT_##Name
 #define ATTR(Attr) __attribute__((Attr))
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs)      \
-  extern "C" ReturnTys Namespace Name(ArgTys) CC_ATTR(CC) {                    \
+  extern "C" SWIFT_RUNTIME_WRAPPER_VISIBILITY ReturnTys Namespace Name(ArgTys)          \
+      CC_ATTR(CC) {                                                            \
     return INVOKE_RT(CC, SYMBOL_NAME(Name),                                    \
                      CC_IMPL_ATTR(CC##_IMPL) ReturnTys (*)(ArgTys))(Args);     \
   }
@@ -116,4 +117,3 @@ static RuntimeEntry * _local_all_swift_runtime_wrappers_c =
 
 // Generate wrappers for all runtime methods that have to be invoked indirectly.
 #include "swift/client-runtime/RuntimeFunctions.def"
-

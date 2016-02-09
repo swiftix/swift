@@ -267,6 +267,7 @@ OpaqueValue *swift::swift_projectBox(HeapObject *o) {
 // Forward-declare this, but define it after swift_release.
 extern "C" LLVM_LIBRARY_VISIBILITY
 void _swift_release_dealloc(HeapObject *object)
+  CALLING_CONVENTION(RUNTIME_CC1_IMPL)
   __attribute__((noinline,used));
 
 //void swift::swift_retain(HeapObject *object) {
@@ -443,7 +444,8 @@ void swift::swift_unownedCheck(HeapObject *object) {
 }
 
 // Declared extern "C" LLVM_LIBRARY_VISIBILITY above.
-void _swift_release_dealloc(HeapObject *object) {
+void _swift_release_dealloc(HeapObject *object)
+  CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   asFullMetadata(object->metadata)->destroy(object);
 }
 

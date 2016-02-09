@@ -70,6 +70,12 @@
 #define CALLING_CONVENTION_preserve_all  __attribute__((preserve_all))
 #define CALLING_CONVENTION_c
 
+// RUNTIME_CC0 is the standard C calling convention.
+#define RUNTIME_CC0 c
+#define CALLING_CONVENTION_RUNTIME_CC0 CALLING_CONVENTION_c
+
+// RUNTIME_CC1 is a dedicated runtime calling convention to be used
+// when calling the most popular runtime functions.
 #if  defined(__arm64__) || defined(__x86_64__)
 #define RUNTIME_CC1 preserve_most
 #define CALLING_CONVENTION_RUNTIME_CC1 CALLING_CONVENTION_preserve_most
@@ -82,9 +88,15 @@
 #define CALLING_CONVENTION_RUNTIME_CC1_IMPL CALLING_CONVENTION_c
 #endif
 
-#define RUNTIME_CC0 c
-#define CALLING_CONVENTION_RUNTIME_CC0 CALLING_CONVENTION_c
-
-#endif // SWIFT_RUNTIME_CONFIG_H
+#if defined(SWIFT_RUNTIME_PUBLIC_WRAPPERS)
+// Make wrappers visible if they are build e.g. as a part of a shared libary for
+// use in the -interpret mode.
+#define SWIFT_RUNTIME_WRAPPER_VISIBILITY SWIFT_RUNTIME_EXPORT
+#else
+// Bring in visibility attribute macros for library visibility.
+#include "llvm/Support/Compiler.h"
+// Mark wrappers as hidden to avoid any conflicts.
+#define SWIFT_RUNTIME_WRAPPER_VISIBILITY LLVM_LIBRARY_VISIBILITY
+#endif
 
 #endif // SWIFT_RUNTIME_CONFIG_H

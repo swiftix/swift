@@ -65,6 +65,8 @@
 #define Int1Ty bool
 #define ObjCPtrTy id
 #define ObjCClassPtrTy Class
+#define IntTy int
+#define UnsignedTy unsigned
 
 // RefCounted *swift_allocObject(Metadata *type, size_t size, size_t alignMask);
 FUNCTION(AllocObject,  , swift_allocObject,   RUNTIME_CC1,
@@ -302,6 +304,51 @@ FUNCTION(ObjCRetain, , swift_objc_retain, RUNTIME_CC1,
 
 FUNCTION(ObjCRelease, , swift_objc_release, RUNTIME_CC1,
          RETURNS(VoidTy), ARGS(ObjCPtrTy ARGNAME(ptr)), ARGNAMES(ptr), ATTRS(NoUnwind))
+
+// int swift_getEnumCaseSinglePayload(const OpaqueValue *value, const Metadata *payload,
+//                                      unsigned emptyCases)
+FUNCTION(GetEnumCaseSinglePayload, NAMESPACE(swift), swift_getEnumCaseSinglePayload, RUNTIME_CC1,
+         RETURNS(IntTy),
+         ARGS(const OpaquePtrTy ARGNAME(value), TypeMetadataPtrTy ARGNAME(payload), UnsignedTy ARGNAME(emptyCases)),
+         ARGNAMES(value, payload, emptyCases),
+         ATTRS(NoUnwind))
+
+// void swift_storeEnumTagSinglePayload(const OpaqueValue *value, const Metadata *payload,
+//                                      int whichCase, unsigned emptyCases)
+FUNCTION(StoreEnumTagSinglePayload, NAMESPACE(swift), swift_storeEnumTagSinglePayload, RUNTIME_CC1,
+         RETURNS(VoidTy),
+         ARGS(OpaquePtrTy ARGNAME(value), TypeMetadataPtrTy ARGNAME(payload), IntTy ARGNAME(whichCase), UnsignedTy ARGNAME(emptyCases)),
+         ARGNAMES(value, payload, whichCase, emptyCases),
+         ATTRS(NoUnwind))
+
+// bool swift_isUniquelyReferencedOrPinned_native(const struct HeapObject *);
+FUNCTION(IsUniquelyReferencedOrPinned_native, NAMESPACE(swift),
+         swift_isUniquelyReferencedOrPinned_native,
+         RUNTIME_CC1,
+         RETURNS(Int1Ty),
+         ARGS(const RefCountedPtrTy ARGNAME(object)),
+         ARGNAMES(object),
+         ATTRS(NoUnwind, ZExt))
+
+// bool swift_isUniquelyReferencedOrPinned_nonNull_native(
+//   const struct HeapObject *);
+FUNCTION(IsUniquelyReferencedOrPinned_nonNull_native, NAMESPACE(swift),
+         swift_isUniquelyReferencedOrPinned_nonNull_native,
+         RUNTIME_CC1,
+         RETURNS(Int1Ty),
+         ARGS(const RefCountedPtrTy ARGNAME(object)),
+         ARGNAMES(object),
+         ATTRS(NoUnwind, ZExt))
+
+
+// bool swift_isUniquelyReferenced_nonNull_native(const struct HeapObject *);
+FUNCTION(IsUniquelyReferenced_nonNull_native, NAMESPACE(swift),
+         swift_isUniquelyReferenced_nonNull_native,
+         RUNTIME_CC1,
+         RETURNS(Int1Ty),
+         ARGS(const RefCountedPtrTy ARGNAME(object)),
+         ARGNAMES(object),
+         ATTRS(NoUnwind, ZExt))
 
 #undef RETURNS
 #undef ARGS

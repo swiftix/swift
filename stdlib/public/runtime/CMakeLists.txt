@@ -19,7 +19,7 @@ endif()
 
 # Enable shrink-wrapping.
 list(APPEND swift_runtime_compile_flags
-     "-mllvm" "-enable-shrink-wrap")
+     "-mllvm" "-enable-shrink-wrap" "-fomit-frame-pointer")
 
 # Acknowledge that the following sources are known.
 set(LLVM_OPTIONAL_SOURCES
