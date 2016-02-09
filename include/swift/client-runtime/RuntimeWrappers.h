@@ -18,6 +18,7 @@
 #ifndef __RUNTIME_WRAPPERS_H
 #define __RUNTIME_WRAPPERS_H
 
+#include "swift/Runtime/Enum.h"
 #include "swift/Runtime/HeapObject.h"
 #include "swift/Runtime/Metadata.h"
 

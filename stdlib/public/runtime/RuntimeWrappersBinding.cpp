@@ -20,6 +20,7 @@ static const RuntimeEntry _const_swift_runtime_wrappers_preserve_all[]  = {
 // by SwiftRuntimeCallingConventions.
 // LLDB may use this array to discover all entry points
 // and their calling conventions.
+SWIFT_RUNTIME_EXPORT
 extern "C" const RuntimeEntry *const_swift_runtime_wrappers[] = {
   _const_swift_runtime_wrappers_c,
   _const_swift_runtime_wrappers_preserve_most,
@@ -29,6 +30,7 @@ extern "C" const RuntimeEntry *const_swift_runtime_wrappers[] = {
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
   (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
 
+SWIFT_RUNTIME_EXPORT
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_c[] = {
 #include "swift/client-runtime/RuntimeFunctions.def"
   nullptr,
@@ -37,6 +39,7 @@ extern "C" RuntimeEntry _all_swift_runtime_wrappers_c[] = {
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
   (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
 
+SWIFT_RUNTIME_EXPORT
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_most[]  = {
 #include "swift/client-runtime/RuntimeFunctions.def"
   nullptr,
@@ -45,16 +48,17 @@ extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_most[]  = {
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
   (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
 
+SWIFT_RUNTIME_EXPORT
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_all[] = {
 #include "swift/client-runtime/RuntimeFunctions.def"
-  nullptr,
+        nullptr,
 };
-
 
 // Pointers to entry points. This array is indexed
 // by SwiftRuntimeCallingConventions.
 // Instruments and other tools may use it to intercept
 // these runtime calls.
+SWIFT_RUNTIME_EXPORT
 extern "C" RuntimeEntry *all_swift_runtime_wrappers[] = {
   _all_swift_runtime_wrappers_c,
   _all_swift_runtime_wrappers_preserve_most,
@@ -65,7 +69,7 @@ extern "C" RuntimeEntry *all_swift_runtime_wrappers[] = {
 /// compiled Swift code.
 
 #define INVOKE_RT(CC, Entry, Proto)                                            \
-  ((Proto)(_all_swift_runtime_wrappers_##CC[Entry]))
+  (reinterpret_cast<Proto>(_all_swift_runtime_wrappers_##CC[Entry]))
 
 #define SYMBOL_NAME(Name) RT_SWIFT_##Name
 
@@ -86,19 +90,20 @@ extern "C" RuntimeEntry *all_swift_runtime_wrappers[] = {
 // The upper 16 bits represent the calling convention.
 // Tools can query this array to figure out which point is stored at which
 // index and which calling convention it uses.
-extern "C" const uint32_t swift_rt_symbol_indices[] = {
+SWIFT_RUNTIME_EXPORT extern "C" const uint32_t swift_rt_symbol_indices[] = {
 #include "swift/client-runtime/RuntimeFunctions.def"
 };
 #endif
 
 #define INVOKE_RT(CC, Entry, Proto)                                            \
-  ((Proto)(_all_swift_runtime_wrappers_##CC[Entry]))
+  (reinterpret_cast<Proto>(_all_swift_runtime_wrappers_##CC[Entry]))
 
 #define SYMBOL_NAME(Name) RT_SWIFT_##Name
 #define ATTR(Attr) __attribute__((Attr))
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs)      \
-  extern "C" ReturnTys Namespace Name(ArgTys) CC_ATTR(CC) {                    \
+  extern "C" SWIFT_RUNTIME_WRAPPER_VISIBILITY ReturnTys Namespace Name(ArgTys)          \
+      CC_ATTR(CC) {                                                            \
     return INVOKE_RT(CC, SYMBOL_NAME(Name),                                    \
                      CC_IMPL_ATTR(CC##_IMPL) ReturnTys (*)(ArgTys))(Args);     \
   }
@@ -112,4 +117,3 @@ extern "C" const uint32_t swift_rt_symbol_indices[] = {
 
 // Generate wrappers for all runtime methods that have to be invoked indirectly.
 #include "swift/client-runtime/RuntimeFunctions.def"
-

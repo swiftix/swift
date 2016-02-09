@@ -49,7 +49,7 @@ struct OpaqueValue;
 ///
 /// POSSIBILITIES: The argument order is fair game.  It may be useful
 /// to have a variant which guarantees zero-initialized memory.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" HeapObject *swift_allocObject(HeapMetadata const *metadata,
                                          size_t requiredSize,
                                          size_t requiredAlignmentMask)
@@ -141,13 +141,13 @@ extern "C" BoxPair::Return swift_allocBox(Metadata const *type);
 // Never returns nil. The returned memory is uninitialized. 
 //
 // An "alignment mask" is just the alignment (a power of 2) minus 1.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void *swift_slowAlloc(size_t bytes, size_t alignMask)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 // If the caller cannot promise to zero the object during destruction,
 // then call these corresponding APIs:
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_slowDealloc(void *ptr, size_t bytes, size_t alignMask)
     CALLING_CONVENTION(RUNTIME_CC1);
 
@@ -163,10 +163,10 @@ extern "C" void swift_slowDealloc(void *ptr, size_t bytes, size_t alignMask)
 ///      - maybe a variant that can assume a non-null object
 /// It may also prove worthwhile to have this use a custom CC
 /// which preserves a larger set of registers.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_retain(HeapObject *object)
     CALLING_CONVENTION(RUNTIME_CC1);
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_retain_n(HeapObject *object, uint32_t n)
     CALLING_CONVENTION(RUNTIME_CC1);
 
@@ -178,8 +178,8 @@ static inline void _swift_retain_inlined(HeapObject *object) {
 
 /// Atomically increments the reference count of an object, unless it has
 /// already been destroyed. Returns nil if the object is dead.
-SWIFT_RUNTIME_EXPORT
-extern "C" HeapObject *swift_tryRetain(HeapObject *object);
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
+extern "C" HeapObject *swift_tryRetain(HeapObject *object)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Returns true if an object is in the process of being deallocated.
@@ -193,15 +193,15 @@ extern "C" bool swift_isDeallocating(HeapObject *object);
 /// calling swift_unpin on the return value.
 ///
 /// The object reference may not be nil.
-SWIFT_RUNTIME_EXPORT
-extern "C" HeapObject *swift_tryPin(HeapObject *object);
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
+extern "C" HeapObject *swift_tryPin(HeapObject *object)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Given that an object is pinned, atomically unpin it and decrement
 /// the reference count.
 ///
 /// The object reference may be nil (to simplify the protocol).
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unpin(HeapObject *object) CALLING_CONVENTION(RUNTIME_CC1);
   
 /// Atomically decrements the retain count of an object.  If the
@@ -219,13 +219,13 @@ extern "C" void swift_unpin(HeapObject *object) CALLING_CONVENTION(RUNTIME_CC1);
 ///      - a variant that can safely use non-atomic operations
 ///      - maybe a variant that can assume a non-null object
 /// It's unlikely that a custom CC would be beneficial here.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_release(HeapObject *object)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Atomically decrements the retain count of an object n times. If the retain
 /// count reaches zero, the object is destroyed
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_release_n(HeapObject *object, uint32_t n)
     CALLING_CONVENTION(RUNTIME_CC1);
 
@@ -263,21 +263,21 @@ extern "C" bool swift_isUniquelyReferenced_native(const struct HeapObject *);
 
 /// Is this native Swift pointer a non-null unique or pinned reference
 /// to an object?
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" bool swift_isUniquelyReferencedOrPinned_native(
-  const struct HeapObject *);
+  const struct HeapObject *) CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Is this non-null native Swift pointer a unique reference to
 /// an object?
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" bool swift_isUniquelyReferenced_nonNull_native(
-  const struct HeapObject *);
+  const struct HeapObject *) CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Does this non-null native Swift pointer refer to an object that
 /// is either uniquely referenced or pinned?
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" bool swift_isUniquelyReferencedOrPinned_nonNull_native(
-  const struct HeapObject *);
+  const struct HeapObject *) CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Deallocate the given memory.
 ///
@@ -294,7 +294,7 @@ extern "C" bool swift_isUniquelyReferencedOrPinned_nonNull_native(
 /// POSSIBILITIES: It may be useful to have a variant which
 /// requires the object to have been fully zeroed from offsets
 /// sizeof(SwiftHeapObject) to allocatedSize.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_deallocObject(HeapObject *object, size_t allocatedSize,
                                     size_t allocatedAlignMask)
     CALLING_CONVENTION(RUNTIME_CC1);
@@ -405,35 +405,35 @@ struct UnownedReference {
 };
 
 /// Increment the weak/unowned retain count.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unownedRetain(HeapObject *value)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Decrement the weak/unowned retain count.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unownedRelease(HeapObject *value)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Increment the weak/unowned retain count by n.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unownedRetain_n(HeapObject *value, int n)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Decrement the weak/unowned retain count by n.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unownedRelease_n(HeapObject *value, int n)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Increment the strong retain count of an object, aborting if it has
 /// been deallocated.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unownedRetainStrong(HeapObject *value)
     CALLING_CONVENTION(RUNTIME_CC1);
 
 /// Increment the strong retain count of an object which may have been
 /// deallocated, aborting if it has been deallocated, and decrement its
 /// weak/unowned reference count.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unownedRetainStrongAndRelease(HeapObject *value)
     CALLING_CONVENTION(RUNTIME_CC1);
 
@@ -580,11 +580,11 @@ extern "C" void swift_weakTakeAssign(WeakReference *dest, WeakReference *src);
 /************************* OTHER REFERENCE-COUNTING **************************/
 /*****************************************************************************/
 
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void *swift_bridgeObjectRetain(void *value)
     CALLING_CONVENTION(RUNTIME_CC1);
 /// Increment the strong retain count of a bridged object by n.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
     extern "C" void *swift_bridgeObjectRetain_n(void *value, int n)
     CALLING_CONVENTION(RUNTIME_CC1);
 
@@ -596,12 +596,12 @@ SWIFT_RUNTIME_EXPORT
 
 /// Increment the strong retain count of an object which might not be a native
 /// Swift object.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unknownRetain(void *value)
     CALLING_CONVENTION(RUNTIME_CC1);
 /// Increment the strong retain count of an object which might not be a native
 /// Swift object by n.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unknownRetain_n(void *value, int n)
     CALLING_CONVENTION(RUNTIME_CC1);
 
@@ -619,11 +619,11 @@ static inline void swift_unknownRetain_n(void *value, int n)
 
 #endif /* SWIFT_OBJC_INTEROP */
 
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_bridgeObjectRelease(void *value)
     CALLING_CONVENTION(RUNTIME_CC1);
 /// Decrement the strong retain count of a bridged object by n.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_bridgeObjectRelease_n(void *value, int n)
     CALLING_CONVENTION(RUNTIME_CC1);
 
@@ -631,12 +631,12 @@ extern "C" void swift_bridgeObjectRelease_n(void *value, int n)
 
 /// Decrement the strong retain count of an object which might not be a native
 /// Swift object.
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unknownRelease(void *value)
     CALLING_CONVENTION(RUNTIME_CC1);
 /// Decrement the strong retain count of an object which might not be a native
 /// Swift object by n.i
-SWIFT_RUNTIME_EXPORT
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_unknownRelease_n(void *value, int n)
     CALLING_CONVENTION(RUNTIME_CC1);
 

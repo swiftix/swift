@@ -413,6 +413,7 @@ public:
   llvm::MDNode *InvariantNode;
   
   llvm::CallingConv::ID RuntimeCC;     /// lightweight calling convention
+  llvm::CallingConv::ID RuntimeCC1;    /// lightweight calling convention
 
   llvm::FunctionType *getAssociatedTypeMetadataAccessFunctionTy();
   llvm::FunctionType *getAssociatedTypeWitnessTableAccessFunctionTy();

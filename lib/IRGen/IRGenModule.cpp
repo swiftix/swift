@@ -360,6 +360,15 @@ IRGenModule::IRGenModule(IRGenModuleDispatcher &dispatcher, SourceFile *SF,
   
   // TODO: use "tinycc" on platforms that support it
   RuntimeCC = llvm::CallingConv::C;
+  // If it is an interpreter, don't use try to use any
+  // advanced calling conventions and use instead a
+  // more conservative C calling convention. This
+  // makes sure that none of the registers eventually
+  // used by the dynamic linker are used by generated code.
+  if (Opts.UseJIT)
+    RuntimeCC1 = llvm::CallingConv::C;
+  else
+    RuntimeCC1 = llvm::CallingConv::PreserveMost;
 
   ABITypes = new CodeGenABITypes(clangASTContext, Module);
 

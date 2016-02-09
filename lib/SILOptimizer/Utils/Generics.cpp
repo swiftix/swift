@@ -145,7 +145,8 @@ static bool cacheSpecialization(SILModule &M, SILFunction *F) {
 
   if (M.getOptions().Optimization >= SILOptions::SILOptMode::Optimize &&
       F->getLinkage() != SILLinkage::Public &&
-      F->getModule().getSwiftModule()->getName().str() == STDLIB_NAME) {
+      (F->getModule().getSwiftModule()->getName().str() == STDLIB_NAME ||
+       F->getModule().getSwiftModule()->getName().str() == "Prespecialized")) {
     if (F->getLinkage() != SILLinkage::Public &&
         isWhitelistedSpecialization(F->getName())) {
 

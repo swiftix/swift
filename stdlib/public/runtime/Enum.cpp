@@ -14,6 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "swift/client-runtime/RuntimeWrappers.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "swift/Basic/Fallthrough.h"
@@ -140,9 +141,10 @@ swift::swift_initEnumValueWitnessTableSinglePayload(ValueWitnessTable *vwtable,
 }
 
 int
-swift::swift_getEnumCaseSinglePayload(const OpaqueValue *value,
+swift::_swift_getEnumCaseSinglePayload_(const OpaqueValue *value,
                                       const Metadata *payload,
-                                      unsigned emptyCases) {
+                                      unsigned emptyCases)
+  CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   auto *payloadWitnesses = payload->getValueWitnesses();
   auto payloadSize = payloadWitnesses->getSize();
   auto payloadNumExtraInhabitants = payloadWitnesses->getNumExtraInhabitants();
@@ -189,9 +191,10 @@ swift::swift_getEnumCaseSinglePayload(const OpaqueValue *value,
 }
 
 void
-swift::swift_storeEnumTagSinglePayload(OpaqueValue *value,
+swift::_swift_storeEnumTagSinglePayload_(OpaqueValue *value,
                                         const Metadata *payload,
-                                        int whichCase, unsigned emptyCases) {
+                                        int whichCase, unsigned emptyCases)
+  CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   auto *payloadWitnesses = payload->getValueWitnesses();
   auto payloadSize = payloadWitnesses->getSize();
   unsigned payloadNumExtraInhabitants
