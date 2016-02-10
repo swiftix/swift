@@ -48,7 +48,7 @@ bb0(%0 : $*A, %1 : $Optional<C>):
 // CHECK-NEXT: %4 = inttoptr
 // CHECK-NEXT: call void bitcast (void ([[WEAK]]*, [[REF]]*)* @swift_weakAssign to void ([[WEAK]]*, [[C]]*)*)([[WEAK]]* [[X]], [[C]]* %4)
 // CHECK-NEXT: %5 = inttoptr i64 %3 to %swift.refcounted*
-// CHECK-NEXT: call void @swift_release([[REF]]* %5)
+// CHECK-NEXT: call preserve_mostcc void @swift_release([[REF]]* %5)
 // CHECK-NEXT: ret void
 
 struct B {
@@ -77,7 +77,7 @@ bb0(%0 : $*B, %1 : $Optional<P>):
 // CHECK-NEXT: [[T0:%.*]] = getelementptr inbounds { [[WEAK]], i8** }, { [[WEAK]], i8** }* [[X]], i32 0, i32 0
 // CHECK-NEXT: call void @swift_unknownWeakAssign([[WEAK]]* [[T0]], [[UNKNOWN]]* [[TMPOBJ]])
 // CHECK: [[RECOMPUTED_TMPOBJ:%.*]] = inttoptr {{.*}} to %objc_object*
-// CHECK: call void @swift_unknownRelease(%objc_object* [[RECOMPUTED_TMPOBJ]])
+// CHECK: call preserve_mostcc void @swift_unknownRelease(%objc_object* [[RECOMPUTED_TMPOBJ]])
 
 sil @test_weak_alloc_stack : $@convention(thin) (Optional<P>) -> () {
 bb0(%0 : $Optional<P>):
