@@ -854,9 +854,13 @@ FUNCTION(GetInitializedObjCClass, swift_getInitializedObjCClass, RuntimeCC1,
          RETURNS(ObjCClassPtrTy),
          ARGS(ObjCClassPtrTy),
          ATTRS(NoUnwind))
-FUNCTION(ObjCRetain, objc_retain, C_CC,
+//FUNCTION(ObjCRetain, objc_retain, C_CC,
+//         RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
+//FUNCTION(ObjCRelease, objc_release, C_CC,
+//         RETURNS(VoidTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
+FUNCTION(ObjCRetain, swift_objc_retain, RuntimeCC1,
          RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
-FUNCTION(ObjCRelease, objc_release, C_CC,
+FUNCTION(ObjCRelease, swift_objc_release, RuntimeCC1,
          RETURNS(VoidTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
 FUNCTION(ObjCAutorelease, objc_autorelease, C_CC,
          RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
