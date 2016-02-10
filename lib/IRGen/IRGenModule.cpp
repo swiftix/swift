@@ -358,6 +358,7 @@ IRGenModule::IRGenModule(IRGenModuleDispatcher &dispatcher, SourceFile *SF,
   InvariantNode = llvm::MDNode::get(LLVMContext, {});
   DereferenceableID = LLVMContext.getMDKindID("dereferenceable");
   
+  C_CC = llvm::CallingConv::C;
   // TODO: use "tinycc" on platforms that support it
   RuntimeCC = llvm::CallingConv::C;
   // If it is an interpreter, don't use try to use any
@@ -399,7 +400,7 @@ namespace RuntimeConstants {
   const auto NoReturn = llvm::Attribute::NoReturn;
   const auto NoUnwind = llvm::Attribute::NoUnwind;
   const auto ZExt = llvm::Attribute::ZExt;
-  const auto C_CC = llvm::CallingConv::C;
+  //const auto C_CC = llvm::CallingConv::C;
 }
 
 // We don't use enough attributes to justify generalizing the
