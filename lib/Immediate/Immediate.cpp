@@ -53,7 +53,7 @@ static bool loadRuntimeLib(StringRef sharedLibName, StringRef runtimeLibPath) {
 bool swift::immediate::loadSwiftRuntime(StringRef runtimeLibPath) {
   if (!loadRuntimeLib("libswiftCore" LTDL_SHLIB_EXT, runtimeLibPath))
     return false;
-  if (!loadRuntimeLib("libswiftDynClientRuntime" LTDL_SHLIB_EXT,
+  if (!loadRuntimeLib("libswiftDynamicClientRuntime" LTDL_SHLIB_EXT,
                       runtimeLibPath))
     return false;
   return true;

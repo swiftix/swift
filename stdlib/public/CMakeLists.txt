@@ -23,8 +23,9 @@ if(SWIFT_BUILD_STDLIB)
   # These must be kept in dependency order so that any referenced targets
   # exist at the time we look for them in add_swift_*.
   add_subdirectory(SwiftShims)
+  add_subdirectory(static-client-runtime)
+  add_subdirectory(dynamic-client-runtime)
   add_subdirectory(runtime)
-  add_subdirectory(client-runtime)
   add_subdirectory(stubs)
   add_subdirectory(core)
 endif()

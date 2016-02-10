@@ -91,10 +91,6 @@ extern "C" const uint32_t swift_rt_symbol_indices[] = {
 
 #endif
 
-// TODO: Use a local pointer to cache the external address?
-static RuntimeEntry * _local_all_swift_runtime_wrappers_c =
-    _all_swift_runtime_wrappers_c;
-
 #define INVOKE_RT(CC, Entry, Proto)                                            \
   (reinterpret_cast<Proto>(_all_swift_runtime_wrappers_##CC[Entry]))
 

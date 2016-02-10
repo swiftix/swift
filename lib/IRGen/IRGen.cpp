@@ -603,7 +603,7 @@ static std::unique_ptr<llvm::Module> performIRGeneration(IRGenOptions &Opts,
       });
     }
 
-    IGM.addLinkLibrary(LinkLibrary("swiftClientRuntime", LibraryKind::Library));
+    IGM.addLinkLibrary(LinkLibrary("swiftStaticClientRuntime", LibraryKind::Library));
 
     IGM.finalize();
 
@@ -746,7 +746,10 @@ static void performParallelIRGeneration(IRGenOptions &Opts,
       PrimaryGM->addLinkLibrary(linkLib);
     });
   }
-  
+
+  PrimaryGM->addLinkLibrary(
+      LinkLibrary("swiftStaticClientRuntime", LibraryKind::Library));
+
   llvm::StringSet<> referencedGlobals;
 
   for (auto it = dispatcher.begin(); it != dispatcher.end(); ++it) {
