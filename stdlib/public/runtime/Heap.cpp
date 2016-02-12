@@ -23,7 +23,7 @@
 
 using namespace swift;
 
-void *swift::_swift_slowAlloc_(size_t size, size_t alignMask)
+void *swift::RT_ENTRY_IMPL(swift_slowAlloc)(size_t size, size_t alignMask)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   // FIXME: use posix_memalign if alignMask is larger than the system guarantee.
   void *p = malloc(size);
@@ -31,7 +31,7 @@ void *swift::_swift_slowAlloc_(size_t size, size_t alignMask)
   return p;
 }
 
-void swift::_swift_slowDealloc_(void *ptr, size_t bytes, size_t alignMask)
+void swift::RT_ENTRY_IMPL(swift_slowDealloc)(void *ptr, size_t bytes, size_t alignMask)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   free(ptr);
 }
