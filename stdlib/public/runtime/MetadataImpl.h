@@ -47,6 +47,10 @@
 #include <cstring>
 #include <type_traits>
 
+#if SWIFT_OBJC_INTEROP
+#include "swift/client-runtime/RuntimeWrappers.h"
+#endif /* SWIFT_OBJC_INTEROP */
+
 namespace swift {
 namespace metadataimpl {
 
@@ -373,8 +377,10 @@ struct SwiftWeakRetainableBox :
 };
 
 #if SWIFT_OBJC_INTEROP
-extern "C" void *objc_retain(void *obj);
-extern "C" void objc_release(void *obj);
+#include <objc/objc.h>
+
+extern "C" id objc_retain(id obj);
+extern "C" void objc_release(id obj);
 
 /// A box implementation class for Objective-C object pointers.
 struct ObjCRetainableBox : RetainableBoxBase<ObjCRetainableBox, void*> {
@@ -382,11 +388,11 @@ struct ObjCRetainableBox : RetainableBoxBase<ObjCRetainableBox, void*> {
     swift_getHeapObjectExtraInhabitantCount();
 
   static void *retain(void *obj) {
-    return objc_retain(obj);
+    return swift_objc_retain(static_cast<id>(obj));
   }
 
   static void release(void *obj) {
-    objc_release(obj);
+    swift_objc_release(static_cast<id>(obj));
   }
 };
 

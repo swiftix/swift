@@ -476,15 +476,25 @@ static bool usesNativeSwiftReferenceCounting_allocated(const void *object) {
   return usesNativeSwiftReferenceCounting(_swift_getClassOfAllocated(object));
 }
 
-__attribute__((noinline)) id swift::_swift_objc_retain_(id object)
+#if 0
+#define OBJC_RETAIN RT_ENTRY_IMPL(swift_objc_retain)
+#define OBJC_RELEASE RT_ENTRY_IMPL(swift_objc_release)
+
+__attribute__((noinline))
+id swift::RT_ENTRY_IMPL(swift_objc_retain)(id object)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   return objc_retain(object);
 }
 
-__attribute__((noinline)) void swift::_swift_objc_release_(id object)
+__attribute__((noinline))
+void swift::RT_ENTRY_IMPL(swift_objc_release)(id object)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   objc_release(object);
 }
+#else
+#define OBJC_RETAIN swift_objc_retain
+#define OBJC_RELEASE swift_objc_release
+#endif
 
 void swift::_swift_unknownRetain_n_(void *object, int n)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
@@ -494,7 +504,7 @@ void swift::_swift_unknownRetain_n_(void *object, int n)
     return;
   }
   for (int i = 0; i < n; ++i)
-    _swift_objc_retain_(static_cast<id>(object));
+    OBJC_RETAIN(static_cast<id>(object));
 }
 
 void swift::_swift_unknownRelease_n_(void *object, int n)
@@ -503,7 +513,7 @@ void swift::_swift_unknownRelease_n_(void *object, int n)
   if (usesNativeSwiftReferenceCounting_allocated(object))
     return swift_release_n(static_cast<HeapObject *>(object), n);
   for (int i = 0; i < n; ++i)
-    _swift_objc_release_(static_cast<id>(object));
+    OBJC_RELEASE(static_cast<id>(object));
 }
 
 void swift::_swift_unknownRetain_(void *object)
@@ -513,15 +523,15 @@ void swift::_swift_unknownRetain_(void *object)
     swift_retain(static_cast<HeapObject *>(object));
     return;
   }
-  _swift_objc_retain_(static_cast<id>(object));
+  OBJC_RETAIN(static_cast<id>(object));
 }
 
 void swift::_swift_unknownRelease_(void *object)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object))
-    return swift_release(static_cast<HeapObject *>(object));
-  return _swift_objc_release_(static_cast<id>(object));
+    return RT_ENTRY_IMPL(swift_release)(static_cast<HeapObject *>(object));
+  return OBJC_RELEASE(static_cast<id>(object));
 }
 
 /// Return true iff the given BridgeObject is not known to use native
@@ -558,7 +568,7 @@ void *swift::_swift_bridgeObjectRetain_(void *object)
     swift_retain(static_cast<HeapObject *>(objectRef));
     return static_cast<HeapObject *>(objectRef);
   }
-  return _swift_objc_retain_(static_cast<id>(objectRef));
+  return OBJC_RETAIN(static_cast<id>(objectRef));
 #else
   swift_retain(static_cast<HeapObject *>(objectRef));
   return static_cast<HeapObject *>(objectRef);
@@ -577,7 +587,7 @@ void swift::_swift_bridgeObjectRelease_(void *object)
 #if SWIFT_OBJC_INTEROP
   if (!isNonNative_unTagged_bridgeObject(object))
     return swift_release(static_cast<HeapObject *>(objectRef));
-  return _swift_objc_release_(static_cast<id>(objectRef));
+  return OBJC_RELEASE(static_cast<id>(objectRef));
 #else
   swift_release(static_cast<HeapObject *>(objectRef));
 #endif
@@ -599,7 +609,7 @@ void *swift::_swift_bridgeObjectRetain_n_(void *object, int n)
     return static_cast<HeapObject *>(objectRef);
   }
   for (int i = 0;i < n; ++i)
-    objc_ret = _swift_objc_retain_(static_cast<id>(objectRef));
+    objc_ret = OBJC_RETAIN(static_cast<id>(objectRef));
   return objc_ret;
 #else
   swift_retain_n(static_cast<HeapObject *>(objectRef), n);
@@ -620,7 +630,7 @@ void swift::_swift_bridgeObjectRelease_n_(void *object, int n)
   if (!isNonNative_unTagged_bridgeObject(object))
     return swift_release_n(static_cast<HeapObject *>(objectRef), n);
   for (int i = 0; i < n; ++i)
-    _swift_objc_release_(static_cast<id>(objectRef));
+    OBJC_RELEASE(static_cast<id>(objectRef));
 #else
   swift_release_n(static_cast<HeapObject *>(objectRef), n);
 #endif
