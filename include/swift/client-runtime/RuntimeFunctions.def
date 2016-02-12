@@ -44,6 +44,7 @@
 #define Int8PtrTy void *
 #define RefCountedPtrTy HeapObject *
 #define VoidTy void
+#define VoidPtrTy void *
 #define UInt32Ty uint32_t
 #define TypeMetadataPtrTy const Metadata *
 #define ExistentialTypeMetadataPtrTy const ExistentialTypeMetadata *
@@ -63,8 +64,6 @@
 //#define GenericMetadata void
 #define ProtocolDescriptorPtrPtrTy const protocol_descriptor_t * *
 #define Int1Ty bool
-#define ObjCPtrTy id
-#define ObjCClassPtrTy Class
 #define IntTy int
 #define UnsignedTy unsigned
 
@@ -292,6 +291,11 @@ FUNCTION(DynamicCast, , swift_dynamicCast, RUNTIME_CC1,
          ARGNAMES(dest, src, srcType, targetType, flags),
          ATTRS(NoUnwind, ReadOnly))
 
+#if SWIFT_OBJC_INTEROP
+
+#define ObjCPtrTy id
+#define ObjCClassPtrTy Class
+
 // Class swift_getInitializedObjCClass(Class c)
 FUNCTION(GetInitializedObjCClass, , swift_getInitializedObjCClass, RUNTIME_CC1,
          RETURNS(ObjCClassPtrTy),
@@ -299,11 +303,19 @@ FUNCTION(GetInitializedObjCClass, , swift_getInitializedObjCClass, RUNTIME_CC1,
          ARGNAMES(c),
          ATTRS(NoUnwind))
 
-FUNCTION(ObjCRetain, , swift_objc_retain, RUNTIME_CC1,
+
+//FUNCTION(ObjCRetain, , swift_objc_retain, RUNTIME_CC1,
+//         RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy ARGNAME(ptr)), ARGNAMES(ptr), ATTRS(NoUnwind))
+
+//FUNCTION(ObjCRelease, , swift_objc_release, RUNTIME_CC1,
+//         RETURNS(VoidTy), ARGS(ObjCPtrTy ARGNAME(ptr)), ARGNAMES(ptr), ATTRS(NoUnwind))
+
+FUNCTION_WITH_IMPL(ObjCRetain, , swift_objc_retain, objc_retain, RUNTIME_CC1,
          RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy ARGNAME(ptr)), ARGNAMES(ptr), ATTRS(NoUnwind))
 
-FUNCTION(ObjCRelease, , swift_objc_release, RUNTIME_CC1,
+FUNCTION_WITH_IMPL(ObjCRelease, , swift_objc_release, objc_release, RUNTIME_CC1,
          RETURNS(VoidTy), ARGS(ObjCPtrTy ARGNAME(ptr)), ARGNAMES(ptr), ATTRS(NoUnwind))
+#endif /* SWIFT_OBJC_INTEROP */
 
 // int swift_getEnumCaseSinglePayload(const OpaqueValue *value, const Metadata *payload,
 //                                      unsigned emptyCases)
@@ -359,4 +371,5 @@ FUNCTION(IsUniquelyReferenced_nonNull_native, NAMESPACE(swift),
 #undef NO_ARGS
 #undef NO_ATTRS
 #undef FUNCTION
+#undef FUNCTION_WITH_IMPL
 #undef FUNCTION_NAME
