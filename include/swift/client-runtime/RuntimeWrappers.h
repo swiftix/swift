@@ -101,7 +101,7 @@ enum CC_Encoding {
   // after all existing ones.
 };
 
-#define RUNTIME_ENTRY_IMPL(Name) _##Name##_
+#define RT_ENTRY_IMPL(Name) _##Name##_
 
 // Enumeration representing all runtime entries that are invoked via wrappers.
 enum SwiftRTSymbols {
@@ -113,6 +113,8 @@ enum SwiftRTSymbols {
 #define SYMBOL_NAME(Name) RT_SWIFT_##Name
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
   SYMBOL_NAME(Name),
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs)
 #include "swift/client-runtime/RuntimeFunctions.def"
 };
 
@@ -122,7 +124,11 @@ namespace swift {
 // All those methods should not be in the swift namespace, because they are
 // internal to the runtime library.
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
-  extern "C" ReturnTys RUNTIME_ENTRY_IMPL(Name) (ArgTys) CC_IMPL_ATTR(CC##_IMPL);
+  extern "C" ReturnTys RT_ENTRY_IMPL(Name) (ArgTys) CC_IMPL_ATTR(CC##_IMPL);
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  extern "C" ReturnTys ImplName (ArgTys) CC_IMPL_ATTR(CC##_IMPL);
+
 #define NAMESPACE(Namespace) Namespace::
 #define ARGNAME(Name) Name
 #define ARGNAMES(...) __VA_ARGS__
