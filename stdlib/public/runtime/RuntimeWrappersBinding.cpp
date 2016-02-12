@@ -28,7 +28,10 @@ extern "C" const RuntimeEntry *const_swift_runtime_wrappers[] = {
 };
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
-  (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
+  reinterpret_cast<RuntimeEntry>(RT_ENTRY_IMPL(Name)),
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  reinterpret_cast<RuntimeEntry>(ImplName),
 
 SWIFT_RUNTIME_EXPORT
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_c[] = {
@@ -37,7 +40,10 @@ extern "C" RuntimeEntry _all_swift_runtime_wrappers_c[] = {
 };
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
-  (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
+  reinterpret_cast<RuntimeEntry>(RT_ENTRY_IMPL(Name)),
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  reinterpret_cast<RuntimeEntry>(ImplName),
 
 SWIFT_RUNTIME_EXPORT
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_most[]  = {
@@ -46,7 +52,10 @@ extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_most[]  = {
 };
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
-  (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
+  reinterpret_cast<RuntimeEntry>(RT_ENTRY_IMPL(Name)),
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  reinterpret_cast<RuntimeEntry>(ImplName),
 
 SWIFT_RUNTIME_EXPORT
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_all[] = {
@@ -83,6 +92,8 @@ extern "C" RuntimeEntry *all_swift_runtime_wrappers[] = {
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
   SYMBOL_NAME(Name) | CC_ENCODING(CC),
 
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs)
 
 // Value at index i is the kind of runtime entry that
 // is stored at the same index in _all_swift_runtime_wrappers_xxxx arrays.
@@ -102,6 +113,13 @@ SWIFT_RUNTIME_EXPORT extern "C" const uint32_t swift_rt_symbol_indices[] = {
 #define ATTR(Attr) __attribute__((Attr))
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs)      \
+  extern "C" SWIFT_RUNTIME_WRAPPER_VISIBILITY ReturnTys Namespace Name(ArgTys)          \
+      CC_ATTR(CC) {                                                            \
+    return INVOKE_RT(CC, SYMBOL_NAME(Name),                                    \
+                     CC_IMPL_ATTR(CC##_IMPL) ReturnTys (*)(ArgTys))(Args);     \
+  }
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
   extern "C" SWIFT_RUNTIME_WRAPPER_VISIBILITY ReturnTys Namespace Name(ArgTys)          \
       CC_ATTR(CC) {                                                            \
     return INVOKE_RT(CC, SYMBOL_NAME(Name),                                    \

@@ -26,7 +26,10 @@ extern "C" const RuntimeEntry *const_swift_runtime_wrappers[] = {
 };
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
-  (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
+  reinterpret_cast<RuntimeEntry>(RT_ENTRY_IMPL(Name)),
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  reinterpret_cast<RuntimeEntry>(ImplName),
 
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_c[]  = {
 #include "swift/client-runtime/RuntimeFunctions.def"
@@ -34,7 +37,10 @@ extern "C" RuntimeEntry _all_swift_runtime_wrappers_c[]  = {
 };
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
-  (RuntimeEntry) RUNTIME_ENTRY_IMPL(Name),
+  reinterpret_cast<RuntimeEntry>(RT_ENTRY_IMPL(Name)),
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  reinterpret_cast<RuntimeEntry>(ImplName),
 
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_most[] = {
 #include "swift/client-runtime/RuntimeFunctions.def"
@@ -42,7 +48,11 @@ extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_most[] = {
 };
 
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
-  reinterpret_cast<RuntimeEntry>(RUNTIME_ENTRY_IMPL(Name)),
+  reinterpret_cast<RuntimeEntry>(RT_ENTRY_IMPL(Name)),
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  reinterpret_cast<RuntimeEntry>(ImplName),
+
 
 extern "C" RuntimeEntry _all_swift_runtime_wrappers_preserve_all[] = {
 #include "swift/client-runtime/RuntimeFunctions.def"
@@ -64,7 +74,7 @@ extern "C" RuntimeEntry *all_swift_runtime_wrappers[] = {
 /// compiled Swift code.
 
 #define INVOKE_RT(CC, Entry, Proto) \
-  ((Proto)(_all_swift_runtime_wrappers_##CC[Entry]))
+  (reinterpret_cast<Proto>(_all_swift_runtime_wrappers_##CC[Entry]))
 
 #define SYMBOL_NAME(Name) RT_SWIFT_##Name
 
@@ -74,10 +84,11 @@ extern "C" RuntimeEntry *all_swift_runtime_wrappers[] = {
 #define ARGS(...)     __VA_ARGS__
 #define RETURNS(...)  __VA_ARGS__
 
-
 #define FUNCTION(Id, Namespace, Name, CC, ReturnTys, ArgTys, Args, Attrs) \
   SYMBOL_NAME(Name) | CC_ENCODING(CC),
 
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs) \
+  FUNCTION(Id, Namespace, Name, QUOTE(CC), ReturnTys, ArgTys, Args, Attrs)
 
 // Value at index i is the kind of runtime entry that
 // is stored at the same index in _all_swift_runtime_wrappers_xxxx arrays.
@@ -103,6 +114,14 @@ extern "C" const uint32_t swift_rt_symbol_indices[] = {
     return INVOKE_RT(CC, SYMBOL_NAME(Name),                                    \
                      CC_IMPL_ATTR(CC##_IMPL) ReturnTys (*)(ArgTys))(Args);     \
   }
+
+#define FUNCTION_WITH_IMPL(Id, Namespace, Name, ImplName, CC, ReturnTys, ArgTys, Args, Attrs)      \
+  extern "C" SWIFT_RUNTIME_WRAPPER_VISIBILITY ReturnTys Namespace Name(ArgTys)          \
+      CC_ATTR(CC) {                                                            \
+    return INVOKE_RT(CC, SYMBOL_NAME(Name),                                    \
+                     CC_IMPL_ATTR(CC##_IMPL) ReturnTys (*)(ArgTys))(Args);     \
+  }
+
 
 #define NAMESPACE(Namespace) Namespace::
 #define ARGNAME(Name)        Name
