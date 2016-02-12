@@ -248,8 +248,8 @@ swift::swift_getResilientMetadata(GenericMetadata *pattern) {
 
 /// The primary entrypoint.
 const Metadata *
-swift::_swift_getGenericMetadata_(GenericMetadata *pattern,
-                                const void *arguments)
+swift::RT_ENTRY_IMPL(swift_getGenericMetadata)(GenericMetadata *pattern,
+                                               const void *arguments)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   auto genericArgs = (const void * const *) arguments;
   size_t numGenericArgs = pattern->NumKeyArguments;
@@ -2199,8 +2199,8 @@ ExistentialTypeMetadata::getWitnessTable(const OpaqueValue *container,
 /// \brief Fetch a uniqued metadata for an existential type. The array
 /// referenced by \c protocols will be sorted in-place.
 const ExistentialTypeMetadata *
-swift::_swift_getExistentialTypeMetadata_(size_t numProtocols,
-                                        const ProtocolDescriptor **protocols)
+swift::RT_ENTRY_IMPL(swift_getExistentialTypeMetadata)(size_t numProtocols,
+                                      const ProtocolDescriptor **protocols)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   // Sort the protocol set.
   std::sort(protocols, protocols + numProtocols);
@@ -2600,9 +2600,10 @@ allocateWitnessTable(GenericWitnessTable *genericTable,
 }
 
 extern "C" const WitnessTable *
-swift::_swift_getGenericWitnessTable_(GenericWitnessTable *genericTable,
-                                    const Metadata *type,
-                                    void * const *instantiationArgs)
+swift::
+RT_ENTRY_IMPL(swift_getGenericWitnessTable)(GenericWitnessTable *genericTable,
+                                            const Metadata *type,
+                                            void * const *instantiationArgs)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
   if (doesNotRequireInstantiation(genericTable)) {
     return genericTable->Pattern;
