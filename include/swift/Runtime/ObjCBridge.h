@@ -36,8 +36,8 @@ struct HeapObject;
 // These functions are not available through public headers, but are guaranteed
 // to exist on OS X >= 10.9 and iOS >= 7.0.
 
-extern "C" id objc_retain(id);
-extern "C" void objc_release(id);
+extern "C" id objc_retain(id) CALLING_CONVENTION(RUNTIME_CC1_IMPL);
+extern "C" void objc_release(id) CALLING_CONVENTION(RUNTIME_CC1_IMPL);
 extern "C" id _objc_rootAutorelease(id);
 extern "C" void objc_moveWeak(id*, id*);
 extern "C" void objc_copyWeak(id*, id*);
