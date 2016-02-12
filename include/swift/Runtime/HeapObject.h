@@ -21,6 +21,10 @@
 #include <cstdint>
 #include "swift/Runtime/Config.h"
 
+#if SWIFT_OBJC_INTEROP
+#include <objc/objc.h>
+#endif /* SWIFT_OBJC_INTEROP */
+
 // Bring in the definition of HeapObject 
 #include "../../../stdlib/public/SwiftShims/HeapObject.h"
 
@@ -150,6 +154,17 @@ extern "C" void *swift_slowAlloc(size_t bytes, size_t alignMask)
 SWIFT_RUNTIME_WRAPPER_VISIBILITY
 extern "C" void swift_slowDealloc(void *ptr, size_t bytes, size_t alignMask)
     CALLING_CONVENTION(RUNTIME_CC1);
+
+#if SWIFT_OBJC_INTEROP
+
+/// Atomically increment/decrement the retan count of an ObjectiveC object
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
+extern "C" id swift_objc_retain(id obj) CALLING_CONVENTION(RUNTIME_CC1);
+
+SWIFT_RUNTIME_WRAPPER_VISIBILITY
+extern "C" void swift_objc_release(id obj) CALLING_CONVENTION(RUNTIME_CC1);
+
+#endif /* SWIFT_OBJC_INTEROP */
 
 /// Atomically increments the retain count of an object.
 ///
