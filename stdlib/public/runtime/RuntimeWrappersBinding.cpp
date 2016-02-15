@@ -1,3 +1,4 @@
+#if 0
 #include "swift/client-runtime/RuntimeWrappers.h"
 
 #if !defined(RUNTIME_WRAPPERS_BINDING_IN_CLIENT_LIB)
@@ -135,3 +136,4 @@ SWIFT_RUNTIME_EXPORT extern "C" const uint32_t swift_rt_symbol_indices[] = {
 
 // Generate wrappers for all runtime methods that have to be invoked indirectly.
 #include "swift/client-runtime/RuntimeFunctions.def"
+#endif

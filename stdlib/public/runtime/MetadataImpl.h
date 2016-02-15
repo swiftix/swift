@@ -388,11 +388,11 @@ struct ObjCRetainableBox : RetainableBoxBase<ObjCRetainableBox, void*> {
     swift_getHeapObjectExtraInhabitantCount();
 
   static void *retain(void *obj) {
-    return swift_objc_retain(static_cast<id>(obj));
+    return objc_retain(static_cast<id>(obj));
   }
 
   static void release(void *obj) {
-    swift_objc_release(static_cast<id>(obj));
+    objc_release(static_cast<id>(obj));
   }
 };
 

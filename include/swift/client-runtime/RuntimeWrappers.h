@@ -101,7 +101,9 @@ enum CC_Encoding {
   // after all existing ones.
 };
 
-#define RT_ENTRY_IMPL(Name) _##Name##_
+#define RT_ENTRY_IMPL(Name) Name
+//#define RT_ENTRY_IMPL(Name) _##Name##_
+#define RT_ENTRY(Name) Name
 
 // Enumeration representing all runtime entries that are invoked via wrappers.
 enum SwiftRTSymbols {

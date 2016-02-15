@@ -124,20 +124,6 @@ FUNCTION(NativeStrongReleaseN, NAMESPACE(swift), swift_release_n, RUNTIME_CC1,
          ARGNAMES(ptr, n),
          ATTRS(NoUnwind))
 
-// void swift_unknownRetain_n(void *ptr, int n);
-FUNCTION(NativeUnknownRetainN, NAMESPACE(swift), swift_unknownRetain_n, RUNTIME_CC1,
-         RETURNS(VoidTy),
-         ARGS(UnknownRefCountedPtrTy ARGNAME(ptr), int ARGNAME(n)),
-         ARGNAMES(ptr, n),
-         ATTRS(NoUnwind))
-
-// void swift_unknownRelease_n(void *ptr, int n);
-FUNCTION(NativeUnknownReleaseN, NAMESPACE(swift), swift_unknownRelease_n, RUNTIME_CC1,
-         RETURNS(VoidTy),
-         ARGS(UnknownRefCountedPtrTy ARGNAME(ptr), int ARGNAME(n)),
-         ARGNAMES(ptr, n),
-         ATTRS(NoUnwind))
-
 // void *swift_tryPin(void *ptr);
 FUNCTION(NativeTryPin, NAMESPACE(swift), swift_tryPin, RUNTIME_CC1,
          RETURNS(RefCountedPtrTy),
@@ -159,6 +145,21 @@ FUNCTION(NativeTryRetain, NAMESPACE(swift), swift_tryRetain, RUNTIME_CC1,
          ARGNAMES(object),
          ATTRS(NoUnwind))
 
+#if 0
+
+// void swift_unknownRetain_n(void *ptr, int n);
+FUNCTION(NativeUnknownRetainN, NAMESPACE(swift), swift_unknownRetain_n, RUNTIME_CC1,
+         RETURNS(VoidTy),
+         ARGS(UnknownRefCountedPtrTy ARGNAME(ptr), int ARGNAME(n)),
+         ARGNAMES(ptr, n),
+         ATTRS(NoUnwind))
+
+// void swift_unknownRelease_n(void *ptr, int n);
+FUNCTION(NativeUnknownReleaseN, NAMESPACE(swift), swift_unknownRelease_n, RUNTIME_CC1,
+         RETURNS(VoidTy),
+         ARGS(UnknownRefCountedPtrTy ARGNAME(ptr), int ARGNAME(n)),
+         ARGNAMES(ptr, n),
+         ATTRS(NoUnwind))
 
 // void swift_unknownRetain(void *ptr);
 FUNCTION(UnknownRetain, NAMESPACE(swift), swift_unknownRetain, RUNTIME_CC1,
@@ -202,6 +203,7 @@ FUNCTION(BridgeObjectReleaseN, NAMESPACE(swift), swift_bridgeObjectRelease_n, RU
          ARGNAMES(ptr, n),
          ATTRS(NoUnwind))
 
+#endif
 
 // void swift_unownedRetain(void *ptr);
 FUNCTION(NativeUnownedRetain,  NAMESPACE(swift), swift_unownedRetain, RUNTIME_CC1,
@@ -302,7 +304,7 @@ FUNCTION(GetInitializedObjCClass, , swift_getInitializedObjCClass, RUNTIME_CC1,
          ARGS(ObjCClassPtrTy ARGNAME(c)),
          ARGNAMES(c),
          ATTRS(NoUnwind))
-
+#if 0
 
 //FUNCTION(ObjCRetain, , swift_objc_retain, RUNTIME_CC1,
 //         RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy ARGNAME(ptr)), ARGNAMES(ptr), ATTRS(NoUnwind))
@@ -315,6 +317,8 @@ FUNCTION_WITH_IMPL(ObjCRetain, , swift_objc_retain, objc_retain, RUNTIME_CC1,
 
 FUNCTION_WITH_IMPL(ObjCRelease, , swift_objc_release, objc_release, RUNTIME_CC1,
          RETURNS(VoidTy), ARGS(ObjCPtrTy ARGNAME(ptr)), ARGNAMES(ptr), ATTRS(NoUnwind))
+
+#endif
 #endif /* SWIFT_OBJC_INTEROP */
 
 // int swift_getEnumCaseSinglePayload(const OpaqueValue *value, const Metadata *payload,

@@ -595,13 +595,13 @@ extern "C" void swift_weakTakeAssign(WeakReference *dest, WeakReference *src);
 /************************* OTHER REFERENCE-COUNTING **************************/
 /*****************************************************************************/
 
-SWIFT_RUNTIME_WRAPPER_VISIBILITY
+SWIFT_RUNTIME_EXPORT
 extern "C" void *swift_bridgeObjectRetain(void *value)
-    CALLING_CONVENTION(RUNTIME_CC1);
+    CALLING_CONVENTION(RUNTIME_CC0);
 /// Increment the strong retain count of a bridged object by n.
-SWIFT_RUNTIME_WRAPPER_VISIBILITY
+SWIFT_RUNTIME_EXPORT
     extern "C" void *swift_bridgeObjectRetain_n(void *value, int n)
-    CALLING_CONVENTION(RUNTIME_CC1);
+    CALLING_CONVENTION(RUNTIME_CC0);
 
 /*****************************************************************************/
 /************************ UNKNOWN REFERENCE-COUNTING *************************/
@@ -611,49 +611,49 @@ SWIFT_RUNTIME_WRAPPER_VISIBILITY
 
 /// Increment the strong retain count of an object which might not be a native
 /// Swift object.
-SWIFT_RUNTIME_WRAPPER_VISIBILITY
+SWIFT_RUNTIME_EXPORT
 extern "C" void swift_unknownRetain(void *value)
-    CALLING_CONVENTION(RUNTIME_CC1);
+    CALLING_CONVENTION(RUNTIME_CC0);
 /// Increment the strong retain count of an object which might not be a native
 /// Swift object by n.
-SWIFT_RUNTIME_WRAPPER_VISIBILITY
+SWIFT_RUNTIME_EXPORT
 extern "C" void swift_unknownRetain_n(void *value, int n)
-    CALLING_CONVENTION(RUNTIME_CC1);
+    CALLING_CONVENTION(RUNTIME_CC0);
 
 #else
 
 static inline void swift_unknownRetain(void *value)
-    CALLING_CONVENTION(RUNTIME_CC1) {
+    CALLING_CONVENTION(RUNTIME_CC0) {
   swift_retain(static_cast<HeapObject *>(value));
 }
 
 static inline void swift_unknownRetain_n(void *value, int n)
-    CALLING_CONVENTION(RUNTIME_CC1) {
+    CALLING_CONVENTION(RUNTIME_CC0) {
   swift_retain_n(static_cast<HeapObject *>(value), n);
 }
 
 #endif /* SWIFT_OBJC_INTEROP */
 
-SWIFT_RUNTIME_WRAPPER_VISIBILITY
+SWIFT_RUNTIME_EXPORT
 extern "C" void swift_bridgeObjectRelease(void *value)
-    CALLING_CONVENTION(RUNTIME_CC1);
+    CALLING_CONVENTION(RUNTIME_CC0);
 /// Decrement the strong retain count of a bridged object by n.
-SWIFT_RUNTIME_WRAPPER_VISIBILITY
+SWIFT_RUNTIME_EXPORT
 extern "C" void swift_bridgeObjectRelease_n(void *value, int n)
-    CALLING_CONVENTION(RUNTIME_CC1);
+    CALLING_CONVENTION(RUNTIME_CC0);
 
 #if SWIFT_OBJC_INTEROP
 
 /// Decrement the strong retain count of an object which might not be a native
 /// Swift object.
-SWIFT_RUNTIME_WRAPPER_VISIBILITY
+SWIFT_RUNTIME_EXPORT
 extern "C" void swift_unknownRelease(void *value)
-    CALLING_CONVENTION(RUNTIME_CC1);
+    CALLING_CONVENTION(RUNTIME_CC0);
 /// Decrement the strong retain count of an object which might not be a native
 /// Swift object by n.i
-SWIFT_RUNTIME_WRAPPER_VISIBILITY
+SWIFT_RUNTIME_EXPORT
 extern "C" void swift_unknownRelease_n(void *value, int n)
-    CALLING_CONVENTION(RUNTIME_CC1);
+    CALLING_CONVENTION(RUNTIME_CC0);
 
 #else
 
