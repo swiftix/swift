@@ -17,6 +17,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/ADT/APInt.h"
+#include "LLVMARCOpts.h"
 
 namespace swift {
 
@@ -54,6 +55,7 @@ class ARCEntryPointBuilder {
   NullablePtr<Type> ObjectPtrTy;
   NullablePtr<Type> BridgeObjectPtrTy;
 
+  llvm::CallingConv::ID RuntimeCC;
   llvm::CallingConv::ID RuntimeCC1;
 
   llvm::CallInst *CreateCall(Constant *Fn, Value *V) {
@@ -73,6 +75,7 @@ class ARCEntryPointBuilder {
 public:
   ARCEntryPointBuilder(Function &F)
       : B(&*F.begin()), Retain(), ObjectPtrTy(),
+        RuntimeCC(llvm::CallingConv::C),
         RuntimeCC1(llvm::CallingConv::PreserveMost) {}
   ~ARCEntryPointBuilder() = default;
   ARCEntryPointBuilder(ARCEntryPointBuilder &&) = delete;
@@ -189,7 +192,7 @@ private:
     auto &M = getModule();
     auto AttrList = AttributeSet::get(
         M.getContext(), AttributeSet::FunctionIndex, Attribute::NoUnwind);
-    Retain = M.getOrInsertFunction("swift_retain", AttrList,
+    Retain = M.getOrInsertFunction(SWIFT_RT_WRAPPER_NAME(swift_retain), AttrList,
                                    Type::getVoidTy(M.getContext()),
                                    ObjectPtrTy, nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(Retain.get()))
@@ -206,7 +209,7 @@ private:
     auto &M = getModule();
     auto AttrList = AttributeSet::get(
         M.getContext(), AttributeSet::FunctionIndex, Attribute::NoUnwind);
-    Release = M.getOrInsertFunction("swift_release", AttrList,
+    Release = M.getOrInsertFunction(SWIFT_RT_WRAPPER_NAME(swift_release), AttrList,
                                    Type::getVoidTy(M.getContext()),
                                    ObjectPtrTy, nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(Release.get()))
@@ -239,7 +242,7 @@ private:
     auto *Int32Ty = Type::getInt32Ty(M.getContext());
     auto AttrList = AttributeSet::get(
         M.getContext(), AttributeSet::FunctionIndex, Attribute::NoUnwind);
-    RetainN = M.getOrInsertFunction("swift_retain_n", AttrList,
+    RetainN = M.getOrInsertFunction(SWIFT_RT_WRAPPER_NAME(swift_retain_n), AttrList,
                                     Type::getVoidTy(M.getContext()),
                                     ObjectPtrTy, Int32Ty, nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(RetainN.get()))
@@ -257,7 +260,7 @@ private:
     auto *Int32Ty = Type::getInt32Ty(M.getContext());
     auto AttrList = AttributeSet::get(
         M.getContext(), AttributeSet::FunctionIndex, Attribute::NoUnwind);
-    ReleaseN = M.getOrInsertFunction("swift_release_n", AttrList,
+    ReleaseN = M.getOrInsertFunction(SWIFT_RT_WRAPPER_NAME(swift_release_n), AttrList,
                                      Type::getVoidTy(M.getContext()),
                                      ObjectPtrTy, Int32Ty, nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(ReleaseN.get()))
@@ -279,7 +282,7 @@ private:
                                            Type::getVoidTy(M.getContext()),
                                            ObjectPtrTy, Int32Ty, nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(UnknownRetainN.get()))
-      fn->setCallingConv(RuntimeCC1);
+      fn->setCallingConv(RuntimeCC);
     return UnknownRetainN.get();
   }
 
@@ -297,7 +300,7 @@ private:
                                             Type::getVoidTy(M.getContext()),
                                             ObjectPtrTy, Int32Ty, nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(UnknownReleaseN.get()))
-      fn->setCallingConv(RuntimeCC1);
+      fn->setCallingConv(RuntimeCC);
     return UnknownReleaseN.get();
   }
 
@@ -316,7 +319,7 @@ private:
                                           BridgeObjectPtrTy,
                                           Int32Ty, nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(BridgeRetainN.get()))
-      fn->setCallingConv(RuntimeCC1);
+      fn->setCallingConv(RuntimeCC);
     return BridgeRetainN.get();
   }
 
@@ -335,7 +338,7 @@ private:
                                             BridgeObjectPtrTy, Int32Ty,
                                             nullptr);
     if (auto fn = llvm::dyn_cast<llvm::Function>(BridgeReleaseN.get()))
-      fn->setCallingConv(RuntimeCC1);
+      fn->setCallingConv(RuntimeCC);
     return BridgeReleaseN.get();
   }
 

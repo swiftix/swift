@@ -73,6 +73,8 @@
 // RUNTIME_CC0 is the standard C calling convention.
 #define RUNTIME_CC0 c
 #define CALLING_CONVENTION_RUNTIME_CC0 CALLING_CONVENTION_c
+#define RUNTIME_CC0_IMPL c
+#define CALLING_CONVENTION_RUNTIME_CC0_IMPL CALLING_CONVENTION_c
 
 // RUNTIME_CC1 is a dedicated runtime calling convention to be used
 // when calling the most popular runtime functions.

@@ -492,12 +492,13 @@ void swift::RT_ENTRY_IMPL(swift_objc_release)(id object)
   objc_release(object);
 }
 #else
-#define OBJC_RETAIN swift_objc_retain
-#define OBJC_RELEASE swift_objc_release
+#define OBJC_RETAIN objc_retain
+#define OBJC_RELEASE objc_release
 #endif
 
-void swift::RT_ENTRY_IMPL(swift_unknownRetain_n)(void *object, int n)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+SWIFT_RUNTIME_EXPORT
+void swift::RT_ENTRY(swift_unknownRetain_n)(void *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC0_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object)) {
     swift_retain_n(static_cast<HeapObject *>(object), n);
@@ -507,8 +508,9 @@ void swift::RT_ENTRY_IMPL(swift_unknownRetain_n)(void *object, int n)
     OBJC_RETAIN(static_cast<id>(object));
 }
 
-void swift::RT_ENTRY_IMPL(swift_unknownRelease_n)(void *object, int n)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+SWIFT_RUNTIME_EXPORT
+void swift::RT_ENTRY(swift_unknownRelease_n)(void *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC0_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object))
     return swift_release_n(static_cast<HeapObject *>(object), n);
@@ -516,8 +518,9 @@ void swift::RT_ENTRY_IMPL(swift_unknownRelease_n)(void *object, int n)
     OBJC_RELEASE(static_cast<id>(object));
 }
 
-void swift::RT_ENTRY_IMPL(swift_unknownRetain)(void *object)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+SWIFT_RUNTIME_EXPORT
+void swift::RT_ENTRY(swift_unknownRetain)(void *object)
+    CALLING_CONVENTION(RUNTIME_CC0_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object)) {
     swift_retain(static_cast<HeapObject *>(object));
@@ -526,8 +529,9 @@ void swift::RT_ENTRY_IMPL(swift_unknownRetain)(void *object)
   OBJC_RETAIN(static_cast<id>(object));
 }
 
-void swift::RT_ENTRY_IMPL(swift_unknownRelease)(void *object)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+SWIFT_RUNTIME_EXPORT
+void swift::RT_ENTRY(swift_unknownRelease)(void *object)
+    CALLING_CONVENTION(RUNTIME_CC0_IMPL) {
   if (isObjCTaggedPointerOrNull(object)) return;
   if (usesNativeSwiftReferenceCounting_allocated(object))
     return RT_ENTRY_IMPL(swift_release)(static_cast<HeapObject *>(object));
@@ -554,8 +558,9 @@ static void* toPlainObject_unTagged_bridgeObject(void *object) {
   return (void*)(uintptr_t(object) & ~unTaggedNonNativeBridgeObjectBits);
 }
 
-void *swift::RT_ENTRY_IMPL(swift_bridgeObjectRetain)(void *object)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+SWIFT_RUNTIME_EXPORT
+void *swift::RT_ENTRY(swift_bridgeObjectRetain)(void *object)
+    CALLING_CONVENTION(RUNTIME_CC0_IMPL) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return object;
@@ -575,8 +580,9 @@ void *swift::RT_ENTRY_IMPL(swift_bridgeObjectRetain)(void *object)
 #endif
 }
 
-void swift::RT_ENTRY_IMPL(swift_bridgeObjectRelease)(void *object)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+SWIFT_RUNTIME_EXPORT
+void swift::RT_ENTRY(swift_bridgeObjectRelease)(void *object)
+    CALLING_CONVENTION(RUNTIME_CC0_IMPL) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return;
@@ -593,8 +599,9 @@ void swift::RT_ENTRY_IMPL(swift_bridgeObjectRelease)(void *object)
 #endif
 }
 
-void *swift::RT_ENTRY_IMPL(swift_bridgeObjectRetain_n)(void *object, int n)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+SWIFT_RUNTIME_EXPORT
+void *swift::RT_ENTRY(swift_bridgeObjectRetain_n)(void *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC0_IMPL) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return object;
@@ -617,8 +624,9 @@ void *swift::RT_ENTRY_IMPL(swift_bridgeObjectRetain_n)(void *object, int n)
 #endif
 }
 
-void swift::RT_ENTRY_IMPL(swift_bridgeObjectRelease_n)(void *object, int n)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+SWIFT_RUNTIME_EXPORT
+void swift::RT_ENTRY(swift_bridgeObjectRelease_n)(void *object, int n)
+    CALLING_CONVENTION(RUNTIME_CC0_IMPL) {
 #if SWIFT_OBJC_INTEROP
   if (isObjCTaggedPointer(object))
     return;

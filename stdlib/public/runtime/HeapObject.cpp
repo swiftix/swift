@@ -406,7 +406,7 @@ static bool _swift_isDeallocating_(HeapObject *object) {
   if (!object) return false;
   return object->refCount.isDeallocating();
 }
-auto swift::_swift_isDeallocating = _swift_isDeallocating_;
+//auto swift::_swift_isDeallocating = _swift_isDeallocating_;
 
 void swift::RT_ENTRY_IMPL(swift_unownedRetainStrong)(HeapObject *object)
     CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
