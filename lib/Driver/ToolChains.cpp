@@ -966,7 +966,6 @@ toolchains::Darwin::constructInvocation(const LinkJobAction &job,
 
   Arguments.push_back("-lobjc");
   Arguments.push_back("-lSystem");
-  //Arguments.push_back("-lClientRuntime");
 
   Arguments.push_back("-arch");
   Arguments.push_back(context.Args.MakeArgString(getTriple().getArchName()));

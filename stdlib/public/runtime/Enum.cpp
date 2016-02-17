@@ -14,7 +14,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "swift/client-runtime/RuntimeWrappers.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "swift/Basic/Fallthrough.h"
@@ -140,11 +139,12 @@ swift::swift_initEnumValueWitnessTableSinglePayload(ValueWitnessTable *vwtable,
   }
 }
 
+RT_ENTRY_VISIBILITY
 int
-swift::RT_ENTRY_IMPL(swift_getEnumCaseSinglePayload)(const OpaqueValue *value,
-                                                     const Metadata *payload,
-                                                     unsigned emptyCases)
-  CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+swift::swift_getEnumCaseSinglePayload(const OpaqueValue *value,
+                                      const Metadata *payload,
+                                      unsigned emptyCases)
+  CALLING_CONVENTION(RuntimeCC1_IMPL) {
   auto *payloadWitnesses = payload->getValueWitnesses();
   auto payloadSize = payloadWitnesses->getSize();
   auto payloadNumExtraInhabitants = payloadWitnesses->getNumExtraInhabitants();
@@ -190,12 +190,13 @@ swift::RT_ENTRY_IMPL(swift_getEnumCaseSinglePayload)(const OpaqueValue *value,
   return -1;
 }
 
+RT_ENTRY_VISIBILITY
 void
-swift::RT_ENTRY_IMPL(swift_storeEnumTagSinglePayload)(OpaqueValue *value,
-                                                      const Metadata *payload,
-                                                      int whichCase,
-                                                      unsigned emptyCases)
-  CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+swift::swift_storeEnumTagSinglePayload(OpaqueValue *value,
+                                       const Metadata *payload,
+                                       int whichCase,
+                                       unsigned emptyCases)
+  CALLING_CONVENTION(RuntimeCC1_IMPL) {
   auto *payloadWitnesses = payload->getValueWitnesses();
   auto payloadSize = payloadWitnesses->getSize();
   unsigned payloadNumExtraInhabitants

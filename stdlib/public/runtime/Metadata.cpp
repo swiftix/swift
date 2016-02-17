@@ -19,7 +19,6 @@
 #include "swift/Basic/LLVM.h"
 #include "swift/Basic/Range.h"
 #include "swift/Basic/Lazy.h"
-#include "swift/client-runtime/RuntimeWrappers.h"
 #include "swift/Runtime/HeapObject.h"
 #include "swift/Runtime/Metadata.h"
 #include "swift/Strings.h"
@@ -265,10 +264,11 @@ swift::swift_getResilientMetadata(GenericMetadata *pattern) {
 }
 
 /// The primary entrypoint.
+RT_ENTRY_VISIBILITY
 const Metadata *
-swift::RT_ENTRY_IMPL(swift_getGenericMetadata)(GenericMetadata *pattern,
-                                               const void *arguments)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+swift::swift_getGenericMetadata(GenericMetadata *pattern,
+                                const void *arguments)
+    CALLING_CONVENTION(RuntimeCC1_IMPL) {
   auto genericArgs = (const void * const *) arguments;
   size_t numGenericArgs = pattern->NumKeyArguments;
 
@@ -2216,10 +2216,11 @@ ExistentialTypeMetadata::getWitnessTable(const OpaqueValue *container,
 
 /// \brief Fetch a uniqued metadata for an existential type. The array
 /// referenced by \c protocols will be sorted in-place.
+RT_ENTRY_VISIBILITY
 const ExistentialTypeMetadata *
-swift::RT_ENTRY_IMPL(swift_getExistentialTypeMetadata)(size_t numProtocols,
-                                      const ProtocolDescriptor **protocols)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+swift::swift_getExistentialTypeMetadata(size_t numProtocols,
+                                        const ProtocolDescriptor **protocols)
+    CALLING_CONVENTION(RuntimeCC1_IMPL) {
   // Sort the protocol set.
   std::sort(protocols, protocols + numProtocols);
 
@@ -2617,12 +2618,13 @@ allocateWitnessTable(GenericWitnessTable *genericTable,
   return entry;
 }
 
+RT_ENTRY_VISIBILITY
 extern "C" const WitnessTable *
 swift::
-RT_ENTRY_IMPL(swift_getGenericWitnessTable)(GenericWitnessTable *genericTable,
-                                            const Metadata *type,
-                                            void * const *instantiationArgs)
-    CALLING_CONVENTION(RUNTIME_CC1_IMPL) {
+swift_getGenericWitnessTable(GenericWitnessTable *genericTable,
+                             const Metadata *type,
+                             void * const *instantiationArgs)
+    CALLING_CONVENTION(RuntimeCC1_IMPL) {
   if (doesNotRequireInstantiation(genericTable)) {
     return genericTable->Pattern;
   }

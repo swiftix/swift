@@ -18,8 +18,8 @@ if(SWIFT_RUNTIME_ENABLE_LEAK_CHECKER)
 endif()
 
 # Enable shrink-wrapping.
-list(APPEND swift_runtime_compile_flags
-     "-mllvm" "-enable-shrink-wrap" "-fomit-frame-pointer")
+#list(APPEND swift_runtime_compile_flags
+#     "-mllvm" "-enable-shrink-wrap" "-fomit-frame-pointer")
 
 # Acknowledge that the following sources are known.
 set(LLVM_OPTIONAL_SOURCES
@@ -51,7 +51,6 @@ add_swift_library(swiftRuntime IS_STDLIB IS_STDLIB_CORE
   ProtocolConformance.cpp
   Reflection.cpp
   RuntimeEntrySymbols.cpp
-  RuntimeWrappersBinding.cpp
   SwiftObject.cpp
   ${swift_runtime_objc_sources}
   ${swift_runtime_leaks_sources}

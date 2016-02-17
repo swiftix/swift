@@ -47,10 +47,6 @@
 #include <cstring>
 #include <type_traits>
 
-#if SWIFT_OBJC_INTEROP
-#include "swift/client-runtime/RuntimeWrappers.h"
-#endif /* SWIFT_OBJC_INTEROP */
-
 namespace swift {
 namespace metadataimpl {
 

@@ -20,6 +20,8 @@
 #include "swift/AST/IRGenOptions.h"
 #include "swift/Basic/Dwarf.h"
 #include "swift/ClangImporter/ClangImporter.h"
+#include "swift/Runtime/RuntimeFnWrappersGen.h"
+#include "swift/Runtime/Config.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/CharInfo.h"
 #include "clang/Basic/TargetInfo.h"
@@ -360,7 +362,7 @@ IRGenModule::IRGenModule(IRGenModuleDispatcher &dispatcher, SourceFile *SF,
   
   C_CC = llvm::CallingConv::C;
   // TODO: use "tinycc" on platforms that support it
-  RuntimeCC = llvm::CallingConv::C;
+  RuntimeCC = LLVM_CC(RuntimeCC);
   // If it is an interpreter, don't use try to use any
   // advanced calling conventions and use instead a
   // more conservative C calling convention. This
@@ -374,9 +376,9 @@ IRGenModule::IRGenModule(IRGenModuleDispatcher &dispatcher, SourceFile *SF,
   auto Arch = Triple.getArch();
   if (Arch == llvm::Triple::ArchType::x86_64 ||
       Arch == llvm::Triple::ArchType::aarch64)
-    RuntimeCC1 = llvm::CallingConv::PreserveMost;
+    RuntimeCC1 = LLVM_CC(RuntimeCC1);
   else
-    RuntimeCC1 = llvm::CallingConv::C;
+    RuntimeCC1 = RuntimeCC;
 
   ABITypes = new CodeGenABITypes(clangASTContext, Module);
 
@@ -417,7 +419,7 @@ static bool isReturnAttribute(llvm::Attribute::AttrKind Attr) {
   return Attr == llvm::Attribute::ZExt;
 }
 
-static llvm::Constant *getRuntimeFn(IRGenModule &IGM,
+llvm::Constant *swift::getRuntimeFn(llvm::Module &Module,
                       llvm::Constant *&cache,
                       char const *name,
                       llvm::CallingConv::ID cc,
@@ -431,14 +433,14 @@ static llvm::Constant *getRuntimeFn(IRGenModule &IGM,
   if (retTypes.size() == 1)
     retTy = *retTypes.begin();
   else
-    retTy = llvm::StructType::get(IGM.LLVMContext,
+    retTy = llvm::StructType::get(Module.getContext(),
                                   {retTypes.begin(), retTypes.end()},
                                   /*packed*/ false);
   auto fnTy = llvm::FunctionType::get(retTy,
                                       {argTypes.begin(), argTypes.end()},
                                       /*isVararg*/ false);
 
-  cache = IGM.Module.getOrInsertFunction(name, fnTy);
+  cache = Module.getOrInsertFunction(name, fnTy);
 
   // Add any function attributes and set the calling convention.
   if (auto fn = dyn_cast<llvm::Function>(cache)) {
@@ -456,15 +458,15 @@ static llvm::Constant *getRuntimeFn(IRGenModule &IGM,
     // FIXME: getting attributes here without setting them does
     // nothing. This cannot be fixed until the attributes are correctly specified.
     fn->getAttributes().
-      addAttributes(IGM.LLVMContext,
+      addAttributes(Module.getContext(),
                     llvm::AttributeSet::FunctionIndex,
-                    llvm::AttributeSet::get(IGM.LLVMContext,
+                    llvm::AttributeSet::get(Module.getContext(),
                                             llvm::AttributeSet::FunctionIndex,
                                             buildFnAttr));
     fn->getAttributes().
-      addAttributes(IGM.LLVMContext,
+      addAttributes(Module.getContext(),
                     llvm::AttributeSet::ReturnIndex,
-                    llvm::AttributeSet::get(IGM.LLVMContext,
+                    llvm::AttributeSet::get(Module.getContext(),
                                             llvm::AttributeSet::ReturnIndex,
                                             buildRetAttr));
   }
@@ -472,7 +474,7 @@ static llvm::Constant *getRuntimeFn(IRGenModule &IGM,
   return cache;
 }
 
-static llvm::Constant *getWrapperFn(IRGenModule &IGM,
+llvm::Constant *swift::getWrapperFn(llvm::Module &Module,
                       llvm::Constant *&cache,
                       char const *name,
                       char const *symbol,
@@ -481,9 +483,16 @@ static llvm::Constant *getWrapperFn(IRGenModule &IGM,
                       std::initializer_list<llvm::Type*> argTypes,
                       ArrayRef<Attribute::AttrKind> attrs) {
   assert(symbol && "Symbol name should be defined for a wrapper function");
-  auto fn = getRuntimeFn(IGM, cache, name, cc, retTypes, argTypes, attrs);
+  auto fn = getRuntimeFn(Module, cache, name, cc, retTypes, argTypes, attrs);
   auto *fun = dyn_cast<llvm::Function>(fn);
   assert(fun && "Wrapper should be an llvm::Function");
+#if !defined(RT_USE_WRAPPERS_ALWAYS)
+  // Do not generate wrappers in cases where they are not used.
+  if (cc == llvm::CallingConv::C) {
+    // No need to do any wrapping for a standard calling convention.
+    return fn;
+  }
+#endif
   // Do not inline wrappers.
   fun->addAttribute(llvm::AttributeSet::FunctionIndex,
                     llvm::Attribute::NoInline);
@@ -502,46 +511,33 @@ static llvm::Constant *getWrapperFn(IRGenModule &IGM,
     // auto global = getOrCreateGlobalVariable(symbol);
     // Produce an indirect call using this global
     // return a value if there is a non void return type.
-    IRGenFunction IGF(IGM, fun);
-    //llvm::GlobalVariable global;
-    //auto *BB = llvm::BasicBlock::Create(IGM.getLLVMContext(), "entry", fun);
-    //IGF.Builder.SetInsertPoint(BB);
-#if 0
-    llvm::Type *retTy;
-    if (retTypes.size() == 1)
-      retTy = *retTypes.begin();
-    else
-      retTy = llvm::StructType::get(IGM.LLVMContext,
-                                    {retTypes.begin(), retTypes.end()},
-                                    /*packed*/ false);
-    auto fnTy =
-        llvm::FunctionType::get(retTy, {argTypes.begin(), argTypes.end()},
-                                /*isVararg*/ false);
-#endif
+    llvm::IRBuilder<> Builder(Module.getContext());
+    llvm::BasicBlock *bb =
+        llvm::BasicBlock::Create(Module.getContext(), "entry", fun);
+    Builder.SetInsertPoint(bb);
     auto fnTy = fun->getFunctionType();
 
     auto fnPtrTy = llvm::PointerType::getUnqual(fnTy);
 
     auto *globalFnPtr =
-        new llvm::GlobalVariable(IGM.Module, fnPtrTy, false,
+        new llvm::GlobalVariable(Module, fnPtrTy, false,
                                  llvm::GlobalValue::ExternalLinkage, 0, symbol);
 
-    Address address(globalFnPtr, Alignment(globalFnPtr->getAlignment()));
     // Forward all arguments.
     llvm::SmallVector<llvm::Value *, 4> args;
     for (auto &arg: fun->args()) {
       args.push_back(&arg);
     }
-    auto fnPtr = IGF.Builder.CreateLoad(address, "load");
-    auto call = IGF.Builder.CreateCall(fnPtr, args);
+    auto fnPtr = Builder.CreateLoad(globalFnPtr, "load");
+    auto call = Builder.CreateCall(fnPtr, args);
     call->setCallingConv(cc);
     call->setTailCall(true);
-    if (retTypes.size() == 1 && *retTypes.begin() == IGM.VoidTy)
-      IGF.Builder.CreateRetVoid();
+
+    auto VoidTy = llvm::Type::getVoidTy(Module.getContext());
+    if (retTypes.size() == 1 && *retTypes.begin() == VoidTy)
+      Builder.CreateRetVoid();
     else
-      IGF.Builder.CreateRet(call);
-    if (IGM.DebugInfo)
-      IGM.DebugInfo->emitArtificialFunction(IGF, fun);
+      Builder.CreateRet(call);
   }
 
   return fn;
@@ -549,7 +545,6 @@ static llvm::Constant *getWrapperFn(IRGenModule &IGM,
 
 #define QUOTE(...) __VA_ARGS__
 #define STR(X)     #X
-#define RT_ENTRY_SYMBOL_NAME(Name) _##Name
 
 #define FOR_CONV_RuntimeCC(ID, NAME, CC, RETURNS, ARGS, ATTRS)                 \
   FUNCTION_IMPL(ID, NAME, CC, QUOTE(RETURNS), QUOTE(ARGS), QUOTE(ATTRS))
@@ -558,17 +553,17 @@ static llvm::Constant *getWrapperFn(IRGenModule &IGM,
   FUNCTION_IMPL(ID, NAME, CC, QUOTE(RETURNS), QUOTE(ARGS), QUOTE(ATTRS))
 
 #define FOR_CONV_RuntimeCC1(ID, NAME, CC, RETURNS, ARGS, ATTRS)                \
-  FUNCTION_WITH_GLOBAL_SYMBOL_IMPL(ID, __rt_##NAME,                      \
-                                   RT_ENTRY_SYMBOL_NAME(NAME), CC,             \
+  FUNCTION_WITH_GLOBAL_SYMBOL_IMPL(ID, NAME,                      \
+                                   RT_ENTRY_REF(NAME), CC,             \
                                    QUOTE(RETURNS), QUOTE(ARGS), QUOTE(ATTRS))
 
 #define FUNCTION(ID, NAME, CC, RETURNS, ARGS, ATTRS)                           \
   FOR_CONV_##CC(ID, NAME, CC, QUOTE(RETURNS), QUOTE(ARGS), QUOTE(ATTRS))
 
-#define FUNCTION_WITH_GLOBAL_SYMBOL(ID, NAME, SYMBOL, CC, RETURNS, ARGS,       \
-                                    ATTRS)                                     \
-  FUNCTION_WITH_GLOBAL_SYMBOL_IMPL(ID, __rt_##NAME, SYMBOL, CC,          \
-                                   QUOTE(RETURNS), QUOTE(ARGS), QUOTE(ATTRS))
+#define FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(ID, NAME, SYMBOL, IMPL, CC,       \
+                                              RETURNS, ARGS, ATTRS)            \
+  FUNCTION_WITH_GLOBAL_SYMBOL_IMPL(ID, NAME, SYMBOL, CC, QUOTE(RETURNS),       \
+                                   QUOTE(ARGS), QUOTE(ATTRS))
 
 #define RETURNS(...) { __VA_ARGS__ }
 #define ARGS(...) { __VA_ARGS__ }
@@ -579,14 +574,14 @@ static llvm::Constant *getWrapperFn(IRGenModule &IGM,
 #define FUNCTION_IMPL(ID, NAME, CC, RETURNS, ARGS, ATTRS)                      \
   llvm::Constant *IRGenModule::get##ID##Fn() {                                 \
     using namespace RuntimeConstants;                                          \
-    return getRuntimeFn(*this, ID##Fn, #NAME, CC, RETURNS, ARGS, ATTRS);       \
+    return getRuntimeFn(Module, ID##Fn, #NAME, CC, RETURNS, ARGS, ATTRS);      \
   }
 
 #define FUNCTION_WITH_GLOBAL_SYMBOL_IMPL(ID, NAME, SYMBOL_NAME, CC, RETURNS,   \
                                          ARGS, ATTRS)                          \
   llvm::Constant *IRGenModule::get##ID##Fn() {                                 \
     using namespace RuntimeConstants;                                          \
-    return getWrapperFn(*this, ID##Fn, #NAME, STR(SYMBOL_NAME), CC, RETURNS,   \
+    return getWrapperFn(Module, ID##Fn, #NAME, STR(SYMBOL_NAME), CC, RETURNS,  \
                         ARGS, ATTRS);                                          \
   }
 

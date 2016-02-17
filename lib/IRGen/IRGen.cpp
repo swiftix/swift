@@ -603,8 +603,6 @@ static std::unique_ptr<llvm::Module> performIRGeneration(IRGenOptions &Opts,
       });
     }
 
-    //IGM.addLinkLibrary(LinkLibrary("swiftStaticClientRuntime", LibraryKind::Library));
-
     IGM.finalize();
 
     setModuleFlags(IGM);
@@ -746,9 +744,6 @@ static void performParallelIRGeneration(IRGenOptions &Opts,
       PrimaryGM->addLinkLibrary(linkLib);
     });
   }
-
-  //PrimaryGM->addLinkLibrary(
-  //    LinkLibrary("swiftStaticClientRuntime", LibraryKind::Library));
 
   llvm::StringSet<> referencedGlobals;
 

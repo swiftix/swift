@@ -29,7 +29,7 @@ SWIFT_RUNTIME_EXPORT
 extern "C" BoxPair::Return (*_swift_allocBox)(Metadata const *type);
 
 SWIFT_RUNTIME_EXPORT
-extern "C" void (*_swift_retain)(HeapObject *object);
+extern "C" void (* _swift_retain)(HeapObject *object);
 SWIFT_RUNTIME_EXPORT
 extern "C" void (*_swift_retain_n)(HeapObject *object, uint32_t n);
 SWIFT_RUNTIME_EXPORT

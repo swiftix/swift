@@ -23,6 +23,7 @@
 ///   ArgTys is either NO_ARGS or a call to ARGS, which takes a non-empty
 ///     list of expressions meant to be looked up in IRGenModule.
 ///   Attrs is a parenthesized list of attributes.
+///   CC is a calling convention to be used when calling this runtime function.
 ///
 ///   By default, passes Id to FUNCTION_ID.  Therefore, the valid uses of
 ///   this database define either:
@@ -38,14 +39,18 @@
 #define FUNCTION(Id, Name, CC, ReturnTys, ArgTys, Attrs) FUNCTION_ID(Id)
 #endif
 
-#ifndef FUNCTION_WITH_GLOBAL_SYMBOL
-#define FUNCTION_WITH_GLOBAL_SYMBOL(Id, Name, SymbolName, CC, ReturnTys,       \
-                                    ArgTys, Attrs)                             \
+/// This is a special version for runtime functions which have a global
+/// symbol containing a reference of this runtime entry.
+///  SymbolName is the name of the global symbol
+///  Impl is the name of the function implementing this entry point.
+#ifndef FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL
+#define FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(Id, Name, SymbolName, Impl, CC,  \
+                                              ReturnTys, ArgTys, Attrs)        \
   FUNCTION_ID(Id)
 #endif
 
-FUNCTION_WITH_GLOBAL_SYMBOL(AllocBox, swift_allocBox,
-         _swfit_allocBox, RuntimeCC,
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(AllocBox, swift_allocBox,
+         _swift_allocBox, _swift_allocBox_, RuntimeCC,
          RETURNS(RefCountedPtrTy, OpaquePtrTy),
          ARGS(TypeMetadataPtrTy),
          ATTRS(NoUnwind))
@@ -61,8 +66,8 @@ FUNCTION(ProjectBox,     swift_projectBox,    RuntimeCC,
          ATTRS(NoUnwind, ReadNone))
 
 // RefCounted *swift_allocObject(Metadata *type, size_t size, size_t alignMask);
-FUNCTION_WITH_GLOBAL_SYMBOL(AllocObject,    swift_allocObject,
-         _swift_allocObject, RuntimeCC1,
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(AllocObject,    swift_allocObject,
+         _swift_allocObject, swift_allocObject, RuntimeCC1,
          RETURNS(RefCountedPtrTy),
          ARGS(TypeMetadataPtrTy, SizeTy, SizeTy),
          ATTRS(NoUnwind))
@@ -135,31 +140,59 @@ FUNCTION(CopyPOD,        swift_copyPOD,       RuntimeCC,
          ATTRS(NoUnwind))
 
 // void swift_retain(void *ptr);
-FUNCTION_WITH_GLOBAL_SYMBOL(NativeStrongRetain, swift_retain,
-         _swift_retain,    RuntimeCC1,
-         RETURNS(VoidTy),
-         ARGS(RefCountedPtrTy),
-         ATTRS(NoUnwind))
-
-// void swift_retain_n(void *ptr);
-FUNCTION_WITH_GLOBAL_SYMBOL(NativeStrongRetainN, swift_retain_n,
-         _swift_retain_n,    RuntimeCC1,
-         RETURNS(VoidTy),
-         ARGS(RefCountedPtrTy, Int32Ty),
-         ATTRS(NoUnwind))
-
-// void swift_release(void *ptr);
-FUNCTION_WITH_GLOBAL_SYMBOL(NativeStrongRelease, swift_release,
-         _swift_release,    RuntimeCC1,
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(NativeStrongRetain, swift_retain,
+         _swift_retain,  _swift_retain_,  RuntimeCC1,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
 // void swift_release(void *ptr);
-FUNCTION_WITH_GLOBAL_SYMBOL(NativeStrongReleaseN, swift_release_n,
-         _swift_release_n,    RuntimeCC1,
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(NativeStrongRelease, swift_release,
+         _swift_release, _swift_release_,  RuntimeCC1,
+         RETURNS(VoidTy),
+         ARGS(RefCountedPtrTy),
+         ATTRS(NoUnwind))
+
+// void swift_retain_n(void *ptr, int32_t n);
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(NativeStrongRetainN, swift_retain_n,
+         _swift_retain_n, _swift_retain_n_, RuntimeCC1,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy, Int32Ty),
+         ATTRS(NoUnwind))
+
+// void swift_release_n(void *ptr, int32_t n);
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(NativeStrongReleaseN, swift_release_n,
+         _swift_release_n, _swift_release_n_,  RuntimeCC1,
+         RETURNS(VoidTy),
+         ARGS(RefCountedPtrTy, Int32Ty),
+         ATTRS(NoUnwind))
+
+// void swift_unknownRetain_n(void *ptr, int32_t n);
+FUNCTION(UnknownRetainN, swift_unknownRetain_n,
+         RuntimeCC,
+         RETURNS(VoidTy),
+         ARGS(RefCountedPtrTy, Int32Ty),
+         ATTRS(NoUnwind))
+
+// void swift_unknownRelease_n(void *ptr, int32_t n);
+FUNCTION(UnknownReleaseN, swift_unknownRelease_n,
+         RuntimeCC,
+         RETURNS(VoidTy),
+         ARGS(RefCountedPtrTy, Int32Ty),
+         ATTRS(NoUnwind))
+
+// void swift_bridgeObjectRetain_n(void *ptr, int32_t n);
+FUNCTION(BridgeObjectRetainN, swift_bridgeObjectRetain_n,
+         RuntimeCC,
+         RETURNS(BridgeObjectPtrTy),
+         ARGS(BridgeObjectPtrTy, Int32Ty),
+         ATTRS(NoUnwind))
+
+// void swift_bridgeObjectRelease_n(void *ptr, int32_t n);
+FUNCTION(BridgeObjectReleaseN, swift_bridgeObjectRelease_n,
+         RuntimeCC,
+         RETURNS(VoidTy),
+         ARGS(BridgeObjectPtrTy, Int32Ty),
          ATTRS(NoUnwind))
 
 // void *swift_tryPin(void *ptr);
@@ -169,8 +202,8 @@ FUNCTION(NativeTryPin, swift_tryPin, RuntimeCC1,
          ATTRS(NoUnwind))
 
 // void *swift_tryRetain(void *ptr);
-FUNCTION_WITH_GLOBAL_SYMBOL(NativeTryRetain, swift_tryRetain,
-         _swift_tryRetain, RuntimeCC1,
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(NativeTryRetain, swift_tryRetain,
+         _swift_tryRetain, _swift_tryRetain_, RuntimeCC1,
          RETURNS(RefCountedPtrTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
@@ -182,8 +215,8 @@ FUNCTION(NativeUnpin, swift_unpin, RuntimeCC1,
          ATTRS(NoUnwind))
 
 // bool swift_isDeallocating(void *ptr);
-FUNCTION_WITH_GLOBAL_SYMBOL(IsDeallocating, swift_isDeallocating,
-         _swift_isDeallocating, RuntimeCC,
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(IsDeallocating, swift_isDeallocating,
+         _swift_isDeallocating, _swift_isDeallocating_, RuntimeCC,
          RETURNS(Int1Ty),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind, ZExt))
@@ -234,6 +267,20 @@ FUNCTION(NativeUnownedRetain,  swift_unownedRetain, RuntimeCC1,
 FUNCTION(NativeUnownedRelease, swift_unownedRelease, RuntimeCC1,
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
+         ATTRS(NoUnwind))
+
+// void swift_unownedRetain_n(void *ptr, int32_t n);
+FUNCTION(UnownedRetainN, swift_unownedRetain_n,
+         RuntimeCC1,
+         RETURNS(VoidTy),
+         ARGS(RefCountedPtrTy, Int32Ty),
+         ATTRS(NoUnwind))
+
+// void swift_unownedRelease_n(void *ptr, int32_t n);
+FUNCTION(UnownedReleaseN, swift_unownedRelease_n,
+         RuntimeCC1,
+         RETURNS(VoidTy),
+         ARGS(RefCountedPtrTy, Int32Ty),
          ATTRS(NoUnwind))
 
 // void swift_unownedRetainStrong(void *ptr);
@@ -896,10 +943,6 @@ FUNCTION(ObjCRetain, objc_retain, C_CC,
          RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
 FUNCTION(ObjCRelease, objc_release, C_CC,
          RETURNS(VoidTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
-//FUNCTION(ObjCRetain, swift_objc_retain, RuntimeCC1,
-//         RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
-//FUNCTION(ObjCRelease, swift_objc_release, RuntimeCC1,
-//         RETURNS(VoidTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
 FUNCTION(ObjCAutorelease, objc_autorelease, C_CC,
          RETURNS(ObjCPtrTy), ARGS(ObjCPtrTy), ATTRS(NoUnwind))
 FUNCTION(ObjCRetainAutoreleasedReturnValue,
@@ -999,6 +1042,6 @@ FUNCTION(GetErrorValue, swift_getErrorValue, C_CC,
 #undef ATTRS
 #undef NO_ARGS
 #undef NO_ATTRS
-#undef FUNCTION_WITH_GLOBAL_SYMBOL
+#undef FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL
 #undef FUNCTION
 #undef FUNCTION_NAME
