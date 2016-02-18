@@ -47,6 +47,7 @@ add_swift_library(swiftRuntime IS_STDLIB IS_STDLIB_CORE
   Once.cpp
   ProtocolConformance.cpp
   Reflection.cpp
+  RuntimeEntrySymbols.cpp
   SwiftObject.cpp
   ${swift_runtime_objc_sources}
   ${swift_runtime_leaks_sources}
