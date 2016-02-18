@@ -268,7 +268,7 @@ RT_ENTRY_VISIBILITY
 const Metadata *
 swift::swift_getGenericMetadata(GenericMetadata *pattern,
                                 const void *arguments)
-    CALLING_CONVENTION(RuntimeCC1_IMPL) {
+    CALLING_CONVENTION(RegisterPreservingCC_IMPL) {
   auto genericArgs = (const void * const *) arguments;
   size_t numGenericArgs = pattern->NumKeyArguments;
 
@@ -2219,7 +2219,7 @@ RT_ENTRY_VISIBILITY
 const ExistentialTypeMetadata *
 swift::swift_getExistentialTypeMetadata(size_t numProtocols,
                                         const ProtocolDescriptor **protocols)
-    CALLING_CONVENTION(RuntimeCC1_IMPL) {
+    CALLING_CONVENTION(RegisterPreservingCC_IMPL) {
   // Sort the protocol set.
   std::sort(protocols, protocols + numProtocols);
 
@@ -2622,7 +2622,7 @@ extern "C" const WitnessTable *
 swift::swift_getGenericWitnessTable(GenericWitnessTable *genericTable,
                                     const Metadata *type,
                                     void * const *instantiationArgs)
-    CALLING_CONVENTION(RuntimeCC1_IMPL) {
+    CALLING_CONVENTION(RegisterPreservingCC_IMPL) {
   if (doesNotRequireInstantiation(genericTable)) {
     return genericTable->Pattern;
   }
