@@ -157,6 +157,10 @@ extern "C"
 void *swift_slowAlloc(size_t bytes, size_t alignMask)
      SWIFT_CC(RegisterPreservingCC);
 
+SWIFT_RUNTIME_EXPORT
+extern "C"
+void *(*SWIFT_CC(RegisterPreservingCC) _swift_slowAlloc)(size_t bytes,
+                                                         size_t alignMask);
 
 // If the caller cannot promise to zero the object during destruction,
 // then call these corresponding APIs:
@@ -164,6 +168,12 @@ SWIFT_RT_ENTRY_VISIBILITY
 extern "C"
 void swift_slowDealloc(void *ptr, size_t bytes, size_t alignMask)
      SWIFT_CC(RegisterPreservingCC);
+
+SWIFT_RUNTIME_EXPORT
+extern "C"
+void (*SWIFT_CC(RegisterPreservingCC) _swift_slowDealloc)(void *ptr,
+                                                          size_t bytes,
+                                                          size_t alignMask);
 
 /// Atomically increments the retain count of an object.
 ///

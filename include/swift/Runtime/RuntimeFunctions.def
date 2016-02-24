@@ -104,13 +104,15 @@ FUNCTION(DeallocPartialClassInstance,  swift_deallocPartialClassInstance, Defaul
          ATTRS(NoUnwind))
 
 // void *swift_slowAlloc(size_t size, size_t alignMask);
-FUNCTION(SlowAlloc,      swift_slowAlloc,     RegisterPreservingCC,
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(SlowAlloc, swift_slowAlloc,
+         _swift_slowAlloc, _swift_slowAlloc_, RegisterPreservingCC,
          RETURNS(Int8PtrTy),
          ARGS(SizeTy, SizeTy),
          ATTRS(NoUnwind))
 
 // void swift_slowDealloc(void *ptr, size_t size, size_t alignMask);
-FUNCTION(SlowDealloc, swift_slowDealloc, RegisterPreservingCC,
+FUNCTION_WITH_GLOBAL_SYMBOL_AND_IMPL(SlowDealloc, swift_slowDealloc,
+         _swift_slowDealloc, _swift_slowDealloc_, RegisterPreservingCC,
          RETURNS(VoidTy),
          ARGS(Int8PtrTy, SizeTy, SizeTy),
          ATTRS(NoUnwind))
