@@ -2288,10 +2288,10 @@ class RefCountingInst : public SILInstruction {
 private:
   bool nonatomic;
 protected:
-  RefCountingInst(ValueKind Kind, SILDebugLocation *DebugLoc)
+  RefCountingInst(ValueKind Kind, SILDebugLocation DebugLoc)
       : SILInstruction(Kind, DebugLoc), nonatomic(false) {}
 
-  RefCountingInst(ValueKind Kind, SILDebugLocation *DebugLoc, SILType Type)
+  RefCountingInst(ValueKind Kind, SILDebugLocation DebugLoc, SILType Type)
       : SILInstruction(Kind, DebugLoc, Type), nonatomic(false) {}
 
 public:

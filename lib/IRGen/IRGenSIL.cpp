@@ -3244,13 +3244,13 @@ void IRGenSILFunction::visitStrongUnpinInst(swift::StrongUnpinInst *i) {
 
 void IRGenSILFunction::visitStrongRetainInst(swift::StrongRetainInst *i) {
   Explosion lowered = getLoweredExplosion(i->getOperand());
-  auto &ti = cast<ReferenceTypeInfo>(getTypeInfo(i->getOperand().getType()));
+  auto &ti = cast<ReferenceTypeInfo>(getTypeInfo(i->getOperand()->getType()));
   ti.strongRetain(*this, lowered, !i->isNonAtomic());
 }
 
 void IRGenSILFunction::visitStrongReleaseInst(swift::StrongReleaseInst *i) {
   Explosion lowered = getLoweredExplosion(i->getOperand());
-  auto &ti = cast<ReferenceTypeInfo>(getTypeInfo(i->getOperand().getType()));
+  auto &ti = cast<ReferenceTypeInfo>(getTypeInfo(i->getOperand()->getType()));
   ti.strongRelease(*this, lowered, !i->isNonAtomic());
 }
 

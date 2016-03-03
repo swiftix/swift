@@ -17,6 +17,7 @@
 #include "swift/SILOptimizer/Analysis/DominanceAnalysis.h"
 #include "swift/SILOptimizer/Analysis/EscapeAnalysis.h"
 #include "swift/SILOptimizer/Analysis/RCIdentityAnalysis.h"
+#include "swift/SIL/InstructionUtils.h"
 #include "swift/SIL/SILArgument.h"
 #include "swift/SIL/SILBuilder.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -255,14 +256,16 @@ private:
   void scanAllBlocks();
   void scanBasicBlock(SILBasicBlock *BB);
   StateChanges transformAllBlocks();
-  void getCowValueArgsOfApply(FullApplySite AI, SILValue CowValue, SmallVectorImpl<int> &Args);
+  void getCowValueArgsOfApply(FullApplySite AI, SILValue CowValue,
+                              SmallVectorImpl<int> &Args,
+                              SmallVectorImpl<bool> &IsIndirectParam);
   void markAsCandidate(SILInstruction *I);
 };
 
 static void markAsNonAtomic(RefCountingInst *I) {
   SILValue Op = I->getOperand(0);
 #if 1
-  if (Op.getType() ==
+  if (Op->getType() ==
       SILType::getBridgeObjectType(I->getModule().getASTContext())) {
     // Convert this bridged object to a native object ref.
     SILBuilder B(I);
@@ -323,7 +326,7 @@ bool NonAtomicRCTransformer::isEligableRefCountingInst(SILInstruction *I) {
 StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
   assert(isa<RefCountingInst>(I));
   auto *RCInst = cast<RefCountingInst>(I);
-  auto Root = RCInst->getOperand(0).stripAddressProjections();
+  auto Root = stripAddressProjections(RCInst->getOperand(0));
   auto *Node = ConGraph->getNodeOrNull(RCInst->getOperand(0), EA);
   if (!Node)
     return SILAnalysis::InvalidationKind::Nothing;
@@ -376,7 +379,7 @@ bool checkUniqueArrayContainer(SILFunction *Function, SILValue ArrayContainer) {
 
       if (!Params[ArgIdx].isIndirectInOut()) {
         DEBUG(llvm::dbgs() << "    Skipping Array: Not an inout argument!\n";
-              ArrayContainer.dump());
+              ArrayContainer->dump());
         return false;
       }
     }
@@ -387,26 +390,26 @@ bool checkUniqueArrayContainer(SILFunction *Function, SILValue ArrayContainer) {
 
   DEBUG(llvm::dbgs()
         << "    Skipping Array: Not an argument or local variable!\n";
-        ArrayContainer.dump());
+        ArrayContainer->dump());
   return false;
 }
 
 bool NonAtomicRCTransformer::isArrayValue(ValueBase *ArrayStruct,
                                           SILValue Value) {
   auto Root = RCIFI->getRCIdentityRoot(Value);
-  if (Root.getDef() == ArrayStruct)
+  if (Root == ArrayStruct)
     return true;
   auto *ArrayLoad = dyn_cast<LoadInst>(Root);
   if (!ArrayLoad)
     return false;
 
-  if (ArrayLoad->getOperand().getDef() == ArrayStruct)
+  if (ArrayLoad->getOperand() == ArrayStruct)
     return true;
 
   // Is it an RC operation on the buffer reference?
   if (RCIFI->getRCIdentityRoot(
-               ArrayLoad->getOperand().stripAddressProjections())
-          .getDef() == ArrayStruct)
+               stripAddressProjections(ArrayLoad->getOperand()))
+           == ArrayStruct)
     return true;
 
   return false;
@@ -425,7 +428,7 @@ bool NonAtomicRCTransformer::isRCofArrayValueAt(ValueBase *ArrayStruct,
     return true;
   // Check if this is the "array.owner" of the array.
   SILValue Op = RCI->getOperand(0);
-  ArraySemanticsCall Call(Op.getDef());
+  ArraySemanticsCall Call(Op);
   if (!Call)
     return false;
   if (Call.getKind() != ArrayCallKind::kGetArrayOwner)
@@ -440,12 +443,12 @@ bool NonAtomicRCTransformer::isStoreAliasingArrayValue(ValueBase *ArrayStruct,
   auto Root = RCIFI->getRCIdentityRoot(Dest);
 
   // Is it overwriting the array struct?
-  if (Root.getDef() == ArrayStruct)
+  if (Root == ArrayStruct)
     return true;
 
   // Is it a store to the buffer reference?
   // TODO: Make this check more precise?
-  if (RCIFI->getRCIdentityRoot(Root.stripAddressProjections()).getDef() ==
+  if (RCIFI->getRCIdentityRoot(stripAddressProjections(Root)) ==
       ArrayStruct)
     return true;
 
@@ -458,12 +461,28 @@ void NonAtomicRCTransformer::scanAllBlocks() {
   }
 }
 
-void NonAtomicRCTransformer::getCowValueArgsOfApply(FullApplySite AI, SILValue CowValue, SmallVectorImpl<int> &Args) {
+void NonAtomicRCTransformer::getCowValueArgsOfApply(
+    FullApplySite AI, SILValue CowValue, SmallVectorImpl<int> &Args,
+    SmallVectorImpl<bool> &IsIndirectParam) {
   for (unsigned i = 0, e = AI.getArguments().size(); i < e; ++i) {
     auto Arg = AI.getArgument(i);
-    if (isArrayValue(CowValue.getDef(), Arg))
-      return Args.push_back(i);
+    if (isArrayValue(CowValue, Arg))
+      Args.push_back(i);
+    else
+      Args.push_back(-1); // -1 means that argument is not aliasing CowValue.
   }
+  if (Args.empty())
+    return;
+  auto FnTy = AI.getSubstCalleeType();
+
+  for (auto ResultInfo : FnTy->getIndirectResults()) {
+    IsIndirectParam.push_back(ResultInfo.isIndirect());
+  }
+
+  for (auto ParamInfo : FnTy->getParameters()) {
+    IsIndirectParam.push_back(ParamInfo.isIndirect());
+  }
+  assert(Args.size() == IsIndirectParam.size());
 }
 
 void NonAtomicRCTransformer::markAsCandidate(SILInstruction *I) {
@@ -519,7 +538,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       for (auto &KV : CowValueId) {
         auto CowValue = KV.getFirst();
         auto Id = KV.getSecond();
-        if (isStoreAliasingArrayValue(CowValue.getDef(), Dest)) {
+        if (isStoreAliasingArrayValue(CowValue, Dest)) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
@@ -539,7 +558,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       for (auto &KV : CowValueId) {
         auto CowValue = KV.getFirst();
         auto Id = KV.getSecond();
-        if (isArrayValue(CowValue.getDef(), Src)) {
+        if (isArrayValue(CowValue, Src)) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
@@ -580,7 +599,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
           SmallVector<int, 8> Args;
-          getCowValueArgsOfApply(AI, CowValue, Args);
+          SmallVector<bool, 8> IsIndirectParam;
+          getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
           if (Args.size()) {
             DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n" << CowValue;
                   I->dumpInContext());
@@ -610,12 +630,15 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
         auto CowValue = KV.getFirst();
         auto Id = KV.getSecond();
         SmallVector<int, 8> Args;
-        getCowValueArgsOfApply(AI, CowValue, Args);
+        SmallVector<bool, 4> IsIndirectParam;
+
+        getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
         if (Args.empty())
           continue;
         for (auto Arg : Args) {
-          auto FnTy = AI.getSubstCalleeType();
-          auto isIndirect = FnTy->getParameters()[Arg].isIndirect();
+          if (Arg < 0)
+            continue;
+          auto isIndirect = IsIndirectParam[Arg];
           if (EA->canParameterEscape(AI, Arg, isIndirect)) {
             LastSeenOp[Id] = Kill;
             KilledCowValues[Id] = true;
@@ -630,13 +653,13 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
     }
 
     if (auto *DSI = dyn_cast<DeallocStackInst>(I)) {
-      auto *Val = DSI->getOperand().getDef();
+      auto Val = DSI->getOperand();
 
       // Check if it kills any non-local region.
       for (auto &KV : CowValueId) {
         auto CowValue = KV.getFirst();
         auto Id = KV.getSecond();
-        if (Val == CowValue.getDef()) {
+        if (Val == CowValue) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
@@ -662,7 +685,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       for (auto &KV : CowValueId) {
         auto CowValue = KV.getFirst();
         auto Id = KV.getSecond();
-        if (isArrayValue(CowValue.getDef(), RCVal)) {
+        if (isArrayValue(CowValue, RCVal)) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
@@ -723,7 +746,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           auto Id = KV.getSecond();
           // Check if it kills any non-local region.
           if (CurrentlyActive.test(Id) &&
-              isRCofArrayValueAt(CowValue.getDef(), I)) {
+              isRCofArrayValueAt(CowValue, I)) {
             Changes = StateChanges( Changes | SILAnalysis::InvalidationKind::Instructions);
             markAsNonAtomic(RC);
             DEBUG(llvm::dbgs()
@@ -748,7 +771,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
         for (auto &KV : CowValueId) {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
-          if (isStoreAliasingArrayValue(CowValue.getDef(), Dest)) {
+          if (isStoreAliasingArrayValue(CowValue, Dest)) {
             DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
                   I->dumpInContext());
             // The region is not active anymore after this point.
@@ -766,7 +789,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
         for (auto &KV : CowValueId) {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
-          if (isArrayValue(CowValue.getDef(), Src)) {
+          if (isArrayValue(CowValue, Src)) {
             // This is a kill.
             CurrentlyActive[Id] = false;
             DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
@@ -839,7 +862,8 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
             auto CowValue = KV.getFirst();
             auto Id = KV.getSecond();
             SmallVector<int, 8> Args;
-            getCowValueArgsOfApply(AI, CowValue, Args);
+            SmallVector<bool,8> IsIndirectParam;
+            getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
             if (Args.size()) {
               CurrentlyActive[Id] = false;
               break;
@@ -869,12 +893,14 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
           SmallVector<int, 8> Args;
-          getCowValueArgsOfApply(AI, CowValue, Args);
+          SmallVector<bool, 8> IsIndirectParam;
+          getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
           if (Args.empty())
             continue;
           for (auto Arg : Args) {
-            auto FnTy = AI.getSubstCalleeType();
-            auto isIndirect = FnTy->getParameters()[Arg].isIndirect();
+            if (Arg < 0)
+              continue;
+            auto isIndirect = IsIndirectParam[Arg];
             if (EA->canParameterEscape(AI, Arg, isIndirect)) {
               // The region is not active anymore after this point.
               CurrentlyActive[Id] = false;
@@ -886,12 +912,12 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
       }
 
       if (auto *DSI = dyn_cast<DeallocStackInst>(I)) {
-        auto *Val = DSI->getOperand().getDef();
+        auto Val = DSI->getOperand();
 
         for (auto &KV : CowValueId) {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
-          if (Val == CowValue.getDef()) {
+          if (Val == CowValue) {
             // This is a kill.
             // The region is not active anymore after this point.
             CurrentlyActive[Id] = false;
