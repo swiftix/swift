@@ -410,6 +410,21 @@ static void _swift_nonatomic_release_(HeapObject *object) {
 }
 auto swift::_swift_nonatomic_release = _swift_nonatomic_release_;
 
+SWIFT_RT_ENTRY_VISIBILITY
+void swift::swift_nonatomic_release_n(HeapObject *object, uint32_t n)
+    SWIFT_CC(RegisterPreservingCC_IMPL) {
+  return SWIFT_RT_ENTRY_REF(swift_nonatomic_release_n)(object, n);
+}
+
+SWIFT_RT_ENTRY_IMPL_VISIBILITY
+extern "C"
+void SWIFT_RT_ENTRY_IMPL(swift_nonatomic_release_n)(HeapObject *object, uint32_t n)
+    SWIFT_CC(RegisterPreservingCC_IMPL) {
+  if (object && object->refCount.decrementShouldDeallocateNNonAtomic(n)) {
+    _swift_release_dealloc(object);
+  }
+}
+
 size_t swift::swift_retainCount(HeapObject *object) {
   return object->refCount.getCount();
 }

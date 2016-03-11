@@ -352,8 +352,8 @@ public:
   llvm::Value *emitUnknownWeakTakeStrong(Address src, llvm::Type *type);
 
   // Routines for the Builtin.NativeObject reference-counting style.
-  void emitBridgeStrongRetain(llvm::Value *value);
-  void emitBridgeStrongRelease(llvm::Value *value);
+  void emitBridgeStrongRetain(llvm::Value *value, bool isAtomic);
+  void emitBridgeStrongRelease(llvm::Value *value, bool isAtomic);
 
   // Routines for the ErrorType reference-counting style.
   void emitErrorStrongRetain(llvm::Value *value);

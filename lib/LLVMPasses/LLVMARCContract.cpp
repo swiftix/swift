@@ -100,7 +100,7 @@ performRRNOptimization(DenseMap<Value *, LocalState> &PtrToLocalStateMap) {
       // Create the retainN call right by the first retain.
       B.setInsertPoint(RetainList[0]);
       O = RetainList[0]->getArgOperand(0);
-      B.createRetainN(RC->getSwiftRCIdentityRoot(O), RetainList.size());
+      B.createRetainN(RC->getSwiftRCIdentityRoot(O), RetainList.size(), RetainList[0]);
 
       // Replace all uses of the retain instructions with our new retainN and
       // then delete them.
@@ -119,7 +119,7 @@ performRRNOptimization(DenseMap<Value *, LocalState> &PtrToLocalStateMap) {
       auto *OldCI = ReleaseList[ReleaseList.size() - 1];
       B.setInsertPoint(OldCI);
       O = OldCI->getArgOperand(0);
-      B.createReleaseN(RC->getSwiftRCIdentityRoot(O), ReleaseList.size());
+      B.createReleaseN(RC->getSwiftRCIdentityRoot(O), ReleaseList.size(), OldCI);
 
       // Remove all old release instructions.
       for (auto *Inst : ReleaseList) {
@@ -137,7 +137,7 @@ performRRNOptimization(DenseMap<Value *, LocalState> &PtrToLocalStateMap) {
       B.setInsertPoint(UnknownRetainList[0]);
       O = UnknownRetainList[0]->getArgOperand(0);
       B.createUnknownRetainN(RC->getSwiftRCIdentityRoot(O),
-                             UnknownRetainList.size());
+                             UnknownRetainList.size(), UnknownRetainList[0]);
 
       // Replace all uses of the retain instructions with our new retainN and
       // then delete them.
@@ -157,7 +157,7 @@ performRRNOptimization(DenseMap<Value *, LocalState> &PtrToLocalStateMap) {
       B.setInsertPoint(OldCI);
       O = OldCI->getArgOperand(0);
       B.createUnknownReleaseN(RC->getSwiftRCIdentityRoot(O),
-                              UnknownReleaseList.size());
+                              UnknownReleaseList.size(), OldCI);
 
       // Remove all old release instructions.
       for (auto *Inst : UnknownReleaseList) {
@@ -177,7 +177,7 @@ performRRNOptimization(DenseMap<Value *, LocalState> &PtrToLocalStateMap) {
       O = OldCI->getArgOperand(0);
       // Bridge retain may modify the input reference before forwarding it.
       auto *I = B.createBridgeRetainN(RC->getSwiftRCIdentityRoot(O),
-                                      BridgeRetainList.size());
+                                      BridgeRetainList.size(), OldCI);
 
       // Remove all old retain instructions.
       for (auto *Inst : BridgeRetainList) {
@@ -197,7 +197,7 @@ performRRNOptimization(DenseMap<Value *, LocalState> &PtrToLocalStateMap) {
       B.setInsertPoint(OldCI);
       O = OldCI->getArgOperand(0);
       B.createBridgeReleaseN(RC->getSwiftRCIdentityRoot(O),
-                              BridgeReleaseList.size());
+                              BridgeReleaseList.size(), OldCI);
 
       // Remove all old release instructions.
       for (auto *Inst : BridgeReleaseList) {

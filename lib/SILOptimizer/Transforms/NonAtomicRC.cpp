@@ -264,7 +264,7 @@ private:
 
 static void markAsNonAtomic(RefCountingInst *I) {
   SILValue Op = I->getOperand(0);
-#if 1
+#if 0
   if (Op->getType() ==
       SILType::getBridgeObjectType(I->getModule().getASTContext())) {
     // Convert this bridged object to a native object ref.
@@ -949,6 +949,8 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
 /// on the array can be non-atomic. Subsequent
 /// make_mutable calls on the same array can
 /// be eliminated.
+/// TODO: Support value-types other than Array, e.g.
+/// Set or Dictionary.
 void NonAtomicRCTransformer::findAllMakeUnique() {
   unsigned UniqueIdx = 0;
   // Find all make_mutable. This gives us the number
@@ -962,6 +964,9 @@ void NonAtomicRCTransformer::findAllMakeUnique() {
         continue;
       }
       auto Call = isMakeUniqueCall(I);
+      if (Call) {
+        DEBUG(llvm::dbgs() << "Found a make_unique call:" << I << "\n");
+      }
       if (Call && Call.getSelf() &&
           checkUniqueArrayContainer(F, Call.getSelf())) {
         // Add to the set of makeUnique calls
@@ -1004,7 +1009,6 @@ StateChanges NonAtomicRCTransformer::processNonEscapingRefCountingInsts() {
       }
     }
   }
-  // No instructions were changed in a way that requires reprocessing.
   return Changes;
 }
 

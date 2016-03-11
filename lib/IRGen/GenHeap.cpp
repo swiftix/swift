@@ -980,7 +980,7 @@ void IRGenFunction::emitStrongRelease(llvm::Value *value,
   case ReferenceCounting::Unknown:
     return emitUnknownStrongRelease(value);
   case ReferenceCounting::Bridge:
-    return emitBridgeStrongRelease(value);
+    return emitBridgeStrongRelease(value, isAtomic);
   case ReferenceCounting::Error:
     return emitErrorStrongRelease(value);
   }
@@ -994,7 +994,7 @@ void IRGenFunction::emitStrongRetain(llvm::Value *value,
     emitNativeStrongRetain(value, isAtomic);
     return;
   case ReferenceCounting::Bridge:
-    emitBridgeStrongRetain(value);
+    emitBridgeStrongRetain(value, isAtomic);
     return;
   case ReferenceCounting::ObjC:
     emitObjCStrongRetain(value);
@@ -1248,12 +1248,18 @@ void IRGenFunction::emitUnknownStrongRelease(llvm::Value *value) {
   emitUnaryRefCountCall(*this, IGM.getUnknownReleaseFn(), value);
 }
 
-void IRGenFunction::emitBridgeStrongRetain(llvm::Value *value) {
-  emitUnaryRefCountCall(*this, IGM.getBridgeObjectStrongRetainFn(), value);
+void IRGenFunction::emitBridgeStrongRetain(llvm::Value *value, bool isAtomic) {
+  emitUnaryRefCountCall(
+      *this, (isAtomic) ? IGM.getBridgeObjectStrongRetainFn()
+                        : IGM.getNonAtomicBridgeObjectStrongRetainFn(),
+      value);
 }
 
-void IRGenFunction::emitBridgeStrongRelease(llvm::Value *value) {
-  emitUnaryRefCountCall(*this, IGM.getBridgeObjectStrongReleaseFn(), value);
+void IRGenFunction::emitBridgeStrongRelease(llvm::Value *value, bool isAtomic) {
+  emitUnaryRefCountCall(
+      *this, (isAtomic) ? IGM.getBridgeObjectStrongReleaseFn()
+                        : IGM.getNonAtomicBridgeObjectStrongReleaseFn(),
+      value);
 }
 
 void IRGenFunction::emitErrorStrongRetain(llvm::Value *value) {
