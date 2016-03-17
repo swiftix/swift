@@ -1221,6 +1221,7 @@ extension ${Self} : RangeReplaceableCollection, _ArrayProtocol {
   }
 
   @_semantics("array.make_mutable")
+  @_semantics("generate.nonatomic")
   internal mutating func _makeUniqueAndReserveCapacityIfNotUnique() {
     if _slowPath(!_buffer.isMutableAndUniquelyReferenced()) {
       _copyToNewBuffer(oldCount: _buffer.count)
@@ -1228,6 +1229,7 @@ extension ${Self} : RangeReplaceableCollection, _ArrayProtocol {
   }
 
   @_semantics("array.mutate_unknown")
+  @_semantics("generate.nonatomic")
   internal mutating func _reserveCapacityAssumingUniqueBuffer(oldCount: Int) {
     _sanityCheck(_buffer.isMutableAndUniquelyReferenced())
 
@@ -1237,6 +1239,7 @@ extension ${Self} : RangeReplaceableCollection, _ArrayProtocol {
   }
 
   @_semantics("array.mutate_unknown")
+  @_semantics("generate.nonatomic")
   internal mutating func _appendElementAssumeUniqueAndCapacity(
     _ oldCount: Int,
     newElement: Element
