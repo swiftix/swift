@@ -254,9 +254,9 @@ private:
   StateChanges processNonEscapingRefCountingInsts();
   bool isEligableRefCountingInst(SILInstruction *I);
   StateChanges tryNonAtomicRC(SILInstruction *I);
-  bool isArrayValue(ValueBase *ArrayStruct, SILValue Value);
-  bool isRCofArrayValueAt(ValueBase *ArrayStruct, SILInstruction *Inst);
-  bool isStoreAliasingArrayValue(ValueBase *ArrayStruct, SILValue Dest);
+  bool isCowValue(ValueBase *CowStruct, SILValue Value);
+  bool isRCofCowValueAt(ValueBase *CowStruct, SILInstruction *Inst);
+  bool isStoreAliasingCowValue(ValueBase *CowStruct, SILValue Dest);
   void findAllMakeUnique();
   void scanAllBlocks();
   void scanBasicBlock(SILBasicBlock *BB);
@@ -356,8 +356,15 @@ StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
 /// object?
 static ArraySemanticsCall isMakeUniqueCall(SILInstruction *I) {
   ArraySemanticsCall Call(I);
-  if (Call && Call.getKind() == ArrayCallKind::kMakeMutable)
-    return Call;
+  if (Call) {
+    switch(Call.getKind()) {
+    default: break;
+    case ArrayCallKind::kMakeMutable:
+    case ArrayCallKind::kMutateUnknown:
+    case ArrayCallKind::kGuaranteeMutable:
+      return Call;
+    }
+  }
   // TODO: Handle other COW types here?
   return ArraySemanticsCall(I, "non-existing", false);
 }
@@ -371,8 +378,8 @@ static ArraySemanticsCall isMakeUniqueCall(SILInstruction *I) {
 /// initialized directly, or copied from a function return value. We don't
 /// need to check how it is initialized here, because that will show up as a
 /// store to the local's address.
-bool checkUniqueArrayContainer(SILFunction *Function, SILValue ArrayContainer) {
-  if (SILArgument *Arg = dyn_cast<SILArgument>(ArrayContainer)) {
+bool checkUniqueCowContainer(SILFunction *Function, SILValue CowContainer) {
+  if (SILArgument *Arg = dyn_cast<SILArgument>(CowContainer)) {
     // Check that the argument is passed as an inout type. This means there are
     // no aliases accessible within this function scope.
     auto Params = Function->getLoweredFunctionType()->getParameters();
@@ -383,38 +390,39 @@ bool checkUniqueArrayContainer(SILFunction *Function, SILValue ArrayContainer) {
         continue;
 
       if (!Params[ArgIdx].isIndirectInOut()) {
-        DEBUG(llvm::dbgs() << "    Skipping Array: Not an inout argument!\n";
-              ArrayContainer->dump());
+        DEBUG(llvm::dbgs() << "    Skipping COW: Not an inout argument!\n";
+              CowContainer->dump());
         return false;
       }
     }
     return true;
   }
-  else if (isa<AllocStackInst>(ArrayContainer))
+
+  if (isa<AllocStackInst>(CowContainer))
     return true;
 
   DEBUG(llvm::dbgs()
-        << "    Skipping Array: Not an argument or local variable!\n";
-        ArrayContainer->dump());
+        << "    Skipping COW object: Not an argument or local variable!\n";
+        CowContainer->dump());
   return false;
 }
 
-bool NonAtomicRCTransformer::isArrayValue(ValueBase *ArrayStruct,
+bool NonAtomicRCTransformer::isCowValue(ValueBase *CowStruct,
                                           SILValue Value) {
   auto Root = RCIFI->getRCIdentityRoot(Value);
-  if (Root == ArrayStruct)
+  if (Root == CowStruct)
     return true;
-  auto *ArrayLoad = dyn_cast<LoadInst>(Root);
-  if (!ArrayLoad)
+  auto *CowLoad = dyn_cast<LoadInst>(Root);
+  if (!CowLoad)
     return false;
 
-  if (ArrayLoad->getOperand() == ArrayStruct)
+  if (CowLoad->getOperand() == CowStruct)
     return true;
 
   // Is it an RC operation on the buffer reference?
   if (RCIFI->getRCIdentityRoot(
-               stripAddressProjections(ArrayLoad->getOperand()))
-           == ArrayStruct)
+               stripAddressProjections(CowLoad->getOperand()))
+           == CowStruct)
     return true;
 
   return false;
@@ -422,14 +430,15 @@ bool NonAtomicRCTransformer::isArrayValue(ValueBase *ArrayStruct,
 
 
 
-/// Check that the array value stored in \p ArrayStruct is operand of this RC by
+/// Check that the array value stored in \p CowStruct is operand of this RC by
 /// \Inst.
-bool NonAtomicRCTransformer::isRCofArrayValueAt(ValueBase *ArrayStruct,
-                                                SILInstruction *Inst) {
+/// TODO: Support other COW types, not only array.
+bool NonAtomicRCTransformer::isRCofCowValueAt(ValueBase *CowStruct,
+                                              SILInstruction *Inst) {
   auto *RCI = dyn_cast<RefCountingInst>(Inst);
   if (!RCI)
     return false;
-  if (isArrayValue(ArrayStruct, RCI->getOperand(0)))
+  if (isCowValue(CowStruct, RCI->getOperand(0)))
     return true;
   // Check if this is the "array.owner" of the array.
   SILValue Op = RCI->getOperand(0);
@@ -438,23 +447,24 @@ bool NonAtomicRCTransformer::isRCofArrayValueAt(ValueBase *ArrayStruct,
     return false;
   if (Call.getKind() != ArrayCallKind::kGetArrayOwner)
     return false;
-  if (isArrayValue(ArrayStruct, Call.getSelf()))
+  if (isCowValue(CowStruct, Call.getSelf()))
     return true;
   return false;
 }
 
-bool NonAtomicRCTransformer::isStoreAliasingArrayValue(ValueBase *ArrayStruct,
-                                                       SILValue Dest) {
+// TODO: Generalize for any COW types, not only arrays.
+bool NonAtomicRCTransformer::isStoreAliasingCowValue(ValueBase *CowStruct,
+                                                     SILValue Dest) {
   auto Root = RCIFI->getRCIdentityRoot(Dest);
 
   // Is it overwriting the array struct?
-  if (Root == ArrayStruct)
+  if (Root == CowStruct)
     return true;
 
-  // Is it a store to the buffer reference?
+  // Is it a store to a field of a COW struct, e.g. to the buffer reference?
   // TODO: Make this check more precise?
   if (RCIFI->getRCIdentityRoot(stripAddressProjections(Root)) ==
-      ArrayStruct)
+      CowStruct)
     return true;
 
   return false;
@@ -471,7 +481,7 @@ void NonAtomicRCTransformer::getCowValueArgsOfApply(
     SmallVectorImpl<bool> &IsIndirectParam) {
   for (unsigned i = 0, e = AI.getArguments().size(); i < e; ++i) {
     auto Arg = AI.getArgument(i);
-    if (isArrayValue(CowValue, Arg))
+    if (isCowValue(CowValue, Arg))
       Args.push_back(i);
     else
       Args.push_back(-1); // -1 means that argument is not aliasing CowValue.
@@ -495,6 +505,18 @@ void NonAtomicRCTransformer::markAsCandidate(SILInstruction *I) {
   CandidateBBs.insert(I->getParent());
 }
 
+static bool isMakeOrGuaranteeMutable(ArraySemanticsCall &ArrayCall) {
+   if (ArrayCall) {
+     switch(ArrayCall.getKind()) {
+     default: return false;
+     case ArrayCallKind::kMakeMutable:
+     case ArrayCallKind::kMutateUnknown:
+     case ArrayCallKind::kGuaranteeMutable:
+       return true;
+     }
+   }
+   return false;
+}
 
 // Scan a basic block. Find all the "kill" instructions
 // which may kill one of the CowValues being tracked.
@@ -531,6 +553,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
   while (II != BB->end()) {
     auto I = &*II++;
 
+    // TODO: Generalize for any COW types, not only arrays.
     // Check if instruction may overwrite the array buffer reference in the
     // container.
     if (auto *SI = dyn_cast<StoreInst>(I)) {
@@ -543,7 +566,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       for (auto &KV : CowValueId) {
         auto CowValue = KV.getFirst();
         auto Id = KV.getSecond();
-        if (isStoreAliasingArrayValue(CowValue, Dest)) {
+        if (isStoreAliasingCowValue(CowValue, Dest)) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
@@ -563,7 +586,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       for (auto &KV : CowValueId) {
         auto CowValue = KV.getFirst();
         auto Id = KV.getSecond();
-        if (isArrayValue(CowValue, Src)) {
+        if (isCowValue(CowValue, Src)) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
@@ -578,7 +601,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
 
     if (auto AI = FullApplySite::isa(I)) {
       ArraySemanticsCall ArrayCall(AI.getInstruction());
-      if (ArrayCall && ArrayCall.getKind() == ArrayCallKind::kMakeMutable) {
+      if (isMakeOrGuaranteeMutable(ArrayCall)) {
         // This is a GEN operation, it starts a region.
         auto CowValue = ArrayCall.getSelf();
         LastSeenOp[CowValueId[CowValue]] = Gen;
@@ -751,7 +774,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           auto Id = KV.getSecond();
           // Check if it kills any non-local region.
           if (CurrentlyActive.test(Id) &&
-              isRCofArrayValueAt(CowValue, I)) {
+              isRCofCowValueAt(CowValue, I)) {
             Changes = StateChanges( Changes | SILAnalysis::InvalidationKind::Instructions);
             markAsNonAtomic(RC);
             DEBUG(llvm::dbgs()
@@ -776,7 +799,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
         for (auto &KV : CowValueId) {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
-          if (isStoreAliasingArrayValue(CowValue, Dest)) {
+          if (isStoreAliasingCowValue(CowValue, Dest)) {
             DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
                   I->dumpInContext());
             // The region is not active anymore after this point.
@@ -794,7 +817,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
         for (auto &KV : CowValueId) {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
-          if (isArrayValue(CowValue, Src)) {
+          if (isCowValue(CowValue, Src)) {
             // This is a kill.
             CurrentlyActive[Id] = false;
             DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
@@ -815,6 +838,8 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           // Check if this make_mutable is inside an existing region for the
           // same CowValue. If this is the case, then it can be removed.
           // The region may have started either in this BB or outside.
+          // TODO: It can be that make_mutable is not only making something mutable
+          // but does more. In this case it cannot be removed.
           auto Id = CowValueId[CowValue];
           if (CurrentlyActive.test(Id)) {
             DEBUG(llvm::dbgs() << "make_mutable call can be eliminated:\n";
@@ -973,7 +998,7 @@ void NonAtomicRCTransformer::findAllMakeUnique() {
         DEBUG(llvm::dbgs() << "Found a make_unique call:" << I << "\n");
       }
       if (Call && Call.getSelf() &&
-          checkUniqueArrayContainer(F, Call.getSelf())) {
+          checkUniqueCowContainer(F, Call.getSelf())) {
         // Add to the set of makeUnique calls
         // The COW object that is made a thread-local by this call.
         auto CowValue = Call.getSelf();
