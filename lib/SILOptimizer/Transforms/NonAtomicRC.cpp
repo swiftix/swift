@@ -22,6 +22,8 @@
 #include "swift/SIL/SILBuilder.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
+#include "swift/SILOptimizer/Utils/Generics.h"
+#include "swift/SIL/SILCloner.h"
 
 STATISTIC(NumNonAtomicRC, "Number of non-atomic RC operations");
 
@@ -265,7 +267,298 @@ private:
                               SmallVectorImpl<int> &Args,
                               SmallVectorImpl<bool> &IsIndirectParam);
   void markAsCandidate(SILInstruction *I);
+  void replaceByNonAtomicApply(FullApplySite AI);
+  SILFunction *createNonAtomicFunction(SILFunction *F);
+  bool isBeneficialToClone(SILFunction *F);
 };
+
+
+namespace {
+/// \brief A SILCloner subclass which clones a closure function while
+/// promoting some of its box parameters to stack addresses.
+class FunctionCloner : public SILClonerWithScopes<FunctionCloner> {
+  public:
+  friend class SILVisitor<FunctionCloner>;
+  friend class SILCloner<FunctionCloner>;
+
+  FunctionCloner(SILFunction *Orig,
+                  llvm::StringRef ClonedName);
+
+  void populateCloned();
+
+  SILFunction *getCloned() { return &getBuilder().getFunction(); }
+
+  private:
+  static SILFunction *initCloned(SILFunction *Orig,
+                                 llvm::StringRef ClonedName);
+
+  SILFunction *Orig;
+};
+} // end anonymous namespace.
+
+FunctionCloner::FunctionCloner(SILFunction *Orig,
+                               llvm::StringRef ClonedName)
+  : SILClonerWithScopes<FunctionCloner>(*initCloned(Orig,
+                                                    ClonedName)),
+    Orig(Orig) {
+  assert(Orig->getDebugScope()->getParentFunction() !=
+         getCloned()->getDebugScope()->getParentFunction());
+}
+
+/// \brief Create the function corresponding to the clone of the
+/// original function.
+SILFunction*
+FunctionCloner::initCloned(SILFunction *Orig,
+                           llvm::StringRef ClonedName) {
+  SILModule &M = Orig->getModule();
+
+  SmallVector<SILParameterInfo, 4> ClonedInterfaceArgTys;
+
+  // Generate a new parameter list.
+  auto OrigFTI = Orig->getLoweredFunctionType();
+
+  // Create the new function type for the cloned function.
+  auto ClonedTy = OrigFTI;
+
+  assert((Orig->isTransparent() || Orig->isBare() || Orig->getLocation())
+         && "SILFunction missing location");
+  assert((Orig->isTransparent() || Orig->isBare() || Orig->getDebugScope())
+         && "SILFunction missing DebugScope");
+  assert(!Orig->isGlobalInit() && "Global initializer cannot be cloned");
+  auto *Fn = M.getOrCreateFunction(
+      SILLinkage::Shared, ClonedName, ClonedTy, Orig->getContextGenericParams(),
+      Orig->getLocation(), Orig->isBare(), IsNotTransparent, Orig->isFragile(),
+      Orig->isThunk(), Orig->getClassVisibility(), Orig->getInlineStrategy(),
+      Orig->getEffectsKind(), Orig, Orig->getDebugScope());
+  for (auto &Attr : Orig->getSemanticsAttrs()) {
+    Fn->addSemanticsAttr(Attr);
+  }
+  Fn->setDeclCtx(Orig->getDeclContext());
+  return Fn;
+}
+
+/// \brief Populate the body of the cloned closure, modifying instructions as
+/// necessary to take into consideration the removed parameters.
+void
+FunctionCloner::populateCloned() {
+  SILFunction *Cloned = getCloned();
+  SILModule &M = Cloned->getModule();
+
+  // Create arguments for the entry block
+  SILBasicBlock *OrigEntryBB = &*Orig->begin();
+  SILBasicBlock *ClonedEntryBB = new (M) SILBasicBlock(Cloned);
+  unsigned ArgNo = 0;
+  auto I = OrigEntryBB->bbarg_begin(), E = OrigEntryBB->bbarg_end();
+  while (I != E) {
+    // Create a new argument which copies the original argument.
+    SILValue MappedValue =
+      new (M) SILArgument(ClonedEntryBB, (*I)->getType(), (*I)->getDecl());
+    ValueMap.insert(std::make_pair(*I, MappedValue));
+    ++I;
+  }
+
+  getBuilder().setInsertionPoint(ClonedEntryBB);
+  BBMap.insert(std::make_pair(OrigEntryBB, ClonedEntryBB));
+  // Recursively visit original BBs in depth-first preorder, starting with the
+  // entry block, cloning all instructions other than terminators.
+  visitSILBasicBlock(OrigEntryBB);
+
+  // Now iterate over the BBs and fix up the terminators.
+  for (auto BI = BBMap.begin(), BE = BBMap.end(); BI != BE; ++BI) {
+    getBuilder().setInsertionPoint(BI->second);
+    visit(BI->first->getTerminator());
+  }
+}
+
+static SILFunction *getClonedFunction(SILFunction *OrigF, StringRef NewName) {
+  FunctionCloner Cloner(OrigF, NewName);
+  Cloner.populateCloned();
+  return Cloner.getCloned();
+}
+
+static SILValue stripUniquenessPreservingCastsAndProjections(SILValue V) {
+  while (V) {
+    V = stripAddressProjections(V);
+    V = stripCasts(V);
+    if (auto *UAC = dyn_cast<UncheckedAddrCastInst>(V)) {
+      if (UAC->getType() ==
+          SILType::getNativeObjectType(UAC->getModule().getASTContext()).getAddressType()) {
+        V = UAC->getOperand();
+        continue;
+      }
+    }
+    break;
+  }
+  return V;
+}
+
+// Create a version of the function which would use non-atomic
+// reference counting for a given set of arguments.
+SILFunction *NonAtomicRCTransformer::createNonAtomicFunction(SILFunction *F) {
+  // TODO: Check if non-atomic version exists already and return
+  // it if available.
+  if (F->getName().endswith("_NonAtomic"))
+    return F;
+  // Otherwise clone and rewrite ref-counting operations in the body.
+  SILModule &Mod = F->getModule();
+
+  // Produce a mangled name of a non-atomic function.
+  llvm::SmallString<128> MangledNonAtomicNameBuffer;
+  llvm::raw_svector_ostream OS(MangledNonAtomicNameBuffer);
+  OS << F->getName();
+  OS << "_NonAtomic";
+  StringRef MangledNonAtomicName = OS.str();
+  auto *NewF = Mod.lookUpFunction(MangledNonAtomicName);
+  if (NewF)
+    return NewF;
+  //if (Mod.hasFunction(MangledNonAtomicName, SILLinkage::Private))
+  //  return Mod.lookUpFunction(MangledNonAtomicName);
+  // Clone a function. Mark retain/releases as non-atomic.
+  NewF = getClonedFunction(F, MangledNonAtomicName);
+  // Remove the attribute.
+  NewF->removeSemanticsAttr("generate.nonatomic");
+
+  // Find all reference-counting instructions on Self argument or its
+  // projections and make them non-atomic.
+  // Fold all uniqueness checks of Self or its projections into true.
+  // All calls of functions with @_semantics("generate.nonatomic") should
+  // be replaced by the calls of their non-atomic versions.
+
+  // TODO: Should it be done by the cloner?
+  SILValue Self = NewF->getSelfArgument();
+  for (auto &BB : *NewF) {
+    auto II = BB.begin();
+    while (II != BB.end()) {
+      auto I = &*II++;
+
+      // Do we need to track regions here and check for any
+      // stores/calls that may overwrite Self?
+      // Or do we assume that functions marked as generate.nonatomic
+      // guarantee that Self remains unique after their execution?
+
+      if (auto *RCI = dyn_cast<RefCountingInst>(I)) {
+        // Get the RC root.
+        auto Root = RCIFI->getRCIdentityRoot(
+            stripAddressProjections(RCI->getOperand(0)));
+        if (Root == Self)
+          RCI->setNonAtomic(true);
+        continue;
+      }
+
+      if (FullApplySite AI = FullApplySite::isa(I)) {
+        auto Callee = AI.getCalleeFunction();
+        if (Callee && Callee->hasSemanticsAttr("generate.nonatomic")) {
+          // TODO: Can we run into endless recursion here?
+          replaceByNonAtomicApply(AI);
+        }
+        continue;
+      }
+
+      // TODO: This peephole should be part of sil-combine, because
+      // some of these instructions only become part of the
+      // function after inlining.
+      if (isa<IsUniqueInst>(I)) {
+        SILValue Op = stripUniquenessPreservingCastsAndProjections(
+          I->getOperand(0));
+        auto Root = RCIFI->getRCIdentityRoot(Op);
+        DEBUG(llvm::dbgs() << "Found is_unique: "; I->dump();
+              llvm::dbgs() << "\n"
+                           << "RCRoot = " << Root << "\n");
+        if (Root != Self) {
+          continue;
+        }
+        SILBuilderWithScope B(I);
+        auto boolTy = SILType::getBuiltinIntegerType(1, Mod.getASTContext());
+        auto yes = B.createIntegerLiteral(I->getLoc(), boolTy, 1);
+        I->replaceAllUsesWith(yes);
+        I->eraseFromParent();
+        continue;
+      }
+
+      if (auto *BI = dyn_cast<BuiltinInst>(I)) {
+        const BuiltinInfo &Builtin = BI->getBuiltinInfo();
+        switch (Builtin.ID) {
+        default:
+          break;
+        case BuiltinValueKind::IsUnique:
+        case BuiltinValueKind::IsUniqueOrPinned:
+        case BuiltinValueKind::IsUnique_native:
+        case BuiltinValueKind::IsUniqueOrPinned_native:
+          auto Root = RCIFI->getRCIdentityRoot(stripUniquenessPreservingCastsAndProjections(
+              BI->getOperand(0)));
+          if (Root != Self)
+            break;
+          // Replace this check by true.
+          SILBuilderWithScope B(I);
+          auto boolTy = SILType::getBuiltinIntegerType(1, Mod.getASTContext());
+          auto yes = B.createIntegerLiteral(I->getLoc(), boolTy, 1);
+          I->replaceAllUsesWith(yes);
+          break;
+        }
+      }
+    }
+  }
+
+  DEBUG(llvm::dbgs() << "Created a new non-atomic function: " << NewF->getName()
+                     << "\n";
+        NewF->dump());
+  return NewF;
+}
+
+/// Check if it is beneficial to clone F if its
+/// Self argument can be used non-atomically.
+bool NonAtomicRCTransformer::isBeneficialToClone(SILFunction *F) {
+  assert(F->hasSemanticsAttr("generate.nonatomic") &&
+         "Only functions annotated with @_semantics(\"generate.nonatomic\") "
+         "can be cloned");
+  return true;
+  SILValue Self = F->getSelfArgument();
+  for (auto &BB : *F)
+    for (auto &I : BB) {
+      if (auto *RCI = dyn_cast<RefCountingInst>(&I)) {
+        // Get the RC root.
+        auto Root = RCIFI->getRCIdentityRoot(stripAddressProjections(RCI->getOperand(0)));
+        if (Root == Self) {
+          DEBUG(llvm::dbgs() << "Function is beneficial to clone becasue it "
+                                "has RC instructions on its self argument");
+          return true;
+        }
+      }
+      // Check if there are any calls checking for uniqueness or having
+      // non-atomic versions.
+      ArraySemanticsCall Call(&I);
+      if (Call && Call.hasSelf() &&
+          RCIFI->getRCIdentityRoot(stripAddressProjections(Call.getSelf())) == Self) {
+        // This make mutable call can be folded, because it will be always true.
+        if (Call.getKind() == ArrayCallKind::kMakeMutable)
+          return true;
+        FullApplySite AI = FullApplySite::isa(&I);
+        if (AI &&
+            AI.getCalleeFunction()->hasSemanticsAttr("generate.nonatomic"))
+          return true;
+      }
+    }
+  return false;
+}
+
+// Replace an Apply by an apply of the non-atomic version
+// of the callee.
+void NonAtomicRCTransformer::replaceByNonAtomicApply(FullApplySite AI) {
+  auto *OrigCallee = AI.getCalleeFunction();
+  if (!OrigCallee)
+    return;
+  // TODO: Check if the function would benefit from cloning.
+  if (!isBeneficialToClone(OrigCallee))
+    return;
+  auto *NewCallee = createNonAtomicFunction(OrigCallee);
+  if (OrigCallee == NewCallee)
+    return;
+  FullApplySite NewApply;
+  ReabstractionInfo ReInfo(OrigCallee, AI);
+  auto NewAI = replaceWithSpecializedFunction(AI, NewCallee, ReInfo);
+  AI.getInstruction()->replaceAllUsesWith(NewAI.getInstruction());
+  recursivelyDeleteTriviallyDeadInstructions(AI.getInstruction(), true);
+}
 
 static void markAsNonAtomic(RefCountingInst *I) {
   SILValue Op = I->getOperand(0);
@@ -830,6 +1123,27 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
 
       if (auto AI = FullApplySite::isa(I)) {
         ArraySemanticsCall ArrayCall(AI.getInstruction());
+        if (ArrayCall &&
+            (ArrayCall.getKind() == ArrayCallKind::kGuaranteeMutable||
+             ArrayCall.getKind() == ArrayCallKind::kMutateUnknown)) {
+          // TODO: Call a non-atomic version of the function?
+          // The COW object that is made a thread-local by this call.
+          auto CowValue = ArrayCall.getSelf();
+          auto Id = CowValueId[CowValue];
+          auto *Callee = AI.getCalleeFunction();
+
+          if (CurrentlyActive.test(Id) &&
+              Callee->hasSemanticsAttr("generate.nonatomic")) {
+            DEBUG(llvm::dbgs()
+                      << "Non-atomic version of the call can be used:\n";
+                  AI.getInstruction()->dumpInContext());
+            replaceByNonAtomicApply(AI);
+          }
+         // Mark region as active.
+          CurrentlyActive[Id] = true;
+          continue;
+        }
+
         if (ArrayCall && ArrayCall.getKind() == ArrayCallKind::kMakeMutable) {
           // Add to the set of makeUnique calls
           // The COW object that is made a thread-local by this call.
@@ -882,6 +1196,23 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
             continue;
           }
 #endif
+        }
+
+        // If this is a call of a method on the currently
+        // unique COW object and this method has a non-atomic
+        // verison, then this non-atomic version could be
+        // used.
+        if (AI.hasSelfArgument()) {
+          auto *Callee = AI.getCalleeFunction();
+          auto Self = AI.getSelfArgument();
+          // Check if Self is currently unique.
+          if (CowValueId.count(Self) > 0 && CurrentlyActive.test(CowValueId[Self]) &&
+              Callee->hasSemanticsAttr("generate.nonatomic")) {
+            DEBUG(llvm::dbgs()
+                      << "Non-atomic version of the call can be used:\n";
+                  AI.getInstruction()->dumpInContext());
+            replaceByNonAtomicApply(AI);
+          }
         }
 
         if (ArrayCall) {
