@@ -32,6 +32,7 @@ enum class ArrayCallKind {
   kGetArrayOwner,
   kGetElementAddress,
   kMakeMutable,
+  kGuaranteeMutable,
   kMutateUnknown,
   kWithUnsafeMutableBufferPointer,
   // The following two semantic function kinds return the result @owned
