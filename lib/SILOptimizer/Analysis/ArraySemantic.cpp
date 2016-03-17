@@ -159,6 +159,7 @@ ArrayCallKind swift::ArraySemanticsCall::getKind() const {
             .Case("array.get_element", ArrayCallKind::kGetElement)
             .Case("array.owner", ArrayCallKind::kGetArrayOwner)
             .Case("array.make_mutable", ArrayCallKind::kMakeMutable)
+            .Case("array.guarantee_mutable", ArrayCallKind::kGuaranteeMutable)
             .Case("array.get_element_address",
                   ArrayCallKind::kGetElementAddress)
             .Case("array.mutate_unknown", ArrayCallKind::kMutateUnknown)
