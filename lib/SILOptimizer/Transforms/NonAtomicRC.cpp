@@ -25,6 +25,11 @@
 
 STATISTIC(NumNonAtomicRC, "Number of non-atomic RC operations");
 
+llvm::cl::opt<bool> PerformNonAtomicOpts(
+    "non-atomic-opts", llvm::cl::init(false),
+    llvm::cl::desc("Enable non-atomic reference counting optimizations"));
+
+
 using namespace swift;
 
 namespace {
@@ -1052,6 +1057,9 @@ public:
 private:
   /// The entry point to the transformation.
   void run() override {
+    if (!PerformNonAtomicOpts)
+      return;
+
     DEBUG(llvm::dbgs() << "** NonAtomicRC **\n");
 
     auto *EA = PM->getAnalysis<EscapeAnalysis>();
