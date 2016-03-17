@@ -2095,9 +2095,9 @@ struct _Native${Self}Storage<${TypeParametersDecl}> :
   @_versioned
   @warn_unused_result
   @inline(__always)
+  @_semantics("generate.nonatomic")
   internal func _find(key: Key, startBucket: Int)
     -> (pos: Index, found: Bool) {
-
     var bucket = startBucket
 
     // The invariant guarantees there's always a hole, so we just loop
@@ -2973,6 +2973,7 @@ internal enum _Variant${Self}Storage<${TypeParametersDecl}> : _HashStorage {
   }
 
   @warn_unused_result
+  @_semantics("generate.nonatomic")
   internal mutating func isUniquelyReferenced() -> Bool {
     if _fastPath(guaranteedNative) {
       return _isUnique_native(&self)
@@ -3011,6 +3012,7 @@ internal enum _Variant${Self}Storage<${TypeParametersDecl}> : _HashStorage {
 
   /// Ensure this we hold a unique reference to a native storage
   /// having at least `minimumCapacity` elements.
+  @_semantics("generate.nonatomic")
   internal mutating func ensureUniqueNativeStorage(minimumCapacity: Int)
     -> (reallocated: Bool, capacityChanged: Bool) {
     switch self {
@@ -3258,6 +3260,8 @@ internal enum _Variant${Self}Storage<${TypeParametersDecl}> : _HashStorage {
     }
   }
 
+  @_semantics("array.guarantee_mutable")
+  @_semantics("generate.nonatomic")
   internal mutating func nativeUpdateValue(
     value: Value, forKey key: Key
   ) -> Value? {
