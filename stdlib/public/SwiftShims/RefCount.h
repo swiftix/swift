@@ -96,7 +96,9 @@ class StrongRefCount {
   }
 
   void incrementNonAtomic() {
-    refCount += RC_ONE;
+    uint32_t val = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
+    val += RC_ONE;
+    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
   }
 
   // Increment the reference count by n.
@@ -105,8 +107,10 @@ class StrongRefCount {
   }
 
   void incrementNonAtomic(uint32_t n) {
-    refCount += n << RC_FLAGS_COUNT;
-  }
+    uint32_t val = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
+    val += n << RC_FLAGS_COUNT;
+    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
+ }
 
   // Try to simultaneously set the pinned flag and increment the
   // reference count.  If the flag is already set, don't increment the
@@ -137,7 +141,7 @@ class StrongRefCount {
   }
 
   bool tryIncrementAndPinNonAtomic() {
-    uint32_t oldval = refCount;
+    uint32_t oldval = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
     while (true) {
       // If the flag is already set, just fail.
       if (oldval & RC_PINNED_FLAG) {
@@ -149,7 +153,7 @@ class StrongRefCount {
       // Use store __ATOMIC_RELAXED here?
       if (refCount != oldval)
         continue;
-      refCount = newval;
+      __atomic_store_n(&refCount, newval, __ATOMIC_RELAXED);
       return true;
     }
   }
@@ -199,10 +203,6 @@ class StrongRefCount {
   void decrementFromOneAndDeallocateNonAtomic() {
     assert(refCount == RC_ONE && "Expect a count of 1");
     __atomic_store_n(&refCount, RC_DEALLOCATING_FLAG, __ATOMIC_RELAXED);
-  }
-
-  bool decrementShouldDeallocateNNonAtomic(uint32_t n) {
-    return doDecrementShouldDeallocateNNonAtomic<false>(n);
   }
 
   bool decrementShouldDeallocateNNonAtomic(uint32_t n) {
@@ -287,7 +287,9 @@ private:
     // it's already set.
     constexpr uint32_t quantum =
       (ClearPinnedFlag ? RC_ONE + RC_PINNED_FLAG : RC_ONE);
-    refCount -= quantum;
+    uint32_t val = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
+    val -= quantum;
+    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
     uint32_t newval = refCount;
 
     assert((!ClearPinnedFlag || !(newval & RC_PINNED_FLAG)) &&
@@ -317,7 +319,7 @@ private:
     newval = RC_DEALLOCATING_FLAG;
     if (refCount != oldval)
       return false;
-    refCount = newval;
+    __atomic_store_n(&refCount, newval, __ATOMIC_RELAXED);
     return true;
   }
 
@@ -362,8 +364,10 @@ private:
     // If we're being asked to clear the pinned flag, we can assume
     // it's already set.
     uint32_t delta = (n << RC_FLAGS_COUNT) + (ClearPinnedFlag ? RC_PINNED_FLAG : 0);
-    refCount -= delta;
-    uint32_t newval = refCount;
+    uint32_t val = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
+    val -= delta;
+    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
+    uint32_t newval = val;
 
     assert((!ClearPinnedFlag || !(newval & RC_PINNED_FLAG)) &&
            "unpinning reference that was not pinned");
@@ -392,7 +396,7 @@ private:
     newval = RC_DEALLOCATING_FLAG;
     if (refCount != oldval)
       return false;
-    refCount = newval;
+    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
     return true;
   }
 };
