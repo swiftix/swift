@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -11,53 +11,51 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "non-atomic-rc"
-#include "swift/SILOptimizer/PassManager/Passes.h"
-#include "swift/SILOptimizer/PassManager/Transforms.h"
+#include "swift/SIL/InstructionUtils.h"
+#include "swift/SIL/SILArgument.h"
+#include "swift/SIL/SILBuilder.h"
+#include "swift/SIL/SILCloner.h"
 #include "swift/SILOptimizer/Analysis/ArraySemantic.h"
 #include "swift/SILOptimizer/Analysis/DominanceAnalysis.h"
 #include "swift/SILOptimizer/Analysis/EscapeAnalysis.h"
 #include "swift/SILOptimizer/Analysis/RCIdentityAnalysis.h"
-#include "swift/SIL/InstructionUtils.h"
-#include "swift/SIL/SILArgument.h"
-#include "swift/SIL/SILBuilder.h"
+#include "swift/SILOptimizer/PassManager/Passes.h"
+#include "swift/SILOptimizer/PassManager/Transforms.h"
+#include "swift/SILOptimizer/Utils/Generics.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
-#include "swift/SILOptimizer/Utils/Generics.h"
-#include "swift/SIL/SILCloner.h"
 
 STATISTIC(NumNonAtomicRC, "Number of non-atomic RC operations");
 
 llvm::cl::opt<bool> PerformNonAtomicOpts(
-    "non-atomic-opts", llvm::cl::init(false),
+    "non-atomic-opts", llvm::cl::init(true),
     llvm::cl::desc("Enable non-atomic reference counting optimizations"));
-
 
 using namespace swift;
 
 namespace {
 
-  // Bitvector implementation to be used for the dataflow analysis.
-  typedef llvm::SmallBitVector StateBitVector;
+// Bitvector implementation to be used for the dataflow analysis.
+typedef llvm::SmallBitVector StateBitVector;
 
-  llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
-                                llvm::BitVector &BV) {
-    unsigned size = BV.size();
-    stream << "[ ";
-    for (unsigned i = 0; i < size; ++i)
-      stream << BV[i] << " ";
-    stream << ']';
-    return stream;
-  }
+llvm::raw_ostream &operator<<(llvm::raw_ostream &stream, llvm::BitVector &BV) {
+  unsigned size = BV.size();
+  stream << "[ ";
+  for (unsigned i = 0; i < size; ++i)
+    stream << BV[i] << " ";
+  stream << ']';
+  return stream;
+}
 
-  llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
-                                llvm::SmallBitVector &BV) {
-    unsigned size = BV.size();
-    stream << "[ ";
-    for (unsigned i = 0; i < size; ++i)
-      stream << BV[i] << " ";
-    stream << ']';
-    return stream;
-  }
+llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
+                              llvm::SmallBitVector &BV) {
+  unsigned size = BV.size();
+  stream << "[ ";
+  for (unsigned i = 0; i < size; ++i)
+    stream << BV[i] << " ";
+  stream << ']';
+  return stream;
+}
 
 /// Representation of a BB state during the dataflow analysis.
 /// Bit vectors are indexed by the id of a COW value.
@@ -86,8 +84,8 @@ protected:
 
 public:
   Dataflow(SILFunction *F);
-  int getBlockIdx(SILBasicBlock *BB) const { return BlockIds.lookup(BB);}
-  unsigned getStateLength() const {return StateLength; }
+  int getBlockIdx(SILBasicBlock *BB) const { return BlockIds.lookup(BB); }
+  unsigned getStateLength() const { return StateLength; }
   void setStateLength(unsigned Length) {
     assert(!StateLength);
     StateLength = Length;
@@ -114,18 +112,18 @@ Dataflow::Dataflow(SILFunction *F) : F(F), StateLength(0) {
 }
 
 void Dataflow::initStates() {
-/*
-  for (auto &BBState: BlockStates)  {
-    // In is all 1s
-    BBState.In.flip();
-    // Out is all 0s
-    BBState.Out.reset();
-    // Gen is all 0s
-    BBState.Gen.reset();
-    // Kill is all 0s
-    BBState.Kill.reset();
-  }
-*/
+  /*
+    for (auto &BBState: BlockStates)  {
+      // In is all 1s
+      BBState.In.flip();
+      // Out is all 0s
+      BBState.Out.reset();
+      // Gen is all 0s
+      BBState.Gen.reset();
+      // Kill is all 0s
+      BBState.Kill.reset();
+    }
+  */
 }
 
 /// Perform a logical AND on the OUT sets of all predecessors.
@@ -170,7 +168,7 @@ void Dataflow::compute() {
         Changed = true;
       BBState.Out = NewOut;
     }
-  } while(Changed);
+  } while (Changed);
 }
 
 /// Helper function to dump the results of
@@ -179,14 +177,11 @@ void Dataflow::dump() {
   for (auto &BB : *F) {
     auto &BlockState = getBlockState(&BB);
     auto BBId = getBlockIdx(&BB);
-    DEBUG(
-    llvm::dbgs() << "\nDataflow results for BB " << BBId << ":\n";
-    llvm::dbgs() << "In = " << BlockState.In << "\n";
-    llvm::dbgs() << "Out = " << BlockState.Out << "\n";
-    llvm::dbgs() << "Gen = " << BlockState.Gen << "\n";
-    llvm::dbgs() << "Kill = " << BlockState.Kill << "\n";
-    BB.dump()
-    );
+    DEBUG(llvm::dbgs() << "\nDataflow results for BB " << BBId << ":\n";
+          llvm::dbgs() << "In = " << BlockState.In << "\n";
+          llvm::dbgs() << "Out = " << BlockState.Out << "\n";
+          llvm::dbgs() << "Gen = " << BlockState.Gen << "\n";
+          llvm::dbgs() << "Kill = " << BlockState.Kill << "\n"; BB.dump());
   }
 }
 
@@ -208,7 +203,6 @@ public:
 
     // Entry block does not have any bits set for the In set.
     getBlockState(&*F->begin()).In.reset();
-
   }
 
   void compute() {
@@ -219,8 +213,8 @@ public:
 
 typedef SILAnalysis::InvalidationKind StateChanges;
 
-
 class NonAtomicRCTransformer {
+  SILPassManager *PM;
   SILFunction *F;
   EscapeAnalysis::ConnectionGraph *ConGraph;
   EscapeAnalysis *EA;
@@ -241,13 +235,14 @@ class NonAtomicRCTransformer {
   // The set of basic blocks containing instructions
   // that are interesting for this optimization.
   llvm::SmallPtrSet<SILBasicBlock *, 32> CandidateBBs;
+  unsigned UniqueIdx;
 
 public:
-  NonAtomicRCTransformer(SILFunction *F,
+  NonAtomicRCTransformer(SILPassManager *PM, SILFunction *F,
                          EscapeAnalysis::ConnectionGraph *ConGraph,
-                         EscapeAnalysis *EA,
-                         RCIdentityFunctionInfo *RCIFI)
-      : F(F), ConGraph(ConGraph), EA(EA), RCIFI(RCIFI), DF(F) {}
+                         EscapeAnalysis *EA, RCIdentityFunctionInfo *RCIFI)
+      : PM(PM), F(F), ConGraph(ConGraph), EA(EA), RCIFI(RCIFI), DF(F),
+        UniqueIdx(0) {}
 
   StateChanges process();
 
@@ -260,6 +255,7 @@ private:
   bool isRCofCowValueAt(ValueBase *CowStruct, SILInstruction *Inst);
   bool isStoreAliasingCowValue(ValueBase *CowStruct, SILValue Dest);
   void findAllMakeUnique();
+  void findUniqueParameters();
   void scanAllBlocks();
   void scanBasicBlock(SILBasicBlock *BB);
   StateChanges transformAllBlocks();
@@ -272,44 +268,38 @@ private:
   bool isBeneficialToClone(SILFunction *F);
 };
 
-
 namespace {
 /// \brief A SILCloner subclass which clones a closure function while
 /// promoting some of its box parameters to stack addresses.
 class FunctionCloner : public SILClonerWithScopes<FunctionCloner> {
-  public:
+public:
   friend class SILVisitor<FunctionCloner>;
   friend class SILCloner<FunctionCloner>;
 
-  FunctionCloner(SILFunction *Orig,
-                  llvm::StringRef ClonedName);
+  FunctionCloner(SILFunction *Orig, llvm::StringRef ClonedName);
 
   void populateCloned();
 
   SILFunction *getCloned() { return &getBuilder().getFunction(); }
 
-  private:
-  static SILFunction *initCloned(SILFunction *Orig,
-                                 llvm::StringRef ClonedName);
+private:
+  static SILFunction *initCloned(SILFunction *Orig, llvm::StringRef ClonedName);
 
   SILFunction *Orig;
 };
 } // end anonymous namespace.
 
-FunctionCloner::FunctionCloner(SILFunction *Orig,
-                               llvm::StringRef ClonedName)
-  : SILClonerWithScopes<FunctionCloner>(*initCloned(Orig,
-                                                    ClonedName)),
-    Orig(Orig) {
+FunctionCloner::FunctionCloner(SILFunction *Orig, llvm::StringRef ClonedName)
+    : SILClonerWithScopes<FunctionCloner>(*initCloned(Orig, ClonedName)),
+      Orig(Orig) {
   assert(Orig->getDebugScope()->getParentFunction() !=
          getCloned()->getDebugScope()->getParentFunction());
 }
 
 /// \brief Create the function corresponding to the clone of the
 /// original function.
-SILFunction*
-FunctionCloner::initCloned(SILFunction *Orig,
-                           llvm::StringRef ClonedName) {
+SILFunction *FunctionCloner::initCloned(SILFunction *Orig,
+                                        llvm::StringRef ClonedName) {
   SILModule &M = Orig->getModule();
 
   SmallVector<SILParameterInfo, 4> ClonedInterfaceArgTys;
@@ -320,10 +310,10 @@ FunctionCloner::initCloned(SILFunction *Orig,
   // Create the new function type for the cloned function.
   auto ClonedTy = OrigFTI;
 
-  assert((Orig->isTransparent() || Orig->isBare() || Orig->getLocation())
-         && "SILFunction missing location");
-  assert((Orig->isTransparent() || Orig->isBare() || Orig->getDebugScope())
-         && "SILFunction missing DebugScope");
+  assert((Orig->isTransparent() || Orig->isBare() || Orig->getLocation()) &&
+         "SILFunction missing location");
+  assert((Orig->isTransparent() || Orig->isBare() || Orig->getDebugScope()) &&
+         "SILFunction missing DebugScope");
   assert(!Orig->isGlobalInit() && "Global initializer cannot be cloned");
   auto *Fn = M.getOrCreateFunction(
       SILLinkage::Shared, ClonedName, ClonedTy, Orig->getContextGenericParams(),
@@ -339,8 +329,7 @@ FunctionCloner::initCloned(SILFunction *Orig,
 
 /// \brief Populate the body of the cloned closure, modifying instructions as
 /// necessary to take into consideration the removed parameters.
-void
-FunctionCloner::populateCloned() {
+void FunctionCloner::populateCloned() {
   SILFunction *Cloned = getCloned();
   SILModule &M = Cloned->getModule();
 
@@ -352,7 +341,7 @@ FunctionCloner::populateCloned() {
   while (I != E) {
     // Create a new argument which copies the original argument.
     SILValue MappedValue =
-      new (M) SILArgument(ClonedEntryBB, (*I)->getType(), (*I)->getDecl());
+        new (M) SILArgument(ClonedEntryBB, (*I)->getType(), (*I)->getDecl());
     ValueMap.insert(std::make_pair(*I, MappedValue));
     ++I;
   }
@@ -382,7 +371,8 @@ static SILValue stripUniquenessPreservingCastsAndProjections(SILValue V) {
     V = stripCasts(V);
     if (auto *UAC = dyn_cast<UncheckedAddrCastInst>(V)) {
       if (UAC->getType() ==
-          SILType::getNativeObjectType(UAC->getModule().getASTContext()).getAddressType()) {
+          SILType::getNativeObjectType(UAC->getModule().getASTContext())
+              .getAddressType()) {
         V = UAC->getOperand();
         continue;
       }
@@ -411,7 +401,7 @@ SILFunction *NonAtomicRCTransformer::createNonAtomicFunction(SILFunction *F) {
   auto *NewF = Mod.lookUpFunction(MangledNonAtomicName);
   if (NewF)
     return NewF;
-  //if (Mod.hasFunction(MangledNonAtomicName, SILLinkage::Private))
+  // if (Mod.hasFunction(MangledNonAtomicName, SILLinkage::Private))
   //  return Mod.lookUpFunction(MangledNonAtomicName);
   // Clone a function. Mark retain/releases as non-atomic.
   NewF = getClonedFunction(F, MangledNonAtomicName);
@@ -425,6 +415,19 @@ SILFunction *NonAtomicRCTransformer::createNonAtomicFunction(SILFunction *F) {
   // be replaced by the calls of their non-atomic versions.
 
   // TODO: Should it be done by the cloner?
+  // To be on the safe side, we should compute the uniqueness regions and
+  // stop the optimization at the instructions from a kill-set.
+  // To do this, it is enough to assume that non-atomic arguments of the
+  // functions are non-atomic at entry already.
+
+  // The new non-atomic version should be processed by the same pass.
+  // TODO: It would be nice, if the current function won't be reprocessed
+  // again.
+  DEBUG(llvm::dbgs() << "Schedule the newly created non-atomic function for "
+                        "processing by non-atomic-opts pass: "
+                     << NewF->getName() << "\n");
+  PM->addFunctionToWorklist(NewF);
+#if 0
   SILValue Self = NewF->getSelfArgument();
   for (auto &BB : *NewF) {
     auto II = BB.begin();
@@ -447,6 +450,8 @@ SILFunction *NonAtomicRCTransformer::createNonAtomicFunction(SILFunction *F) {
 
       if (FullApplySite AI = FullApplySite::isa(I)) {
         auto Callee = AI.getCalleeFunction();
+        // TODO: Check that the self argument if this call is
+        // based on Self.
         if (Callee && Callee->hasSemanticsAttr("generate.nonatomic")) {
           // TODO: Can we run into endless recursion here?
           replaceByNonAtomicApply(AI);
@@ -498,7 +503,7 @@ SILFunction *NonAtomicRCTransformer::createNonAtomicFunction(SILFunction *F) {
       }
     }
   }
-
+#endif
   DEBUG(llvm::dbgs() << "Created a new non-atomic function: " << NewF->getName()
                      << "\n";
         NewF->dump());
@@ -511,13 +516,16 @@ bool NonAtomicRCTransformer::isBeneficialToClone(SILFunction *F) {
   assert(F->hasSemanticsAttr("generate.nonatomic") &&
          "Only functions annotated with @_semantics(\"generate.nonatomic\") "
          "can be cloned");
+  // If the function is marked as "generate.nonatomic", then it is supposed
+  // to be cloned. Let's trust the developer for now.
   return true;
   SILValue Self = F->getSelfArgument();
   for (auto &BB : *F)
     for (auto &I : BB) {
       if (auto *RCI = dyn_cast<RefCountingInst>(&I)) {
         // Get the RC root.
-        auto Root = RCIFI->getRCIdentityRoot(stripAddressProjections(RCI->getOperand(0)));
+        auto Root = RCIFI->getRCIdentityRoot(
+            stripAddressProjections(RCI->getOperand(0)));
         if (Root == Self) {
           DEBUG(llvm::dbgs() << "Function is beneficial to clone becasue it "
                                 "has RC instructions on its self argument");
@@ -528,7 +536,8 @@ bool NonAtomicRCTransformer::isBeneficialToClone(SILFunction *F) {
       // non-atomic versions.
       ArraySemanticsCall Call(&I);
       if (Call && Call.hasSelf() &&
-          RCIFI->getRCIdentityRoot(stripAddressProjections(Call.getSelf())) == Self) {
+          RCIFI->getRCIdentityRoot(stripAddressProjections(Call.getSelf())) ==
+              Self) {
         // This make mutable call can be folded, because it will be always true.
         if (Call.getKind() == ArrayCallKind::kMakeMutable)
           return true;
@@ -541,21 +550,63 @@ bool NonAtomicRCTransformer::isBeneficialToClone(SILFunction *F) {
   return false;
 }
 
-// Replace an Apply by an apply of the non-atomic version
-// of the callee.
+// Create a new apply based on an old one, but with a different
+// function being applied.
+// TODO: Make it a utility function.
+static ApplySite replaceWithDifferentFunction(ApplySite AI, SILFunction *NewF) {
+  assert(AI.getReferencedFunction()->getLoweredFunctionType() ==
+             NewF->getLoweredFunctionType() &&
+         "Types of functions should be exactly the same");
+  SILBuilderWithScope Builder(AI.getInstruction());
+  FunctionRefInst *Callee = Builder.createFunctionRef(AI.getLoc(), NewF);
+  SILLocation Loc = AI.getLoc();
+  SmallVector<SILValue, 4> Arguments;
+
+  for (auto &Op : AI.getArgumentOperands()) {
+    Arguments.push_back(Op.get());
+  }
+
+  if (auto *TAI = dyn_cast<TryApplyInst>(AI)) {
+    SILBasicBlock *ResultBB = TAI->getNormalBB();
+    assert(ResultBB->getSinglePredecessor() == TAI->getParent());
+    auto *NewTAI = Builder.createTryApply(
+        Loc, Callee, AI.getSubstCalleeSILType(), AI.getSubstitutions(),
+        Arguments, ResultBB, TAI->getErrorBB());
+    return NewTAI;
+  }
+  if (auto *A = dyn_cast<ApplyInst>(AI)) {
+    auto ResultType = NewF->getLoweredType().getFunctionInterfaceResultType();
+    auto *NewAI = Builder.createApply(Loc, Callee, AI.getSubstCalleeSILType(),
+                                      ResultType, AI.getSubstitutions(),
+                                      Arguments, A->isNonThrowing());
+    A->replaceAllUsesWith(NewAI);
+    return NewAI;
+  }
+  if (auto *PAI = dyn_cast<PartialApplyInst>(AI)) {
+    auto *NewPAI = Builder.createPartialApply(
+        Loc, Callee, AI.getSubstCalleeSILType(), AI.getSubstitutions(),
+        Arguments,
+        // AI.getOrigCalleeType()
+        NewF->getLoweredType().getFunctionInterfaceResultType());
+    PAI->replaceAllUsesWith(NewPAI);
+    return NewPAI;
+  }
+  llvm_unreachable("unhandled kind of apply");
+}
+
+// Replace an atomic call by the non-atomic version
+// of the call.
 void NonAtomicRCTransformer::replaceByNonAtomicApply(FullApplySite AI) {
   auto *OrigCallee = AI.getCalleeFunction();
   if (!OrigCallee)
     return;
-  // TODO: Check if the function would benefit from cloning.
   if (!isBeneficialToClone(OrigCallee))
     return;
   auto *NewCallee = createNonAtomicFunction(OrigCallee);
   if (OrigCallee == NewCallee)
     return;
   FullApplySite NewApply;
-  ReabstractionInfo ReInfo(OrigCallee, AI);
-  auto NewAI = replaceWithSpecializedFunction(AI, NewCallee, ReInfo);
+  auto NewAI = replaceWithDifferentFunction(AI, NewCallee);
   AI.getInstruction()->replaceAllUsesWith(NewAI.getInstruction());
   recursivelyDeleteTriviallyDeadInstructions(AI.getInstruction(), true);
 }
@@ -600,7 +651,8 @@ static void markAsNonAtomic(RefCountingInst *I) {
 /// change the uniqueness of the array buffer.
 static bool doesNotChangeUniquness(ArraySemanticsCall &C) {
   switch (C.getKind()) {
-  default: return false;
+  default:
+    return false;
   case ArrayCallKind::kArrayPropsIsNativeTypeChecked:
   case ArrayCallKind::kCheckSubscript:
   case ArrayCallKind::kCheckIndex:
@@ -638,10 +690,8 @@ StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
   // Use non-atomic RC instructions for it.
   markAsNonAtomic(RCInst);
   NumNonAtomicRC++;
-  DEBUG(
-    llvm::dbgs() << "Marking the RC instruction as non-atomic:\n";
-    RCInst->dumpInContext();
-    );
+  DEBUG(llvm::dbgs() << "Marking the RC instruction as non-atomic:\n";
+        RCInst->dumpInContext(););
   return SILAnalysis::InvalidationKind::Instructions;
 }
 
@@ -650,8 +700,9 @@ StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
 static ArraySemanticsCall isMakeUniqueCall(SILInstruction *I) {
   ArraySemanticsCall Call(I);
   if (Call) {
-    switch(Call.getKind()) {
-    default: break;
+    switch (Call.getKind()) {
+    default:
+      break;
     case ArrayCallKind::kMakeMutable:
     case ArrayCallKind::kMutateUnknown:
     case ArrayCallKind::kGuaranteeMutable:
@@ -676,9 +727,9 @@ bool checkUniqueCowContainer(SILFunction *Function, SILValue CowContainer) {
     // Check that the argument is passed as an inout type. This means there are
     // no aliases accessible within this function scope.
     auto Params = Function->getLoweredFunctionType()->getParameters();
-    ArrayRef<SILArgument*> FunctionArgs = Function->begin()->getBBArgs();
-    for (unsigned ArgIdx = 0, ArgEnd = Params.size();
-         ArgIdx != ArgEnd; ++ArgIdx) {
+    ArrayRef<SILArgument *> FunctionArgs = Function->begin()->getBBArgs();
+    for (unsigned ArgIdx = 0, ArgEnd = Params.size(); ArgIdx != ArgEnd;
+         ++ArgIdx) {
       if (FunctionArgs[ArgIdx] != Arg)
         continue;
 
@@ -695,13 +746,12 @@ bool checkUniqueCowContainer(SILFunction *Function, SILValue CowContainer) {
     return true;
 
   DEBUG(llvm::dbgs()
-        << "    Skipping COW object: Not an argument or local variable!\n";
+            << "    Skipping COW object: Not an argument or local variable!\n";
         CowContainer->dump());
   return false;
 }
 
-bool NonAtomicRCTransformer::isCowValue(ValueBase *CowStruct,
-                                          SILValue Value) {
+bool NonAtomicRCTransformer::isCowValue(ValueBase *CowStruct, SILValue Value) {
   auto Root = RCIFI->getRCIdentityRoot(Value);
   if (Root == CowStruct)
     return true;
@@ -714,14 +764,11 @@ bool NonAtomicRCTransformer::isCowValue(ValueBase *CowStruct,
 
   // Is it an RC operation on the buffer reference?
   if (RCIFI->getRCIdentityRoot(
-               stripAddressProjections(CowLoad->getOperand()))
-           == CowStruct)
+          stripAddressProjections(CowLoad->getOperand())) == CowStruct)
     return true;
 
   return false;
 }
-
-
 
 /// Check that the array value stored in \p CowStruct is operand of this RC by
 /// \Inst.
@@ -756,14 +803,22 @@ bool NonAtomicRCTransformer::isStoreAliasingCowValue(ValueBase *CowStruct,
 
   // Is it a store to a field of a COW struct, e.g. to the buffer reference?
   // TODO: Make this check more precise?
-  if (RCIFI->getRCIdentityRoot(stripAddressProjections(Root)) ==
-      CowStruct)
+  if (RCIFI->getRCIdentityRoot(stripAddressProjections(Root)) == CowStruct)
     return true;
 
   return false;
 }
 
 void NonAtomicRCTransformer::scanAllBlocks() {
+  // Unique/non-atomic function parameters are in
+  // the IN set of the entry block.
+  for (auto Arg : F->getArguments()) {
+    if (CowValueId.count(Arg)) {
+      auto Id = CowValueId[Arg];
+      DF.getBlockState(&*F->begin()).In[Id] = true;
+    }
+  }
+
   for (auto &BB : *F) {
     scanBasicBlock(&BB);
   }
@@ -796,19 +851,21 @@ void NonAtomicRCTransformer::getCowValueArgsOfApply(
 void NonAtomicRCTransformer::markAsCandidate(SILInstruction *I) {
   Candidates.insert(I);
   CandidateBBs.insert(I->getParent());
+  DEBUG(llvm::dbgs() << "Mark as canidate:\n"; I->dumpInContext());
 }
 
 static bool isMakeOrGuaranteeMutable(ArraySemanticsCall &ArrayCall) {
-   if (ArrayCall) {
-     switch(ArrayCall.getKind()) {
-     default: return false;
-     case ArrayCallKind::kMakeMutable:
-     case ArrayCallKind::kMutateUnknown:
-     case ArrayCallKind::kGuaranteeMutable:
-       return true;
-     }
-   }
-   return false;
+  if (ArrayCall) {
+    switch (ArrayCall.getKind()) {
+    default:
+      return false;
+    case ArrayCallKind::kMakeMutable:
+    case ArrayCallKind::kMutateUnknown:
+    case ArrayCallKind::kGuaranteeMutable:
+      return true;
+    }
+  }
+  return false;
 }
 
 // Scan a basic block. Find all the "kill" instructions
@@ -829,11 +886,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
   // Maps the CowValue to the last seen operation,
   // which is either set or kill.
   //
-  enum Op {
-    None,
-    Gen,
-    Kill
-  };
+  enum Op { None, Gen, Kill };
 
   llvm::SmallVector<Op, 32> LastSeenOp;
   LastSeenOp.resize(DF.getStateLength());
@@ -865,7 +918,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           KilledCowValues[Id] = true;
           isAliasingDest = true;
           markAsCandidate(I);
-          DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
+          DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
+                             << CowValue;
                 I->dumpInContext());
           break;
         }
@@ -884,7 +938,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
           markAsCandidate(I);
-          DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
+          DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
+                             << CowValue;
                 I->dumpInContext());
           break;
         }
@@ -900,7 +955,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
         LastSeenOp[CowValueId[CowValue]] = Gen;
         markAsCandidate(I);
 
-        DEBUG(llvm::dbgs() << "Gen operation for CowValue\n" << CowValue;
+        DEBUG(llvm::dbgs() << "Gen operation for CowValue\n"
+                           << CowValue;
               I->dumpInContext());
 
         continue;
@@ -909,7 +965,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       // Check if this array semantics call takes one of the tracked
       // CowValues as its arguments.
       if (ArrayCall) {
-        if (ArrayCall.getKind() == ArrayCallKind::kArrayPropsIsNativeTypeChecked)
+        if (ArrayCall.getKind() ==
+            ArrayCallKind::kArrayPropsIsNativeTypeChecked)
           markAsCandidate(I);
         if (doesNotChangeUniquness(ArrayCall))
           continue;
@@ -923,7 +980,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           SmallVector<bool, 8> IsIndirectParam;
           getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
           if (Args.size()) {
-            DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n" << CowValue;
+            DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n"
+                               << CowValue;
                   I->dumpInContext());
             LastSeenOp[Id] = Kill;
             markAsCandidate(I);
@@ -964,7 +1022,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
             LastSeenOp[Id] = Kill;
             KilledCowValues[Id] = true;
             markAsCandidate(I);
-            DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n" << CowValue;
+            DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n"
+                               << CowValue;
                   I->dumpInContext());
             break;
           }
@@ -985,13 +1044,17 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
           markAsCandidate(I);
-          DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
+          DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
+                             << CowValue;
                 I->dumpInContext());
           break;
         }
       }
       continue;
     }
+
+    if (isa<IsUniqueInst>(I))
+      markAsCandidate(I);
 
     if (isa<RefCountingInst>(I))
       markAsCandidate(I);
@@ -1024,6 +1087,8 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
     continue;
   }
 
+  auto BBState = DF.getBlockState(BB);
+
   for (unsigned i = 0, e = LastSeenOp.size(); i < e; ++i) {
     if (LastSeenOp[i] == Gen)
       DF.getBlockState(BB).Gen[i] = true;
@@ -1035,6 +1100,14 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
   }
 }
 
+// Use collected information about uniqueness regions to
+// transform all basic blocks.
+// Transformations include:
+// - removal of redundant uniqueness checks
+// - use of non-atomic versions of reference-counting instructions when
+//   appropriate
+// - use of non-atomic versions of functions which support non-atomic
+//   invocations.
 StateChanges NonAtomicRCTransformer::transformAllBlocks() {
   StateChanges Changes = SILAnalysis::InvalidationKind::Nothing;
   for (auto &BB : *F) {
@@ -1052,7 +1125,8 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
     while (II != BB.end()) {
       auto I = &*II++;
 
-      // If this instruction is not marked as "interesting" during the scan phase, bail.
+      // If this instruction is not marked as "interesting" during the scan
+      // phase, bail.
       if (!Candidates.count(I))
         continue;
 
@@ -1066,13 +1140,13 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
           // Check if it kills any non-local region.
-          if (CurrentlyActive.test(Id) &&
-              isRCofCowValueAt(CowValue, I)) {
-            Changes = StateChanges( Changes | SILAnalysis::InvalidationKind::Instructions);
+          if (CurrentlyActive.test(Id) && isRCofCowValueAt(CowValue, I)) {
+            Changes = StateChanges(Changes |
+                                   SILAnalysis::InvalidationKind::Instructions);
             markAsNonAtomic(RC);
             DEBUG(llvm::dbgs()
-                  << "RC operation inside make_mutable region can be "
-                     "non-atomic: ";
+                      << "RC operation inside make_mutable region can be "
+                         "non-atomic: ";
                   RC->dump());
             break;
           }
@@ -1093,7 +1167,8 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           auto CowValue = KV.getFirst();
           auto Id = KV.getSecond();
           if (isStoreAliasingCowValue(CowValue, Dest)) {
-            DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
+            DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
+                               << CowValue;
                   I->dumpInContext());
             // The region is not active anymore after this point.
             CurrentlyActive[Id] = false;
@@ -1113,7 +1188,8 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           if (isCowValue(CowValue, Src)) {
             // This is a kill.
             CurrentlyActive[Id] = false;
-            DEBUG(llvm::dbgs() << "Kill operation for CowValue\n" << CowValue;
+            DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
+                               << CowValue;
                   I->dumpInContext());
             break;
           }
@@ -1124,7 +1200,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
       if (auto AI = FullApplySite::isa(I)) {
         ArraySemanticsCall ArrayCall(AI.getInstruction());
         if (ArrayCall &&
-            (ArrayCall.getKind() == ArrayCallKind::kGuaranteeMutable||
+            (ArrayCall.getKind() == ArrayCallKind::kGuaranteeMutable ||
              ArrayCall.getKind() == ArrayCallKind::kMutateUnknown)) {
           // TODO: Call a non-atomic version of the function?
           // The COW object that is made a thread-local by this call.
@@ -1139,7 +1215,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
                   AI.getInstruction()->dumpInContext());
             replaceByNonAtomicApply(AI);
           }
-         // Mark region as active.
+          // Mark region as active.
           CurrentlyActive[Id] = true;
           continue;
         }
@@ -1152,14 +1228,16 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           // Check if this make_mutable is inside an existing region for the
           // same CowValue. If this is the case, then it can be removed.
           // The region may have started either in this BB or outside.
-          // TODO: It can be that make_mutable is not only making something mutable
+          // TODO: It can be that make_mutable is not only making something
+          // mutable
           // but does more. In this case it cannot be removed.
           auto Id = CowValueId[CowValue];
           if (CurrentlyActive.test(Id)) {
             DEBUG(llvm::dbgs() << "make_mutable call can be eliminated:\n";
                   (*ArrayCall).dumpInContext());
             ArrayCall.removeCall();
-            Changes = StateChanges( Changes | SILAnalysis::InvalidationKind::Calls);
+            Changes =
+                StateChanges(Changes | SILAnalysis::InvalidationKind::Calls);
             // TODO: Rescan the release instruction?
             continue;
           }
@@ -1206,7 +1284,8 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           auto *Callee = AI.getCalleeFunction();
           auto Self = AI.getSelfArgument();
           // Check if Self is currently unique.
-          if (CowValueId.count(Self) > 0 && CurrentlyActive.test(CowValueId[Self]) &&
+          if (CowValueId.count(Self) > 0 &&
+              CurrentlyActive.test(CowValueId[Self]) &&
               Callee->hasSemanticsAttr("generate.nonatomic")) {
             DEBUG(llvm::dbgs()
                       << "Non-atomic version of the call can be used:\n";
@@ -1223,7 +1302,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
             auto CowValue = KV.getFirst();
             auto Id = KV.getSecond();
             SmallVector<int, 8> Args;
-            SmallVector<bool,8> IsIndirectParam;
+            SmallVector<bool, 8> IsIndirectParam;
             getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
             if (Args.size()) {
               CurrentlyActive[Id] = false;
@@ -1272,6 +1351,30 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
         continue;
       }
 
+      if (isa<IsUniqueInst>(I)) {
+        SILValue Op =
+            stripUniquenessPreservingCastsAndProjections(I->getOperand(0));
+        auto Root = RCIFI->getRCIdentityRoot(Op);
+        DEBUG(llvm::dbgs() << "Found is_unique: "; I->dump();
+              llvm::dbgs() << "\n"
+                           << "RCRoot = " << Root << "\n");
+
+        for (auto &KV : CowValueId) {
+          auto CowValue = KV.getFirst();
+          auto Id = KV.getSecond();
+          if (Root == CowValue) {
+            SILBuilderWithScope B(I);
+            auto boolTy = SILType::getBuiltinIntegerType(
+                1, I->getModule().getASTContext());
+            auto yes = B.createIntegerLiteral(I->getLoc(), boolTy, 1);
+            DEBUG(llvm::dbgs() << "Replace " << I << " by " << yes << "\n");
+            I->replaceAllUsesWith(yes);
+            I->eraseFromParent();
+            continue;
+          }
+        }
+      }
+
       if (auto *DSI = dyn_cast<DeallocStackInst>(I)) {
         auto Val = DSI->getOperand();
 
@@ -1295,6 +1398,35 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
   return Changes;
 }
 
+/// Find parameters that are knonw to be unique/non-atomic.
+void NonAtomicRCTransformer::findUniqueParameters() {
+  if (!F->getName().endswith("_NonAtomic"))
+    return;
+  // Self parameter is known to be non-atomic at this point.
+  SILValue CowValue = F->getSelfArgument();
+  if (!checkUniqueCowContainer(F, CowValue)) {
+    assert(false && "Self parameter of a non-atomic function should be unique");
+    return;
+  }
+
+  DEBUG(llvm::dbgs() << "\nThe following object is made thread-local as a Self "
+                        "parameter of the non-atomic function "
+                     << F->getName() << ":\n"
+                     << CowValue << "\n");
+
+  // TODO: Some parameters, like Self, are passed as inout.
+  // We need to process them correctly, i.e. any storage pointer we get through
+  // them is also unique.
+
+  // Create a region for this cow value.
+  // If we have seen a region for the same value already, we should
+  // assign the same index to it.
+  if (!CowValueId.count(CowValue)) {
+    CowValueId[CowValue] = UniqueIdx++;
+    IdToCowValue.push_back(CowValue);
+  }
+}
+
 /// Compute a region where the buffer reference is non-escaping
 /// and unique, i.e. it is thread-safe.
 /// The region starts at a given apply instruction and ends
@@ -1313,12 +1445,11 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
 /// TODO: Support value-types other than Array, e.g.
 /// Set or Dictionary.
 void NonAtomicRCTransformer::findAllMakeUnique() {
-  unsigned UniqueIdx = 0;
+  findUniqueParameters();
   // Find all make_mutable. This gives us the number
   // of differrent CowValues which are made unique
   // in the function.
   for (SILBasicBlock &BB : *F) {
-    SILInstruction *LastMatching = nullptr;
     for (auto Iter = BB.begin(); Iter != BB.end();) {
       SILInstruction *I = &*Iter++;
       if (!isa<ApplyInst>(I)) {
@@ -1333,21 +1464,17 @@ void NonAtomicRCTransformer::findAllMakeUnique() {
         // Add to the set of makeUnique calls
         // The COW object that is made a thread-local by this call.
         auto CowValue = Call.getSelf();
-        DEBUG(llvm::dbgs() << "\nThe following onbject is made thread-local: "
+        DEBUG(llvm::dbgs() << "\nThe following object is made thread-local: "
                            << CowValue << "\n";
-              llvm::dbgs() << " by the instruction:\n";
-              I->dumpInContext());
+              llvm::dbgs() << " by the instruction:\n"; I->dumpInContext());
 
         // Create a region for this cow value.
         // If we have seen a region for the same value already, we should
         // assign the same index to it.
-        unsigned Id = 0;
         if (!CowValueId.count(CowValue)) {
-          Id = UniqueIdx++;
-          CowValueId[CowValue] = Id;
+          CowValueId[CowValue] = UniqueIdx++;
           IdToCowValue.push_back(CowValue);
         }
-
         continue;
       }
     }
@@ -1389,14 +1516,12 @@ StateChanges NonAtomicRCTransformer::processUniqenessRegions() {
 }
 
 StateChanges NonAtomicRCTransformer::process() {
-  DEBUG(llvm::dbgs() << "\nAbout to process function:\n";
-        F->dump());
+  DEBUG(llvm::dbgs() << "\nAbout to process function:\n"; F->dump());
   auto ChangesUniquness = processUniqenessRegions();
   auto ChangesRefCounting = processNonEscapingRefCountingInsts();
 
   if (ChangesUniquness || ChangesRefCounting) {
-    DEBUG(llvm::dbgs() << "\n\nFunction after the transformation:";
-          F->dump());
+    DEBUG(llvm::dbgs() << "\n\nFunction after the transformation:"; F->dump());
   }
 
   return StateChanges(ChangesUniquness | ChangesRefCounting);
@@ -1416,7 +1541,8 @@ private:
     if (!PerformNonAtomicOpts)
       return;
 
-    DEBUG(llvm::dbgs() << "** NonAtomicRC **\n");
+    DEBUG(llvm::dbgs() << "** NonAtomicRC for " << getFunction()->getName()
+                       << " **\n");
 
     auto *EA = PM->getAnalysis<EscapeAnalysis>();
     auto *RCIA = PM->getAnalysis<RCIdentityAnalysis>();
@@ -1424,7 +1550,7 @@ private:
     SILFunction *F = getFunction();
     auto *ConGraph = EA->getConnectionGraph(F);
     if (ConGraph) {
-      NonAtomicRCTransformer Transformer(F, ConGraph, EA, RCIA->get(F));
+      NonAtomicRCTransformer Transformer(PM, F, ConGraph, EA, RCIA->get(F));
       auto Changes = Transformer.process();
       if (Changes) {
         PM->invalidateAnalysis(F, Changes);
