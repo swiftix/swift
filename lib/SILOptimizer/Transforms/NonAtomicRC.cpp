@@ -393,6 +393,9 @@ SILFunction *NonAtomicRCTransformer::createNonAtomicFunction(SILFunction *F) {
   SILModule &Mod = F->getModule();
 
   // Produce a mangled name of a non-atomic function.
+  // TODO: Extend mangler to support non-atomic/unique arguments encodings.
+  // This would allow for providing the non-atomic/unique attribute per parameter.
+  // More over, it would make it easy to access this information later.
   llvm::SmallString<128> MangledNonAtomicNameBuffer;
   llvm::raw_svector_ostream OS(MangledNonAtomicNameBuffer);
   OS << F->getName();
@@ -1416,7 +1419,9 @@ void NonAtomicRCTransformer::findUniqueParameters() {
 
   // TODO: Some parameters, like Self, are passed as inout.
   // We need to process them correctly, i.e. any storage pointer we get through
-  // them is also unique.
+  // them is also unique. And this part seems to be rather non-trivial. It may
+  // even be that is is dependent on the internal representation of a COW-type,
+  // i.e. the processing is different for different types.
 
   // Create a region for this cow value.
   // If we have seen a region for the same value already, we should
