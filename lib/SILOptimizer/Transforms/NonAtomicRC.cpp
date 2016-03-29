@@ -38,7 +38,8 @@ namespace {
 // Bitvector implementation to be used for the dataflow analysis.
 typedef llvm::SmallBitVector StateBitVector;
 
-llvm::raw_ostream &operator<<(llvm::raw_ostream &stream, llvm::BitVector &BV) {
+#ifndef NDEBUG
+static llvm::raw_ostream &operator<<(llvm::raw_ostream &stream, llvm::BitVector &BV) {
   unsigned size = BV.size();
   stream << "[ ";
   for (unsigned i = 0; i < size; ++i)
@@ -47,7 +48,7 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &stream, llvm::BitVector &BV) {
   return stream;
 }
 
-llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
+static llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
                               llvm::SmallBitVector &BV) {
   unsigned size = BV.size();
   stream << "[ ";
@@ -56,6 +57,7 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
   stream << ']';
   return stream;
 }
+#endif
 
 /// Representation of a BB state during the dataflow analysis.
 /// Bit vectors are indexed by the id of a COW value.
@@ -228,6 +230,9 @@ class NonAtomicRCTransformer {
   // Map the assigned id to CowValue.
   llvm::SmallVector<SILValue, 32> IdToCowValue;
 
+  // Set of parameters of the current functons known to be unique.
+  llvm::SmallVector<SILValue, 4> UniqueParams;
+
   // The set of instructions that are interesting for this
   // optimization.
   llvm::SmallPtrSet<SILInstruction *, 32> Candidates;
@@ -259,7 +264,7 @@ private:
   void scanAllBlocks();
   void scanBasicBlock(SILBasicBlock *BB);
   StateChanges transformAllBlocks();
-  void getCowValueArgsOfApply(FullApplySite AI, SILValue CowValue,
+  bool getCowValueArgsOfApply(FullApplySite AI, SILValue CowValue,
                               SmallVectorImpl<int> &Args,
                               SmallVectorImpl<bool> &IsIndirectParam);
   void markAsCandidate(SILInstruction *I);
@@ -365,6 +370,8 @@ static SILFunction *getClonedFunction(SILFunction *OrigF, StringRef NewName) {
   return Cloner.getCloned();
 }
 
+/// Try to strip all casts and projections as long they preserve the
+/// uniqueness of the value.
 static SILValue stripUniquenessPreservingCastsAndProjections(SILValue V) {
   while (V) {
     V = stripAddressProjections(V);
@@ -679,7 +686,7 @@ bool NonAtomicRCTransformer::isEligableRefCountingInst(SILInstruction *I) {
 StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
   assert(isa<RefCountingInst>(I));
   auto *RCInst = cast<RefCountingInst>(I);
-  auto Root = stripAddressProjections(RCInst->getOperand(0));
+  auto Root = stripAddressProjections(RCInst->getOperand(0)); // stripUniq...???
   auto *Node = ConGraph->getNodeOrNull(RCInst->getOperand(0), EA);
   if (!Node)
     return SILAnalysis::InvalidationKind::Nothing;
@@ -715,6 +722,22 @@ static ArraySemanticsCall isMakeUniqueCall(SILInstruction *I) {
   // TODO: Handle other COW types here?
   return ArraySemanticsCall(I, "non-existing", false);
 }
+
+static ArraySemanticsCall isMakeUniqueCall(ArraySemanticsCall &Call) {
+  if (Call) {
+    switch (Call.getKind()) {
+    default:
+      break;
+    case ArrayCallKind::kMakeMutable:
+    case ArrayCallKind::kMutateUnknown:
+    case ArrayCallKind::kGuaranteeMutable:
+      return Call;
+    }
+  }
+  // TODO: Handle other COW types here?
+  return ArraySemanticsCall(&*Call, "non-existing", false);
+}
+
 
 /// \return true of the given container is known to be a unique copy of the
 /// array with no aliases. Cases we check:
@@ -762,12 +785,50 @@ bool NonAtomicRCTransformer::isCowValue(ValueBase *CowStruct, SILValue Value) {
   if (!CowLoad)
     return false;
 
-  if (CowLoad->getOperand() == CowStruct)
+  SILValue LoadOperand = CowLoad->getOperand();
+  if (LoadOperand == CowStruct)
     return true;
 
   // Is it an RC operation on the buffer reference?
-  if (RCIFI->getRCIdentityRoot(
-          stripAddressProjections(CowLoad->getOperand())) == CowStruct)
+ //          stripAddressProjections(CowLoad->getOperand())) == CowStruct)
+  if (!CowStruct->getType().isAddress() &&
+      RCIFI->getRCIdentityRoot(stripUniquenessPreservingCastsAndProjections(
+          LoadOperand)) == CowStruct)
+
+    return true;
+
+  // If CowStruct is an inout parameter, see if this is the following pattern:
+  // %load1 = load (projection CowStruct)
+  // %enum_data = unchecked_enum_data %load1,
+  // %load2 = load (projection %enum_data)
+  //
+  // FIXME: This pattern happens a lot with the current implementation of COW
+  // data ctypes in the Swift standard library, because all of them are structs,
+  // containing a pointer to the buffer. If the internal representation of
+  // the COW data types does not follow this pattern, the code below needs
+  // to be adjusted.
+  // One possible way to get a more general solution would be to mark
+  // certain properties of the COW data type with a special attribute,
+  // which could indicate that they are buffer (i.e. COW sub-parts) pointers.
+  if (!CowStruct->getType().isAddress()) {
+    assert(std::find(UniqueParams.begin(), UniqueParams.end(), CowStruct) !=
+               UniqueParams.end() &&
+           "Only COW objects passed as inout may have address types");
+    return false;
+  }
+
+  auto Op = stripUniquenessPreservingCastsAndProjections(LoadOperand);
+  auto *UEDI = dyn_cast<UncheckedEnumDataInst>(Op);
+  if (!UEDI)
+    return false;
+  SILValue UncheckedEnumDataOp =
+      stripUniquenessPreservingCastsAndProjections(UEDI->getOperand());
+  auto *LI = dyn_cast<LoadInst>(UncheckedEnumDataOp);
+  if (!LI)
+    return false;
+  auto CowLoadOperand =
+      stripUniquenessPreservingCastsAndProjections(LI->getOperand());
+  if (RCIFI->getRCIdentityRoot(CowLoadOperand) == CowStruct)
     return true;
 
   return false;
@@ -806,7 +867,8 @@ bool NonAtomicRCTransformer::isStoreAliasingCowValue(ValueBase *CowStruct,
 
   // Is it a store to a field of a COW struct, e.g. to the buffer reference?
   // TODO: Make this check more precise?
-  if (RCIFI->getRCIdentityRoot(stripAddressProjections(Root)) == CowStruct)
+  //if (RCIFI->getRCIdentityRoot(stripAddressProjections(Root)) == CowStruct)
+  if (RCIFI->getRCIdentityRoot(stripUniquenessPreservingCastsAndProjections(Root)) == CowStruct)
     return true;
 
   return false;
@@ -827,18 +889,32 @@ void NonAtomicRCTransformer::scanAllBlocks() {
   }
 }
 
-void NonAtomicRCTransformer::getCowValueArgsOfApply(
+// Get set of apply arguments that may alias a given COW value.
+// Returns true, if there is at least one aliasing argument.
+bool NonAtomicRCTransformer::getCowValueArgsOfApply(
     FullApplySite AI, SILValue CowValue, SmallVectorImpl<int> &Args,
     SmallVectorImpl<bool> &IsIndirectParam) {
+  if (!AI.getInstruction())
+    return true;
+  DEBUG(llvm::dbgs() << "Analyzing if the following apply instruction is a candidate:\n";
+        AI.getInstruction()->dumpInContext());
+  bool Result = false;
   for (unsigned i = 0, e = AI.getArguments().size(); i < e; ++i) {
     auto Arg = AI.getArgument(i);
-    if (isCowValue(CowValue, Arg))
+    bool isAlias = isCowValue(CowValue, Arg);
+    DEBUG(llvm::dbgs() << "Analyzing if the the argument aliases a COW value:\nArgument:\n";
+          CowValue->dumpInContext();
+          llvm::dbgs() << "COW value:\n";
+          Arg->dumpInContext();
+          llvm::dbgs() << "Is alias?: " << isAlias << "\n");
+    if (isAlias) {
       Args.push_back(i);
-    else
+      Result = true;
+    } else
       Args.push_back(-1); // -1 means that argument is not aliasing CowValue.
   }
   if (Args.empty())
-    return;
+    return false;
   auto FnTy = AI.getSubstCalleeType();
 
   for (auto ResultInfo : FnTy->getIndirectResults()) {
@@ -849,6 +925,8 @@ void NonAtomicRCTransformer::getCowValueArgsOfApply(
     IsIndirectParam.push_back(ParamInfo.isIndirect());
   }
   assert(Args.size() == IsIndirectParam.size());
+  DEBUG(llvm::dbgs() << "The apply instruction is a candidate\n");
+  return Result;
 }
 
 void NonAtomicRCTransformer::markAsCandidate(SILInstruction *I) {
@@ -982,6 +1060,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           SmallVector<int, 8> Args;
           SmallVector<bool, 8> IsIndirectParam;
           getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
+          DEBUG(llvm::dbgs() << "Checked args size:" << Args.size() << "\n");
           if (Args.size()) {
             DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n"
                                << CowValue;
@@ -1014,17 +1093,21 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
         SmallVector<int, 8> Args;
         SmallVector<bool, 4> IsIndirectParam;
 
-        getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
-        if (Args.empty())
+        auto hasAliases =
+            getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
+        if (Args.empty() || !hasAliases)
           continue;
         for (auto Arg : Args) {
           if (Arg < 0)
             continue;
-          auto isIndirect = IsIndirectParam[Arg];
+         // If an argument aliases a CowValue, mark the call instruction
+         // as a candiate.
+         markAsCandidate(I);
+         auto isIndirect = IsIndirectParam[Arg];
           if (EA->canParameterEscape(AI, Arg, isIndirect)) {
             LastSeenOp[Id] = Kill;
             KilledCowValues[Id] = true;
-            markAsCandidate(I);
+            //markAsCandidate(I);
             DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n"
                                << CowValue;
                   I->dumpInContext());
@@ -1112,6 +1195,9 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
 // - use of non-atomic versions of functions which support non-atomic
 //   invocations.
 StateChanges NonAtomicRCTransformer::transformAllBlocks() {
+  DEBUG(llvm::dbgs() << "** Transform basic blocks inside " << F->getName()
+                     << " **\n");
+
   StateChanges Changes = SILAnalysis::InvalidationKind::Nothing;
   for (auto &BB : *F) {
     // Skip a BB if it does not contain any interesting instructions.
@@ -1132,6 +1218,10 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
       // phase, bail.
       if (!Candidates.count(I))
         continue;
+
+      DEBUG(llvm::dbgs() << "** Transform a candidate instruction:\n";
+            I->dumpInContext());
+
 
       if (auto *RC = dyn_cast<RefCountingInst>(I)) {
         auto Ref = RC->getOperand(0);
@@ -1232,8 +1322,7 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           // same CowValue. If this is the case, then it can be removed.
           // The region may have started either in this BB or outside.
           // TODO: It can be that make_mutable is not only making something
-          // mutable
-          // but does more. In this case it cannot be removed.
+          // mutable but does more. In this case it cannot be removed.
           auto Id = CowValueId[CowValue];
           if (CurrentlyActive.test(Id)) {
             DEBUG(llvm::dbgs() << "make_mutable call can be eliminated:\n";
@@ -1294,6 +1383,10 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
                       << "Non-atomic version of the call can be used:\n";
                   AI.getInstruction()->dumpInContext());
             replaceByNonAtomicApply(AI);
+            Changes =
+                StateChanges(Changes | SILAnalysis::InvalidationKind::Calls);
+            // TODO: Rescan the release instruction?
+            continue;
           }
         }
 
@@ -1306,8 +1399,9 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
             auto Id = KV.getSecond();
             SmallVector<int, 8> Args;
             SmallVector<bool, 8> IsIndirectParam;
-            getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
-            if (Args.size()) {
+            auto hasAliases =
+                getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
+            if (Args.size() && hasAliases) {
               CurrentlyActive[Id] = false;
               break;
             }
@@ -1337,8 +1431,9 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
           auto Id = KV.getSecond();
           SmallVector<int, 8> Args;
           SmallVector<bool, 8> IsIndirectParam;
-          getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
-          if (Args.empty())
+          auto hasAliases =
+              getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
+          if (Args.empty() && hasAliases)
             continue;
           for (auto Arg : Args) {
             if (Arg < 0)
@@ -1373,6 +1468,8 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
             DEBUG(llvm::dbgs() << "Replace " << I << " by " << yes << "\n");
             I->replaceAllUsesWith(yes);
             I->eraseFromParent();
+            Changes =
+                StateChanges(Changes | SILAnalysis::InvalidationKind::Instructions);
             continue;
           }
         }
@@ -1429,6 +1526,7 @@ void NonAtomicRCTransformer::findUniqueParameters() {
   if (!CowValueId.count(CowValue)) {
     CowValueId[CowValue] = UniqueIdx++;
     IdToCowValue.push_back(CowValue);
+    UniqueParams.push_back(CowValue);
   }
 }
 
@@ -1460,10 +1558,12 @@ void NonAtomicRCTransformer::findAllMakeUnique() {
       if (!isa<ApplyInst>(I)) {
         continue;
       }
+      //ArraySemanticsCall SemCall(I);
       auto Call = isMakeUniqueCall(I);
       if (Call) {
         DEBUG(llvm::dbgs() << "Found a make_unique call:" << I << "\n");
       }
+
       if (Call && Call.getSelf() &&
           checkUniqueCowContainer(F, Call.getSelf())) {
         // Add to the set of makeUnique calls
@@ -1482,6 +1582,33 @@ void NonAtomicRCTransformer::findAllMakeUnique() {
         }
         continue;
       }
+
+#if 0
+      if (Call && Call.hasSelf()) {
+        // This is a semantics call, but it is not a make_unique call.
+        // Check if the Self parameter of the call is unique, because
+        // it is a projection of a unique inout parameter.
+        auto CowValue = Call.getSelf();
+        SILValue Op =
+            stripUniquenessPreservingCastsAndProjections(CowValue);
+        auto Root = RCIFI->getRCIdentityRoot(Op);
+        // Check if it is a projection of one of the unique
+        // arguments of the function F.
+        for (auto UP : UniqueParams) {
+          if () {
+          }
+        }
+
+        // Create a region for this cow value.
+        // If we have seen a region for the same value already, we should
+        // assign the same index to it.
+        if (CowValue && !CowValueId.count(CowValue)) {
+          CowValueId[CowValue] = UniqueIdx++;
+          IdToCowValue.push_back(CowValue);
+        }
+        continue;
+      }
+#endif
     }
   }
 }
@@ -1546,7 +1673,7 @@ private:
     if (!PerformNonAtomicOpts)
       return;
 
-    DEBUG(llvm::dbgs() << "** NonAtomicRC for " << getFunction()->getName()
+    DEBUG(llvm::dbgs() << "** Start NonAtomicRC for " << getFunction()->getName()
                        << " **\n");
 
     auto *EA = PM->getAnalysis<EscapeAnalysis>();
@@ -1561,6 +1688,9 @@ private:
         PM->invalidateAnalysis(F, Changes);
       }
     }
+    DEBUG(llvm::dbgs() << "** End NonAtomicRC for " << getFunction()->getName()
+                       << " **\n");
+
   }
 
   StringRef getName() override { return "NonAtomicRC"; }
