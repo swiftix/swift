@@ -437,83 +437,6 @@ SILFunction *NonAtomicRCTransformer::createNonAtomicFunction(SILFunction *F) {
                         "processing by non-atomic-opts pass: "
                      << NewF->getName() << "\n");
   PM->addFunctionToWorklist(NewF);
-#if 0
-  SILValue Self = NewF->getSelfArgument();
-  for (auto &BB : *NewF) {
-    auto II = BB.begin();
-    while (II != BB.end()) {
-      auto I = &*II++;
-
-      // Do we need to track regions here and check for any
-      // stores/calls that may overwrite Self?
-      // Or do we assume that functions marked as generate.nonatomic
-      // guarantee that Self remains unique after their execution?
-
-      if (auto *RCI = dyn_cast<RefCountingInst>(I)) {
-        // Get the RC root.
-        auto Root = RCIFI->getRCIdentityRoot(
-            stripAddressProjections(RCI->getOperand(0)));
-        if (Root == Self)
-          RCI->setNonAtomic(true);
-        continue;
-      }
-
-      if (FullApplySite AI = FullApplySite::isa(I)) {
-        auto Callee = AI.getCalleeFunction();
-        // TODO: Check that the self argument if this call is
-        // based on Self.
-        if (Callee && Callee->hasSemanticsAttr("generate.nonatomic")) {
-          // TODO: Can we run into endless recursion here?
-          replaceByNonAtomicApply(AI);
-        }
-        continue;
-      }
-
-      // TODO: This peephole should be part of sil-combine, because
-      // some of these instructions only become part of the
-      // function after inlining.
-      if (isa<IsUniqueInst>(I)) {
-        SILValue Op = stripUniquenessPreservingCastsAndProjections(
-          I->getOperand(0));
-        auto Root = RCIFI->getRCIdentityRoot(Op);
-        DEBUG(llvm::dbgs() << "Found is_unique: "; I->dump();
-              llvm::dbgs() << "\n"
-                           << "RCRoot = " << Root << "\n");
-        if (Root != Self) {
-          continue;
-        }
-        SILBuilderWithScope B(I);
-        auto boolTy = SILType::getBuiltinIntegerType(1, Mod.getASTContext());
-        auto yes = B.createIntegerLiteral(I->getLoc(), boolTy, 1);
-        I->replaceAllUsesWith(yes);
-        I->eraseFromParent();
-        continue;
-      }
-
-      if (auto *BI = dyn_cast<BuiltinInst>(I)) {
-        const BuiltinInfo &Builtin = BI->getBuiltinInfo();
-        switch (Builtin.ID) {
-        default:
-          break;
-        case BuiltinValueKind::IsUnique:
-        case BuiltinValueKind::IsUniqueOrPinned:
-        case BuiltinValueKind::IsUnique_native:
-        case BuiltinValueKind::IsUniqueOrPinned_native:
-          auto Root = RCIFI->getRCIdentityRoot(stripUniquenessPreservingCastsAndProjections(
-              BI->getOperand(0)));
-          if (Root != Self)
-            break;
-          // Replace this check by true.
-          SILBuilderWithScope B(I);
-          auto boolTy = SILType::getBuiltinIntegerType(1, Mod.getASTContext());
-          auto yes = B.createIntegerLiteral(I->getLoc(), boolTy, 1);
-          I->replaceAllUsesWith(yes);
-          break;
-        }
-      }
-    }
-  }
-#endif
   DEBUG(llvm::dbgs() << "Created a new non-atomic function: " << NewF->getName()
                      << "\n";
         NewF->dump());
@@ -623,37 +546,6 @@ void NonAtomicRCTransformer::replaceByNonAtomicApply(FullApplySite AI) {
 
 static void markAsNonAtomic(RefCountingInst *I) {
   SILValue Op = I->getOperand(0);
-#if 0
-  if (Op->getType() ==
-      SILType::getBridgeObjectType(I->getModule().getASTContext())) {
-    // Convert this bridged object to a native object ref.
-    SILBuilder B(I);
-    SILValue NativeRef = B.createBridgeObjectToRef(
-        I->getLoc(), Op,
-        SILType::getNativeObjectType(I->getModule().getASTContext()));
-    RefCountingInst *NewI = nullptr;
-    switch (I->getKind()) {
-    default:
-      llvm_unreachable("This reference counting instruction is not supported");
-    case ValueKind::StrongRetainInst:
-      NewI = B.createStrongRetain(I->getLoc(), NativeRef);
-      break;
-    case ValueKind::StrongReleaseInst:
-      NewI = B.createStrongRelease(I->getLoc(), NativeRef);
-      break;
-    case ValueKind::StrongPinInst:
-      NewI = B.createStrongPin(I->getLoc(), NativeRef);
-      break;
-    case ValueKind::StrongUnpinInst:
-      NewI = B.createStrongUnpin(I->getLoc(), NativeRef);
-      break;
-    }
-    NewI->setNonAtomic(true);
-    I->replaceAllUsesWith(NewI);
-    I->eraseFromParent();
-    return;
-  }
-#endif
   I->setNonAtomic(true);
 }
 
