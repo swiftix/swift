@@ -236,14 +236,34 @@ class NonAtomicRCTransformer {
   // attribute.
   llvm::SmallVector<SILValue, 4> UniqueArgs;
 
-  // The set of instructions that are interesting for this
-  // optimization.
-  llvm::SmallPtrSet<SILInstruction *, 32> Candidates;
-
   // The set of basic blocks containing instructions
   // that are interesting for this optimization.
   llvm::SmallPtrSet<SILBasicBlock *, 32> CandidateBBs;
   unsigned UniqueIdx;
+
+  enum CandidateKind {
+    CANDIDATE_UNKNOWN,
+    CANDIDATE_STORE_DEST,
+    CANDIDATE_STORE_SRC,
+    CANDIDATE_GEN,
+    CANDIDATE_KILL,
+    CANDIDATE_UNIQUE,
+    CANDIDATE_RC,
+    CANDIDATE_IS_NATIVE_TYPE_CHECKED
+  };
+
+  struct Candidate {
+    SILInstruction *I;
+    SILValue CowValue;
+    CandidateKind Kind;
+    Candidate(SILInstruction *I, SILValue CowValue, CandidateKind Kind)
+        : I(I), CowValue(CowValue), Kind(Kind) {}
+  };
+
+  // The set of instructions that are interesting for this
+  // optimization.
+  llvm::SmallVector<Candidate, 32> Candidates;
+
 
 public:
   NonAtomicRCTransformer(SILPassManager *PM, SILFunction *F,
@@ -270,7 +290,7 @@ private:
   bool getCowValueArgsOfApply(FullApplySite AI, SILValue CowValue,
                               SmallVectorImpl<int> &Args,
                               SmallVectorImpl<bool> &IsIndirectParam);
-  void markAsCandidate(SILInstruction *I);
+  void markAsCandidate(SILInstruction *I, SILValue CowValue, CandidateKind Kind);
   void replaceByNonAtomicApply(FullApplySite AI);
   SILFunction *createNonAtomicFunction(SILFunction *F);
   bool isBeneficialToClone(SILFunction *F);
@@ -831,8 +851,8 @@ bool NonAtomicRCTransformer::getCowValueArgsOfApply(
   return Result;
 }
 
-void NonAtomicRCTransformer::markAsCandidate(SILInstruction *I) {
-  Candidates.insert(I);
+void NonAtomicRCTransformer::markAsCandidate(SILInstruction *I, SILValue CowValue, CandidateKind Kind) {
+  Candidates.push_back(Candidate(I, CowValue, Kind));
   CandidateBBs.insert(I->getParent());
   DEBUG(llvm::dbgs() << "Mark as canidate:\n"; I->dumpInContext());
 }
@@ -863,6 +883,12 @@ static bool isMakeOrGuaranteeMutable(ArraySemanticsCall &ArrayCall) {
 //
 // During the scan, remember the "interesting" instructions so
 // that anything else can be skipped during the transformation stage.
+//
+// TODO: Candidates should be a vector of pairs.
+// Each pair should be (instruction, CowValue it affects).
+// This would allow for avoiding iteration over all instructions
+// in the transformAllBlocks. More over, it would also allow
+// for avoiding doing the same checks in transformAllBlocks.
 void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
   // Remember if the last thing for a given CowValue
   // was kill or set.
@@ -900,7 +926,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
           isAliasingDest = true;
-          markAsCandidate(I);
+          markAsCandidate(I, CowValue, CANDIDATE_STORE_DEST);
           DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
                              << CowValue;
                 I->dumpInContext());
@@ -920,7 +946,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
-          markAsCandidate(I);
+          markAsCandidate(I, CowValue, CANDIDATE_STORE_SRC);
           DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
                              << CowValue;
                 I->dumpInContext());
@@ -936,7 +962,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
         // This is a GEN operation, it starts a region.
         auto CowValue = ArrayCall.getSelf();
         LastSeenOp[CowValueId[CowValue]] = Gen;
-        markAsCandidate(I);
+        markAsCandidate(I, CowValue, CANDIDATE_GEN);
 
         DEBUG(llvm::dbgs() << "Gen operation for CowValue\n"
                            << CowValue;
@@ -950,7 +976,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       if (ArrayCall) {
         if (ArrayCall.getKind() ==
             ArrayCallKind::kArrayPropsIsNativeTypeChecked)
-          markAsCandidate(I);
+          markAsCandidate(I, SILValue(), CANDIDATE_IS_NATIVE_TYPE_CHECKED);
         if (doesNotChangeUniquness(ArrayCall))
           continue;
 
@@ -968,7 +994,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
                                << CowValue;
                   I->dumpInContext());
             LastSeenOp[Id] = Kill;
-            markAsCandidate(I);
+            markAsCandidate(I, CowValue, CANDIDATE_KILL);
             break;
           }
         }
@@ -1002,14 +1028,13 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
         for (auto Arg : Args) {
           if (Arg < 0)
             continue;
-         // If an argument aliases a CowValue, mark the call instruction
-         // as a candiate.
-         markAsCandidate(I);
-         auto isIndirect = IsIndirectParam[Arg];
+          // If an argument aliases a CowValue, mark the call instruction
+          // as a candiate.
+          auto isIndirect = IsIndirectParam[Arg];
           if (EA->canParameterEscape(AI, Arg, isIndirect)) {
             LastSeenOp[Id] = Kill;
             KilledCowValues[Id] = true;
-            //markAsCandidate(I);
+            markAsCandidate(I, CowValue, CANDIDATE_KILL);
             DEBUG(llvm::dbgs() << "Kill operation for CowValue:\n"
                                << CowValue;
                   I->dumpInContext());
@@ -1031,7 +1056,7 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
           // This is a kill.
           LastSeenOp[Id] = Kill;
           KilledCowValues[Id] = true;
-          markAsCandidate(I);
+          markAsCandidate(I, CowValue, CANDIDATE_KILL);
           DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
                              << CowValue;
                 I->dumpInContext());
@@ -1041,12 +1066,36 @@ void NonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB) {
       continue;
     }
 
-    if (isa<IsUniqueInst>(I))
-      markAsCandidate(I);
+    if (isa<IsUniqueInst>(I)) {
+      SILValue Op =
+          stripUniquenessPreservingCastsAndProjections(I->getOperand(0));
+      auto Root = RCIFI->getRCIdentityRoot(Op);
+      DEBUG(llvm::dbgs() << "Found is_unique: "; I->dump();
+            llvm::dbgs() << "\n"
+                         << "RCRoot = " << Root << "\n");
 
-    if (isa<RefCountingInst>(I))
-      markAsCandidate(I);
+      for (auto &KV : CowValueId) {
+        auto CowValue = KV.getFirst();
+        if (Root == CowValue) {
+          markAsCandidate(I, CowValue, CANDIDATE_UNIQUE);
+          break;
+        }
+      }
+      continue;
+    }
 
+    if (auto *RC = dyn_cast<RefCountingInst>(I)) {
+      auto Ref = RC->getOperand(0);
+      for (auto &KV : CowValueId) {
+        auto CowValue = KV.getFirst();
+        // Check if it kills any non-local region.
+        if (isRCofCowValueAt(CowValue, I)) {
+          markAsCandidate(I, CowValue, CANDIDATE_RC);
+          break;
+        }
+      }
+      continue;
+    }
 #if 0
     if (isa<StrongRetainInst>(I) || isa<RetainValueInst>(I)) {
       auto *RCI = cast<RefCountingInst>(I);
@@ -1100,150 +1149,135 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
   DEBUG(llvm::dbgs() << "** Transform basic blocks inside " << F->getName()
                      << " **\n");
 
+  // TODO: Iterate over candidate instructions only. No need
+  // to iterate over all instructions in the function.
   StateChanges Changes = SILAnalysis::InvalidationKind::Nothing;
-  for (auto &BB : *F) {
-    // Skip a BB if it does not contain any interesting instructions.
-    if (!CandidateBBs.count(&BB))
+  SILBasicBlock *LastBB = nullptr;
+  BlockState *BBState = nullptr;
+
+  // The set of currently active uniqness regions.
+  // Indexed by the id of a CowValue being tracked.
+  // Initialized with the IN set.
+  StateBitVector CurrentlyActive;
+
+  for (auto &C : Candidates) {
+    auto I = C.I;
+    auto CowValue = C.CowValue;
+    auto *BB = I->getParent();
+    auto Kind = C.Kind;
+    if (BB != LastBB) {
+      BBState = &DF.getBlockState(BB);
+      CurrentlyActive = BBState->In;
+    }
+    LastBB = BB;
+
+    DEBUG(llvm::dbgs() << "** Transform a candidate instruction:\n";
+          I->dumpInContext());
+
+    if (auto *RC = dyn_cast<RefCountingInst>(I)) {
+      assert(Kind == CandidateKind::CANDIDATE_RC);
+      // If the region for a given CowValue is active and
+      // if this is the array buffer reference or if this is
+      // the array container itself, then it can be replaced
+      // by a non-atomic variant.
+      auto Id = CowValueId[CowValue];
+      if (CurrentlyActive.test(Id)) {
+        Changes =
+            StateChanges(Changes | SILAnalysis::InvalidationKind::Instructions);
+        markAsNonAtomic(RC);
+        DEBUG(llvm::dbgs() << "RC operation inside make_mutable region can be "
+                              "non-atomic: ";
+              RC->dump());
+      }
       continue;
+    }
 
-    auto &BBState = DF.getBlockState(&BB);
-    // The set of currently active uniqness regions.
-    // Indexed by the id of a CowValue being tracked.
-    // Initialized with the IN set.
-    StateBitVector CurrentlyActive(BBState.In);
+    // Check if instruction may overwrite the array buffer reference in the
+    // container.
+    if (auto *SI = dyn_cast<StoreInst>(I)) {
+      auto CowValue = C.CowValue;
 
-    auto II = BB.begin();
-    while (II != BB.end()) {
-      auto I = &*II++;
+      assert(Kind == CandidateKind::CANDIDATE_STORE_DEST ||
+             Kind == CandidateKind::CANDIDATE_STORE_SRC);
+      assert(CowValue);
 
-      // If this instruction is not marked as "interesting" during the scan
-      // phase, bail.
-      if (!Candidates.count(I))
+      auto Id = CowValueId[CowValue];
+
+      if (Kind == CandidateKind::CANDIDATE_STORE_DEST) {
+        DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
+                           << CowValue;
+              I->dumpInContext());
+        // The region is not active anymore after this point.
+        CurrentlyActive[Id] = false;
         continue;
+      }
 
-      DEBUG(llvm::dbgs() << "** Transform a candidate instruction:\n";
+      // This is a store of a CowValue into a different location,
+      // which may create an alias.
+
+      // This is a kill.
+      CurrentlyActive[Id] = false;
+      DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
+                         << CowValue;
             I->dumpInContext());
+      continue;
+    }
 
+    if (auto AI = FullApplySite::isa(I)) {
+      ArraySemanticsCall ArrayCall(AI.getInstruction());
+      if (ArrayCall &&
+          (ArrayCall.getKind() == ArrayCallKind::kGuaranteeMutable ||
+           ArrayCall.getKind() == ArrayCallKind::kMutateUnknown)) {
+        assert(Kind == CandidateKind::CANDIDATE_GEN);
 
-      if (auto *RC = dyn_cast<RefCountingInst>(I)) {
-        auto Ref = RC->getOperand(0);
-        // If the region for a given CowValue is active and
-        // if this is the array buffer reference or if this is
-        // the array container itself, then it can be replaced
-        // by a non-atomic variant.
-        for (auto &KV : CowValueId) {
-          auto CowValue = KV.getFirst();
-          auto Id = KV.getSecond();
-          // Check if it kills any non-local region.
-          if (CurrentlyActive.test(Id) && isRCofCowValueAt(CowValue, I)) {
-            Changes = StateChanges(Changes |
-                                   SILAnalysis::InvalidationKind::Instructions);
-            markAsNonAtomic(RC);
-            DEBUG(llvm::dbgs()
-                      << "RC operation inside make_mutable region can be "
-                         "non-atomic: ";
-                  RC->dump());
-            break;
-          }
+        // TODO: Call a non-atomic version of the function?
+        // The COW object that is made a thread-local by this call.
+        auto Id = CowValueId[CowValue];
+        auto *Callee = AI.getCalleeFunction();
+
+        if (CurrentlyActive.test(Id) &&
+            Callee->hasSemanticsAttr("generate.nonatomic")) {
+          DEBUG(llvm::dbgs() << "Non-atomic version of the call can be used:\n";
+                AI.getInstruction()->dumpInContext());
+          replaceByNonAtomicApply(AI);
         }
-      }
-
-      // Check if instruction may overwrite the array buffer reference in the
-      // container.
-      if (auto *SI = dyn_cast<StoreInst>(I)) {
-        bool isAliasingDest = false;
-
-        // Check if this instruction may store into a memory location
-        // aliasing the location where array buffer reference is stored.
-        auto Dest = SI->getDest();
-
-        // Check if it kills any non-local region.
-        for (auto &KV : CowValueId) {
-          auto CowValue = KV.getFirst();
-          auto Id = KV.getSecond();
-          if (isStoreAliasingCowValue(CowValue, Dest)) {
-            DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
-                               << CowValue;
-                  I->dumpInContext());
-            // The region is not active anymore after this point.
-            CurrentlyActive[Id] = false;
-            isAliasingDest = true;
-            break;
-          }
-        }
-        if (isAliasingDest)
-          continue;
-
-        // Check if this instruction may store one of the tracked CowValues
-        // somewhere. In this case, the buffer becomes non-unique.
-        auto Src = SI->getSrc();
-        for (auto &KV : CowValueId) {
-          auto CowValue = KV.getFirst();
-          auto Id = KV.getSecond();
-          if (isCowValue(CowValue, Src)) {
-            // This is a kill.
-            CurrentlyActive[Id] = false;
-            DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
-                               << CowValue;
-                  I->dumpInContext());
-            break;
-          }
-        }
+        // Mark region as active.
+        CurrentlyActive[Id] = true;
         continue;
       }
 
-      if (auto AI = FullApplySite::isa(I)) {
-        ArraySemanticsCall ArrayCall(AI.getInstruction());
-        if (ArrayCall &&
-            (ArrayCall.getKind() == ArrayCallKind::kGuaranteeMutable ||
-             ArrayCall.getKind() == ArrayCallKind::kMutateUnknown)) {
-          // TODO: Call a non-atomic version of the function?
-          // The COW object that is made a thread-local by this call.
-          auto CowValue = ArrayCall.getSelf();
-          auto Id = CowValueId[CowValue];
-          auto *Callee = AI.getCalleeFunction();
+      if (ArrayCall && ArrayCall.getKind() == ArrayCallKind::kMakeMutable) {
+        assert(Kind == CandidateKind::CANDIDATE_GEN);
 
-          if (CurrentlyActive.test(Id) &&
-              Callee->hasSemanticsAttr("generate.nonatomic")) {
-            DEBUG(llvm::dbgs()
-                      << "Non-atomic version of the call can be used:\n";
-                  AI.getInstruction()->dumpInContext());
-            replaceByNonAtomicApply(AI);
-          }
-          // Mark region as active.
-          CurrentlyActive[Id] = true;
+        // Add to the set of makeUnique calls
+        // The COW object that is made a thread-local by this call.
+        auto CowValue = ArrayCall.getSelf();
+
+        // Check if this make_mutable is inside an existing region for the
+        // same CowValue. If this is the case, then it can be removed.
+        // The region may have started either in this BB or outside.
+        // TODO: It can be that make_mutable is not only making something
+        // mutable but does more. In this case it cannot be removed.
+        auto Id = CowValueId[CowValue];
+        if (CurrentlyActive.test(Id)) {
+          DEBUG(llvm::dbgs() << "make_mutable call can be eliminated:\n";
+                (*ArrayCall).dumpInContext());
+          ArrayCall.removeCall();
+          Changes =
+              StateChanges(Changes | SILAnalysis::InvalidationKind::Calls);
+          // TODO: Rescan the release instruction?
           continue;
         }
 
-        if (ArrayCall && ArrayCall.getKind() == ArrayCallKind::kMakeMutable) {
-          // Add to the set of makeUnique calls
-          // The COW object that is made a thread-local by this call.
-          auto CowValue = ArrayCall.getSelf();
+        // Mark region as active.
+        CurrentlyActive[Id] = true;
+        continue;
+      }
 
-          // Check if this make_mutable is inside an existing region for the
-          // same CowValue. If this is the case, then it can be removed.
-          // The region may have started either in this BB or outside.
-          // TODO: It can be that make_mutable is not only making something
-          // mutable but does more. In this case it cannot be removed.
-          auto Id = CowValueId[CowValue];
-          if (CurrentlyActive.test(Id)) {
-            DEBUG(llvm::dbgs() << "make_mutable call can be eliminated:\n";
-                  (*ArrayCall).dumpInContext());
-            ArrayCall.removeCall();
-            Changes =
-                StateChanges(Changes | SILAnalysis::InvalidationKind::Calls);
-            // TODO: Rescan the release instruction?
-            continue;
-          }
-
-          // Mark region as active.
-          CurrentlyActive[Id] = true;
-          continue;
-        }
-
-        if (ArrayCall &&
-            ArrayCall.getKind() ==
-                ArrayCallKind::kArrayPropsIsNativeTypeChecked) {
+      if (ArrayCall &&
+          ArrayCall.getKind() ==
+              ArrayCallKind::kArrayPropsIsNativeTypeChecked) {
+        assert(Kind == CandidateKind::CANDIDATE_IS_NATIVE_TYPE_CHECKED);
 #if 0
           auto CowValue = ArrayCall.getKindetSelf();
           // Check if this is_native_typecheck is inside an existing region for
@@ -1268,134 +1302,92 @@ StateChanges NonAtomicRCTransformer::transformAllBlocks() {
             continue;
           }
 #endif
-        }
+          continue;
+      }
 
-        // If this is a call of a method on the currently
-        // unique COW object and this method has a non-atomic
-        // verison, then this non-atomic version could be
-        // used.
-        if (AI.hasSelfArgument()) {
-          auto *Callee = AI.getCalleeFunction();
-          auto Self = AI.getSelfArgument();
-          // Check if Self is currently unique.
-          if (CowValueId.count(Self) > 0 &&
-              CurrentlyActive.test(CowValueId[Self]) &&
-              Callee->hasSemanticsAttr("generate.nonatomic")) {
-            DEBUG(llvm::dbgs()
-                      << "Non-atomic version of the call can be used:\n";
-                  AI.getInstruction()->dumpInContext());
-            replaceByNonAtomicApply(AI);
-            Changes =
-                StateChanges(Changes | SILAnalysis::InvalidationKind::Calls);
-            // TODO: Rescan the release instruction?
-            continue;
-          }
-        }
-
-        if (ArrayCall) {
-          if (doesNotChangeUniquness(ArrayCall))
-            continue;
-          // Check whose uniqueness is changed.
-          for (auto &KV : CowValueId) {
-            auto CowValue = KV.getFirst();
-            auto Id = KV.getSecond();
-            SmallVector<int, 8> Args;
-            SmallVector<bool, 8> IsIndirectParam;
-            auto hasAliases =
-                getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
-            if (Args.size() && hasAliases) {
-              CurrentlyActive[Id] = false;
-              break;
-            }
-          }
+      // If this is a call of a method on the currently
+      // unique COW object and this method has a non-atomic
+      // verison, then this non-atomic version could be
+      // used.
+      if (AI.hasSelfArgument()) {
+        auto *Callee = AI.getCalleeFunction();
+        auto Self = AI.getSelfArgument();
+        // Check if Self is currently unique.
+        if (CowValueId.count(Self) > 0 &&
+            CurrentlyActive.test(CowValueId[Self]) &&
+            Callee->hasSemanticsAttr("generate.nonatomic")) {
+          DEBUG(llvm::dbgs() << "Non-atomic version of the call can be used:\n";
+                AI.getInstruction()->dumpInContext());
+          replaceByNonAtomicApply(AI);
+          Changes =
+              StateChanges(Changes | SILAnalysis::InvalidationKind::Calls);
+          // TODO: Rescan the release instruction?
           continue;
         }
+      }
 
-        // TODO: If it is a semantics call, then we know it cannot
-        // change the uniqueness.
-
-        // Can this call escape the array container or array buffer reference?
-        // TODO: Ask Erik how to query the EA in a proper way. We need to know
-        // if the provided value can REALLY escape inside the function being
-        // called.
-        // Specifically, even if it is passed as "inout" parameter.
-        // If it can be overwritten in the function, then it essentially
-        // equivalent
-        // to a store to the array and thus ends the region.
-        // If it escapes inside the function, it also ends the region.
-        // But what if it is only read inside the function? it would be nice if
-        // EA
-        // would say it does not escape.
-
-        // Check if it kills any non-local region.
-        for (auto &KV : CowValueId) {
-          auto CowValue = KV.getFirst();
-          auto Id = KV.getSecond();
-          SmallVector<int, 8> Args;
-          SmallVector<bool, 8> IsIndirectParam;
-          auto hasAliases =
-              getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
-          if (Args.empty() && hasAliases)
-            continue;
-          for (auto Arg : Args) {
-            if (Arg < 0)
-              continue;
-            auto isIndirect = IsIndirectParam[Arg];
-            if (EA->canParameterEscape(AI, Arg, isIndirect)) {
-              // The region is not active anymore after this point.
-              CurrentlyActive[Id] = false;
-              break;
-            }
-          }
-        }
+      if (ArrayCall) {
+        assert(Kind == CandidateKind::CANDIDATE_KILL);
+        // Check whose uniqueness is changed.
+        auto Id = CowValueId[CowValue];
+        CurrentlyActive[Id] = false;
         continue;
       }
 
-      if (isa<IsUniqueInst>(I)) {
-        SILValue Op =
-            stripUniquenessPreservingCastsAndProjections(I->getOperand(0));
-        auto Root = RCIFI->getRCIdentityRoot(Op);
-        DEBUG(llvm::dbgs() << "Found is_unique: "; I->dump();
-              llvm::dbgs() << "\n"
-                           << "RCRoot = " << Root << "\n");
+      // TODO: If it is a semantics call, then we know it cannot
+      // change the uniqueness.
 
-        for (auto &KV : CowValueId) {
-          auto CowValue = KV.getFirst();
-          auto Id = KV.getSecond();
-          if (Root == CowValue) {
-            SILBuilderWithScope B(I);
-            auto boolTy = SILType::getBuiltinIntegerType(
-                1, I->getModule().getASTContext());
-            auto yes = B.createIntegerLiteral(I->getLoc(), boolTy, 1);
-            DEBUG(llvm::dbgs() << "Replace " << I << " by " << yes << "\n");
-            I->replaceAllUsesWith(yes);
-            I->eraseFromParent();
-            Changes =
-                StateChanges(Changes | SILAnalysis::InvalidationKind::Instructions);
-            continue;
-          }
-        }
-      }
+      // Can this call escape the array container or array buffer reference?
+      // TODO: Ask Erik how to query the EA in a proper way. We need to know
+      // if the provided value can REALLY escape inside the function being
+      // called.
+      // Specifically, even if it is passed as "inout" parameter.
+      // If it can be overwritten in the function, then it essentially
+      // equivalent to a store to the array and thus ends the region.
+      // If it escapes inside the function, it also ends the region.
+      // But what if it is only read inside the function? it would be nice if
+      // EA would say it does not escape.
 
-      if (auto *DSI = dyn_cast<DeallocStackInst>(I)) {
-        auto Val = DSI->getOperand();
-
-        for (auto &KV : CowValueId) {
-          auto CowValue = KV.getFirst();
-          auto Id = KV.getSecond();
-          if (Val == CowValue) {
-            // This is a kill.
-            // The region is not active anymore after this point.
-            CurrentlyActive[Id] = false;
-            break;
-          }
-        }
-        continue;
-      }
-
-      // Nothing else can change or escape the array buffer reference.
+      assert(Kind == CandidateKind::CANDIDATE_KILL);
+      auto Id = CowValueId[CowValue];
+      CurrentlyActive[Id] = false;
       continue;
     }
+
+    if (isa<IsUniqueInst>(I)) {
+     assert(Kind == CandidateKind::CANDIDATE_UNIQUE);
+     SILValue Op =
+          stripUniquenessPreservingCastsAndProjections(I->getOperand(0));
+      auto Root = RCIFI->getRCIdentityRoot(Op);
+      DEBUG(llvm::dbgs() << "Found is_unique: "; I->dump();
+            llvm::dbgs() << "\n"
+                         << "RCRoot = " << Root << "\n");
+
+      auto Id = CowValueId[CowValue];
+      SILBuilderWithScope B(I);
+      auto boolTy =
+          SILType::getBuiltinIntegerType(1, I->getModule().getASTContext());
+      auto yes = B.createIntegerLiteral(I->getLoc(), boolTy, 1);
+      DEBUG(llvm::dbgs() << "Replace " << I << " by " << yes << "\n");
+      I->replaceAllUsesWith(yes);
+      I->eraseFromParent();
+      Changes =
+          StateChanges(Changes | SILAnalysis::InvalidationKind::Instructions);
+      continue;
+    }
+
+    if (auto *DSI = dyn_cast<DeallocStackInst>(I)) {
+      assert(Kind == CandidateKind::CANDIDATE_KILL);
+      auto Id = CowValueId[CowValue];
+      CurrentlyActive[Id] = false;
+      continue;
+    }
+
+    // Nothing else can change or escape the array buffer reference.
+    llvm::dbgs() << "Unexpected candidate was found:\n";
+    I->dumpInContext();
+    llvm::dbgs() << "\n";
+    llvm_unreachable("Unexpected candidate was found");
   }
   return Changes;
 }
