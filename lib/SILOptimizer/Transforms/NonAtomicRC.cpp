@@ -230,8 +230,11 @@ class NonAtomicRCTransformer {
   // Map the assigned id to CowValue.
   llvm::SmallVector<SILValue, 32> IdToCowValue;
 
-  // Set of parameters of the current functons known to be unique.
-  llvm::SmallVector<SILValue, 4> UniqueParams;
+  // Set of arguments of the current functon known to be unique.
+  // Typically, such arguments are the arguments of functions
+  // generated automatically based on generate.nonatomic
+  // attribute.
+  llvm::SmallVector<SILValue, 4> UniqueArgs;
 
   // The set of instructions that are interesting for this
   // optimization.
@@ -271,6 +274,7 @@ private:
   void replaceByNonAtomicApply(FullApplySite AI);
   SILFunction *createNonAtomicFunction(SILFunction *F);
   bool isBeneficialToClone(SILFunction *F);
+  bool isUniqueArg(SILValue Arg);
 };
 
 namespace {
@@ -669,6 +673,11 @@ bool checkUniqueCowContainer(SILFunction *Function, SILValue CowContainer) {
   return false;
 }
 
+bool NonAtomicRCTransformer::isUniqueArg(SILValue Arg) {
+  return std::find(UniqueArgs.begin(), UniqueArgs.end(), Arg) !=
+         UniqueArgs.end();
+}
+
 bool NonAtomicRCTransformer::isCowValue(ValueBase *CowStruct, SILValue Value) {
   auto Root = RCIFI->getRCIdentityRoot(Value);
   if (Root == CowStruct)
@@ -703,8 +712,7 @@ bool NonAtomicRCTransformer::isCowValue(ValueBase *CowStruct, SILValue Value) {
   // certain properties of the COW data type with a special attribute,
   // which could indicate that they are buffer (i.e. COW sub-parts) pointers.
   if (!CowStruct->getType().isAddress()) {
-    assert(std::find(UniqueParams.begin(), UniqueParams.end(), CowStruct) !=
-               UniqueParams.end() &&
+    assert(isUniqueArg(CowStruct) &&
            "Only COW objects passed as inout may have address types");
     return false;
   }
@@ -770,9 +778,11 @@ void NonAtomicRCTransformer::scanAllBlocks() {
   // Unique/non-atomic function parameters are in
   // the IN set of the entry block.
   for (auto Arg : F->getArguments()) {
-    if (CowValueId.count(Arg)) {
+    if (isUniqueArg(Arg)) {
       auto Id = CowValueId[Arg];
       DF.getBlockState(&*F->begin()).In[Id] = true;
+      DEBUG(llvm::dbgs() << "Adding a unique parameter into IN set of the entry basic block: ";
+            Arg->dump());
     }
   }
 
@@ -1418,7 +1428,7 @@ void NonAtomicRCTransformer::findUniqueParameters() {
   if (!CowValueId.count(CowValue)) {
     CowValueId[CowValue] = UniqueIdx++;
     IdToCowValue.push_back(CowValue);
-    UniqueParams.push_back(CowValue);
+    UniqueArgs.push_back(CowValue);
   }
 }
 
