@@ -328,8 +328,8 @@ public:
   // Routines for an unknown reference-counting style (meaning,
   // dynamically something compatible with either the ObjC or Swift styles).
   //   - strong references
-  void emitUnknownStrongRetain(llvm::Value *value);
-  void emitUnknownStrongRelease(llvm::Value *value);
+  void emitUnknownStrongRetain(llvm::Value *value, bool isAtomic = true);
+  void emitUnknownStrongRelease(llvm::Value *valuei, bool isAtomic = true);
   //   - unowned references
   void emitUnknownUnownedInit(llvm::Value *val, Address dest);
   void emitUnknownUnownedAssign(llvm::Value *value, Address dest);

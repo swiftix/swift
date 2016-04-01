@@ -978,7 +978,7 @@ void IRGenFunction::emitStrongRelease(llvm::Value *value,
   case ReferenceCounting::Block:
     return emitBlockRelease(value);
   case ReferenceCounting::Unknown:
-    return emitUnknownStrongRelease(value);
+    return emitUnknownStrongRelease(value, isAtomic);
   case ReferenceCounting::Bridge:
     return emitBridgeStrongRelease(value, isAtomic);
   case ReferenceCounting::Error:
@@ -1003,7 +1003,7 @@ void IRGenFunction::emitStrongRetain(llvm::Value *value,
     emitBlockCopyCall(value);
     return;
   case ReferenceCounting::Unknown:
-    emitUnknownStrongRetain(value);
+    emitUnknownStrongRetain(value, isAtomic);
     return;
   case ReferenceCounting::Error:
     emitErrorStrongRetain(value);
@@ -1238,14 +1238,22 @@ void IRGenFunction::emitFixLifetime(llvm::Value *value) {
   emitUnaryRefCountCall(*this, IGM.getFixLifetimeFn(), value);
 }
 
-void IRGenFunction::emitUnknownStrongRetain(llvm::Value *value) {
-  if (doesNotRequireRefCounting(value)) return;
-  emitUnaryRefCountCall(*this, IGM.getUnknownRetainFn(), value);
+void IRGenFunction::emitUnknownStrongRetain(llvm::Value *value,
+                                            bool isAtomic) {
+  if (doesNotRequireRefCounting(value))
+    return;
+  emitUnaryRefCountCall(*this, (isAtomic) ? IGM.getUnknownRetainFn()
+                                          : IGM.getNonAtomicUnknownRetainFn(),
+                        value);
 }
 
-void IRGenFunction::emitUnknownStrongRelease(llvm::Value *value) {
-  if (doesNotRequireRefCounting(value)) return;
-  emitUnaryRefCountCall(*this, IGM.getUnknownReleaseFn(), value);
+void IRGenFunction::emitUnknownStrongRelease(llvm::Value *value,
+                                             bool isAtomic) {
+  if (doesNotRequireRefCounting(value))
+    return;
+  emitUnaryRefCountCall(*this, (isAtomic) ? IGM.getUnknownReleaseFn()
+                                          : IGM.getNonAtomicUnknownReleaseFn(),
+                        value);
 }
 
 void IRGenFunction::emitBridgeStrongRetain(llvm::Value *value, bool isAtomic) {
