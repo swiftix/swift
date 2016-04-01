@@ -142,22 +142,16 @@ class StrongRefCount {
 
   bool tryIncrementAndPinNonAtomic() {
     uint32_t oldval = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
-    while (true) {
-      // If the flag is already set, just fail.
-      if (oldval & RC_PINNED_FLAG) {
-        return false;
-      }
-
-      // Try to simultaneously set the flag and increment the reference count.
-      uint32_t newval = oldval + (RC_PINNED_FLAG + RC_ONE);
-      // Use store __ATOMIC_RELAXED here?
-      if (refCount != oldval)
-        continue;
-      __atomic_store_n(&refCount, newval, __ATOMIC_RELAXED);
-      return true;
+    // If the flag is already set, just fail.
+    if (oldval & RC_PINNED_FLAG) {
+      return false;
     }
-  }
 
+    // Try to simultaneously set the flag and increment the reference count.
+    uint32_t newval = oldval + (RC_PINNED_FLAG + RC_ONE);
+    __atomic_store_n(&refCount, newval, __ATOMIC_RELAXED);
+    return true;
+  }
 
   // Increment the reference count, unless the object is deallocating.
   bool tryIncrement() {
@@ -289,7 +283,7 @@ private:
       (ClearPinnedFlag ? RC_ONE + RC_PINNED_FLAG : RC_ONE);
     uint32_t val = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
     val -= quantum;
-    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
+    __atomic_store_n(&refCount, val, __ATOMIC_RELEASE);
     uint32_t newval = refCount;
 
     assert((!ClearPinnedFlag || !(newval & RC_PINNED_FLAG)) &&
@@ -317,10 +311,8 @@ private:
                   "fix decrementShouldDeallocate() if you add more flags");
     uint32_t oldval = 0;
     newval = RC_DEALLOCATING_FLAG;
-    if (refCount != oldval)
-      return false;
-    __atomic_store_n(&refCount, newval, __ATOMIC_RELAXED);
-    return true;
+    return __atomic_compare_exchange(&refCount, &oldval, &newval, 0,
+                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
   }
 
   template <bool ClearPinnedFlag>
@@ -366,7 +358,7 @@ private:
     uint32_t delta = (n << RC_FLAGS_COUNT) + (ClearPinnedFlag ? RC_PINNED_FLAG : 0);
     uint32_t val = __atomic_load_n(&refCount, __ATOMIC_RELAXED);
     val -= delta;
-    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
+    __atomic_store_n(&refCount, val, __ATOMIC_RELEASE);
     uint32_t newval = val;
 
     assert((!ClearPinnedFlag || !(newval & RC_PINNED_FLAG)) &&
@@ -394,10 +386,8 @@ private:
                   "fix decrementShouldDeallocate() if you add more flags");
     uint32_t oldval = 0;
     newval = RC_DEALLOCATING_FLAG;
-    if (refCount != oldval)
-      return false;
-    __atomic_store_n(&refCount, val, __ATOMIC_RELAXED);
-    return true;
+    return __atomic_compare_exchange(&refCount, &oldval, &newval, 0,
+                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
   }
 };
 
