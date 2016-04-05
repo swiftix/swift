@@ -584,7 +584,7 @@ emitRValueWithAccessor(SILGenFunction &SGF, SILLocation loc,
     break;
   case AddressorKind::NativePinning:
     // Emit the unpin immediately.
-    SGF.B.createStrongUnpin(loc, addressorResult.second.forward(SGF));
+    SGF.B.createStrongUnpin(loc, addressorResult.second.forward(SGF), false);
     break;
   }
   
@@ -3180,7 +3180,7 @@ public:
     auto strongType = SILType::getPrimitiveObjectType(
               unowned->getType().castTo<UnmanagedStorageType>().getReferentType());
     auto owned = gen.B.createUnmanagedToRef(loc, unowned, strongType);
-    gen.B.createRetainValue(loc, owned);
+    gen.B.createRetainValue(loc, owned, false);
     auto ownedMV = gen.emitManagedRValueWithCleanup(owned);
     
     // Reassign the +1 storage with it.

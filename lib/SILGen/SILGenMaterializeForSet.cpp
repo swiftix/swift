@@ -667,11 +667,11 @@ MaterializeForSetEmitter::createAddressorCallback(SILFunction &F,
 
     case AddressorKind::Owning:
     case AddressorKind::NativeOwning:
-      gen.B.createStrongRelease(loc, owner);
+      gen.B.createStrongRelease(loc, owner, false);
       break;
 
     case AddressorKind::NativePinning:
-      gen.B.createStrongUnpin(loc, owner);
+      gen.B.createStrongUnpin(loc, owner, false);
       break;
     }
 

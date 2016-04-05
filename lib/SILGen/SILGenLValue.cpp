@@ -1175,9 +1175,9 @@ namespace {
       // 'base').  If it isn't, we actually need to retain it, because
       // we've still got a release active.
       SILValue baseValue = (isFinal ? base.forward(gen) : base.getValue());
-      if (!isFinal) gen.B.createRetainValue(loc, baseValue);
+      if (!isFinal) gen.B.createRetainValue(loc, baseValue, false);
 
-      gen.B.createStrongUnpin(loc, baseValue);
+      gen.B.createStrongUnpin(loc, baseValue, false);
     }
 
     void print(raw_ostream &OS) const override {
@@ -2133,7 +2133,7 @@ SILValue SILGenFunction::emitConversionToSemanticRValue(SILLocation loc,
     assert(unownedType->isLoadable(ResilienceExpansion::Maximal));
     (void) unownedType;
 
-    B.createStrongRetainUnowned(loc, src);
+    B.createStrongRetainUnowned(loc, src, false);
     return B.createUnownedToRef(loc, src,
                 SILType::getPrimitiveObjectType(unownedType.getReferentType()));
   }
@@ -2143,7 +2143,7 @@ SILValue SILGenFunction::emitConversionToSemanticRValue(SILLocation loc,
   if (auto unmanagedType = src->getType().getAs<UnmanagedStorageType>()) {
     auto result = B.createUnmanagedToRef(loc, src,
               SILType::getPrimitiveObjectType(unmanagedType.getReferentType()));
-    B.createStrongRetain(loc, result);
+    B.createStrongRetain(loc, result, false);
     return result;
   }
 
@@ -2172,8 +2172,8 @@ static SILValue emitLoadOfSemanticRValue(SILGenFunction &gen,
     }
 
     auto unownedValue = gen.B.createLoad(loc, src);
-    gen.B.createStrongRetainUnowned(loc, unownedValue);
-    if (isTake) gen.B.createUnownedRelease(loc, unownedValue);
+    gen.B.createStrongRetainUnowned(loc, unownedValue, false);
+    if (isTake) gen.B.createUnownedRelease(loc, unownedValue, false);
     return gen.B.createUnownedToRef(loc, unownedValue,
               SILType::getPrimitiveObjectType(unownedType.getReferentType()));
   }
@@ -2183,7 +2183,7 @@ static SILValue emitLoadOfSemanticRValue(SILGenFunction &gen,
     auto value = gen.B.createLoad(loc, src);
     auto result = gen.B.createUnmanagedToRef(loc, value,
             SILType::getPrimitiveObjectType(unmanagedType.getReferentType()));
-    gen.B.createStrongRetain(loc, result);
+    gen.B.createStrongRetain(loc, result, false);
     return result;
   }
 
@@ -2235,7 +2235,7 @@ static void emitStoreOfSemanticRValue(SILGenFunction &gen,
 
     auto unownedValue =
       gen.B.createRefToUnowned(loc, value, storageType.getObjectType());
-    gen.B.createUnownedRetain(loc, unownedValue);
+    gen.B.createUnownedRetain(loc, unownedValue, false);
     emitUnloweredStoreOfCopy(gen.B, loc, unownedValue, dest, isInit);
     gen.B.emitStrongReleaseAndFold(loc, value);
     return;
@@ -2336,7 +2336,7 @@ SILValue SILGenFunction::emitConversionFromSemanticValue(SILLocation loc,
     (void) unownedType;
 
     SILValue unowned = B.createRefToUnowned(loc, semanticValue, storageType);
-    B.createUnownedRetain(loc, unowned);
+    B.createUnownedRetain(loc, unowned, false);
     B.emitStrongReleaseAndFold(loc, semanticValue);
     return unowned;
   }

@@ -2286,14 +2286,23 @@ public:
 /// manipulate the reference count of their object operand.
 class RefCountingInst : public SILInstruction {
 protected:
+  bool NonAtomic;
+protected:
   RefCountingInst(ValueKind Kind, SILDebugLocation DebugLoc)
       : SILInstruction(Kind, DebugLoc) {}
+
+  RefCountingInst(ValueKind Kind, SILDebugLocation DebugLoc, SILType Type)
+      : SILInstruction(Kind, DebugLoc, Type) {}
 
 public:
   static bool classof(const ValueBase *V) {
     return V->getKind() >= ValueKind::First_RefCountingInst &&
            V->getKind() <= ValueKind::Last_RefCountingInst;
   }
+
+  void setNonAtomic(bool flag) { NonAtomic = flag; }
+  bool isNonAtomic() const { return NonAtomic; }
+  bool isAtomic() const { return !NonAtomic; }
 };
 
 /// RetainValueInst - Copies a loadable value.
@@ -2302,8 +2311,10 @@ class RetainValueInst : public UnaryInstructionBase<ValueKind::RetainValueInst,
                                                     /*HasValue*/ false> {
   friend class SILBuilder;
 
-  RetainValueInst(SILDebugLocation DebugLoc, SILValue operand)
-      : UnaryInstructionBase(DebugLoc, operand) {}
+  RetainValueInst(SILDebugLocation DebugLoc, SILValue operand, bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// ReleaseValueInst - Destroys a loadable value.
@@ -2312,8 +2323,10 @@ class ReleaseValueInst : public UnaryInstructionBase<ValueKind::ReleaseValueInst
                                                      /*HasValue*/ false> {
   friend class SILBuilder;
 
-  ReleaseValueInst(SILDebugLocation DebugLoc, SILValue operand)
-      : UnaryInstructionBase(DebugLoc, operand) {}
+  ReleaseValueInst(SILDebugLocation DebugLoc, SILValue operand, bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// Transfers ownership of a loadable value to the current autorelease pool.
@@ -2323,8 +2336,11 @@ class AutoreleaseValueInst
                                                 /*HasValue*/ false> {
   friend class SILBuilder;
 
-  AutoreleaseValueInst(SILDebugLocation DebugLoc, SILValue operand)
-      : UnaryInstructionBase(DebugLoc, operand) {}
+  AutoreleaseValueInst(SILDebugLocation DebugLoc, SILValue operand,
+                       bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// SetDeallocatingInst - Sets the operand in deallocating state.
@@ -2337,8 +2353,11 @@ class SetDeallocatingInst
                                                 /*HasValue*/ false> {
   friend class SILBuilder;
 
-  SetDeallocatingInst(SILDebugLocation DebugLoc, SILValue operand)
-      : UnaryInstructionBase(DebugLoc, operand) {}
+  SetDeallocatingInst(SILDebugLocation DebugLoc, SILValue operand,
+                      bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// StrongPinInst - Ensure that the operand is retained and pinned, if
@@ -2349,24 +2368,26 @@ class SetDeallocatingInst
 /// unpin may be conservatively assumed to have arbitrary
 /// side-effects.)
 class StrongPinInst
-  : public UnaryInstructionBase<ValueKind::StrongPinInst, SILInstruction,
+  : public UnaryInstructionBase<ValueKind::StrongPinInst, RefCountingInst,
                                 /*HasResult*/ true>
 {
   friend class SILBuilder;
 
-  StrongPinInst(SILDebugLocation DebugLoc, SILValue operand);
+  StrongPinInst(SILDebugLocation DebugLoc, SILValue operand, bool NonAtomic);
 };
 
 /// StrongUnpinInst - Given that the operand is the result of a
 /// strong_pin instruction, unpin it.
 class StrongUnpinInst
-  : public UnaryInstructionBase<ValueKind::StrongUnpinInst, SILInstruction,
+  : public UnaryInstructionBase<ValueKind::StrongUnpinInst, RefCountingInst,
                                 /*HasResult*/ false>
 {
   friend class SILBuilder;
 
-  StrongUnpinInst(SILDebugLocation DebugLoc, SILValue operand)
-      : UnaryInstructionBase(DebugLoc, operand) {}
+  StrongUnpinInst(SILDebugLocation DebugLoc, SILValue operand, bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// TupleInst - Represents a constructed loadable tuple.
@@ -3330,8 +3351,10 @@ class StrongRetainInst
 {
   friend class SILBuilder;
 
-  StrongRetainInst(SILDebugLocation DebugLoc, SILValue Operand)
-      : UnaryInstructionBase(DebugLoc, Operand) {}
+  StrongRetainInst(SILDebugLocation DebugLoc, SILValue Operand, bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, Operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// StrongReleaseInst - Decrease the strong reference count of an object.
@@ -3345,8 +3368,10 @@ class StrongReleaseInst
 {
   friend class SILBuilder;
 
-  StrongReleaseInst(SILDebugLocation DebugLoc, SILValue Operand)
-      : UnaryInstructionBase(DebugLoc, Operand) {}
+  StrongReleaseInst(SILDebugLocation DebugLoc, SILValue Operand, bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, Operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// StrongRetainUnownedInst - Increase the strong reference count of an object
@@ -3359,8 +3384,11 @@ class StrongRetainUnownedInst :
 {
   friend class SILBuilder;
 
-  StrongRetainUnownedInst(SILDebugLocation DebugLoc, SILValue operand)
-      : UnaryInstructionBase(DebugLoc, operand) {}
+  StrongRetainUnownedInst(SILDebugLocation DebugLoc, SILValue operand,
+                          bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// UnownedRetainInst - Increase the unowned reference count of an object.
@@ -3370,8 +3398,10 @@ class UnownedRetainInst :
 {
   friend class SILBuilder;
 
-  UnownedRetainInst(SILDebugLocation DebugLoc, SILValue Operand)
-      : UnaryInstructionBase(DebugLoc, Operand) {}
+  UnownedRetainInst(SILDebugLocation DebugLoc, SILValue Operand, bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, Operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// UnownedReleaseInst - Decrease the unowned reference count of an object.
@@ -3381,8 +3411,11 @@ class UnownedReleaseInst :
 {
   friend class SILBuilder;
 
-  UnownedReleaseInst(SILDebugLocation DebugLoc, SILValue Operand)
-      : UnaryInstructionBase(DebugLoc, Operand) {}
+  UnownedReleaseInst(SILDebugLocation DebugLoc, SILValue Operand,
+                     bool NonAtomic)
+      : UnaryInstructionBase(DebugLoc, Operand) {
+    setNonAtomic(NonAtomic);
+  }
 };
 
 /// FixLifetimeInst - An artificial use of a value for the purposes of ARC or
