@@ -230,7 +230,7 @@ namespace {
     }
 
     void loadAsCopy(IRGenFunction &IGF, Address address,
-                    Explosion &e) const override {
+                    Explosion &e, bool isAtomic) const override {
       // Load the function.
       Address fnAddr = projectFunction(IGF, address);
       e.add(IGF.Builder.CreateLoad(fnAddr, fnAddr->getName()+".load"));
@@ -273,16 +273,17 @@ namespace {
     }
 
     void copy(IRGenFunction &IGF, Explosion &src,
-              Explosion &dest) const override {
+              Explosion &dest, bool isAtomic) const override {
       src.transferInto(dest, 1);
       auto data = src.claimNext();
-      IGF.emitNativeStrongRetain(data);
+      IGF.emitNativeStrongRetain(data, isAtomic);
       dest.add(data);
     }
-    
-    void consume(IRGenFunction &IGF, Explosion &src) const override {
+
+    void consume(IRGenFunction &IGF, Explosion &src,
+                 bool isAtomic) const override {
       src.claimNext();
-      IGF.emitNativeStrongRelease(src.claimNext());
+      IGF.emitNativeStrongRelease(src.claimNext(), isAtomic);
     }
 
     void fixLifetime(IRGenFunction &IGF, Explosion &src) const override {
@@ -290,14 +291,16 @@ namespace {
       IGF.emitFixLifetime(src.claimNext());
     }
 
-    void strongRetain(IRGenFunction &IGF, Explosion &e) const override {
+    void strongRetain(IRGenFunction &IGF, Explosion &e,
+                      bool isAtomic) const override {
       e.claimNext();
-      IGF.emitNativeStrongRetain(e.claimNext());
+      IGF.emitNativeStrongRetain(e.claimNext(), isAtomic);
     }
-    
-    void strongRelease(IRGenFunction &IGF, Explosion &e) const override {
+
+    void strongRelease(IRGenFunction &IGF, Explosion &e,
+                       bool isAtomic) const override {
       e.claimNext();
-      IGF.emitNativeStrongRelease(e.claimNext());
+      IGF.emitNativeStrongRelease(e.claimNext(), isAtomic);
     }
 
     void strongRetainUnowned(IRGenFunction &IGF, Explosion &e) const override {
@@ -337,11 +340,12 @@ namespace {
       llvm_unreachable("unowned references to functions are not supported");
     }
 
-    void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+    void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                 bool isAtomic) const override {
       auto data = IGF.Builder.CreateLoad(projectData(IGF, addr));
-      IGF.emitNativeStrongRelease(data);
+      IGF.emitNativeStrongRelease(data, isAtomic);
     }
-    
+
     void packIntoEnumPayload(IRGenFunction &IGF,
                              EnumPayload &payload,
                              Explosion &src,
@@ -455,7 +459,8 @@ namespace {
                             Address src, SILType T) const override {
       IGF.unimplemented(SourceLoc(), "copying @block_storage");
     }
-    void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+    void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                 bool isAtomic) const override {
       IGF.unimplemented(SourceLoc(), "destroying @block_storage");
     }
   };
@@ -909,7 +914,8 @@ static llvm::Function *emitPartialApplicationForwarder(IRGenModule &IGM,
       case ParameterConvention::Indirect_Inout:
       case ParameterConvention::Indirect_InoutAliasable:
         // Load the address of the inout parameter.
-        cast<LoadableTypeInfo>(fieldTI).loadAsCopy(subIGF, fieldAddr, param);
+        cast<LoadableTypeInfo>(fieldTI).loadAsCopy(subIGF, fieldAddr, param,
+                                                   /* isAtomic */ true);
         break;
       case ParameterConvention::Direct_Guaranteed:
       case ParameterConvention::Direct_Unowned:
@@ -930,7 +936,8 @@ static llvm::Function *emitPartialApplicationForwarder(IRGenModule &IGM,
         break;
       case ParameterConvention::Direct_Owned:
         // Copy the value out at +1.
-        cast<LoadableTypeInfo>(fieldTI).loadAsCopy(subIGF, fieldAddr, param);
+        cast<LoadableTypeInfo>(fieldTI).loadAsCopy(subIGF, fieldAddr, param,
+                                                   /* isAtomic */ true);
         break;
       }
       
@@ -1415,7 +1422,8 @@ static llvm::Function *emitBlockDisposeHelper(IRGenModule &IGM,
   auto storage = Address(params.claimNext(), blockTL.getFixedAlignment());
   auto capture = blockTL.projectCapture(IGF, storage);
   auto &captureTL = IGM.getTypeInfoForLowered(blockTy->getCaptureType());
-  captureTL.destroy(IGF, capture, blockTy->getCaptureAddressType());
+  captureTL.destroy(IGF, capture, blockTy->getCaptureAddressType(),
+                    /* isAtomic */ true);
   IGF.Builder.CreateRetVoid();
   
   return func;

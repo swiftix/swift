@@ -58,7 +58,7 @@ public:
 
   void assignWithTake(IRGenFunction &IGF, Address dest, Address src,
                       SILType T) const override {
-    asDerived().Derived::destroy(IGF, dest, T);
+    asDerived().Derived::destroy(IGF, dest, T, /* isAtomic */ true);
     asDerived().Derived::initializeWithTake(IGF, dest, src, T);
   }
 };

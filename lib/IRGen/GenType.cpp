@@ -134,7 +134,7 @@ void LoadableTypeInfo::initializeWithCopy(IRGenFunction &IGF,
 
   // Otherwise explode and re-implode.
   Explosion copy;
-  loadAsCopy(IGF, srcAddr, copy);
+  loadAsCopy(IGF, srcAddr, copy, /* isAtomic */ true);
   initialize(IGF, copy, destAddr);
 }
 
@@ -380,7 +380,7 @@ namespace {
     unsigned getExplosionSize() const override { return 0; }
     void getSchema(ExplosionSchema &schema) const override {}
     void loadAsCopy(IRGenFunction &IGF, Address addr,
-                    Explosion &e) const override {}
+                    Explosion &e, bool isAtomic) const override {}
     void loadAsTake(IRGenFunction &IGF, Address addr,
                     Explosion &e) const override {}
     void assign(IRGenFunction &IGF, Explosion &e,
@@ -388,14 +388,14 @@ namespace {
     void initialize(IRGenFunction &IGF, Explosion &e,
                     Address addr) const override {}
     void copy(IRGenFunction &IGF, Explosion &src,
-              Explosion &dest) const override {}
-    void consume(IRGenFunction &IGF, Explosion &src) const override {}
+              Explosion &dest, bool isAtomic) const override {}
+    void consume(IRGenFunction &IGF, Explosion &src,
+                 bool isAtomic) const override {}
     void fixLifetime(IRGenFunction &IGF, Explosion &src) const override {}
-    void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {}
-    void packIntoEnumPayload(IRGenFunction &IGF,
-                             EnumPayload &payload,
-                             Explosion &src,
-                             unsigned offset) const override {}
+    void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                 bool isAtomic) const override {}
+    void packIntoEnumPayload(IRGenFunction &IGF, EnumPayload &payload,
+                             Explosion &src, unsigned offset) const override {}
     void unpackFromEnumPayload(IRGenFunction &IGF,
                                const EnumPayload &payload,
                                Explosion &dest,
@@ -440,7 +440,7 @@ namespace {
     }
     
     void loadAsCopy(IRGenFunction &IGF, Address addr,
-                    Explosion &explosion) const override {
+                    Explosion &explosion, bool isAtomic) const override {
       loadAsTake(IGF, addr, explosion);
     }
     
@@ -467,19 +467,21 @@ namespace {
     }
     
     void copy(IRGenFunction &IGF, Explosion &sourceExplosion,
-              Explosion &targetExplosion) const override {
+              Explosion &targetExplosion, bool isAtomic) const override {
       reexplode(IGF, sourceExplosion, targetExplosion);
     }
-    
-    void consume(IRGenFunction &IGF, Explosion &explosion) const override {
+
+    void consume(IRGenFunction &IGF, Explosion &explosion,
+                 bool isAtomic) const override {
       explosion.claimNext();
     }
     
     void fixLifetime(IRGenFunction &IGF, Explosion &explosion) const override {
       explosion.claimNext();
     }
-    
-    void destroy(IRGenFunction &IGF, Address address, SILType T) const override{
+
+    void destroy(IRGenFunction &IGF, Address address, SILType T,
+                 bool isAtomic) const override {
       /* nop */
     }
     
@@ -534,7 +536,7 @@ namespace {
     }
 
     void destroy(IRGenFunction &IGF, Address address,
-                 SILType T) const override {
+                 SILType T, bool isAtomic) const override {
       llvm_unreachable("cannot opaquely manipulate immovable types!");
     }
   };

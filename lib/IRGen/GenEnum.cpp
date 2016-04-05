@@ -396,9 +396,10 @@ namespace {
     }
 
     void loadAsCopy(IRGenFunction &IGF, Address addr,
-                    Explosion &e) const override {
+                    Explosion &e, bool isAtomic) const override {
       if (!getLoadableSingleton()) return;
-      getLoadableSingleton()->loadAsCopy(IGF, getSingletonAddress(IGF, addr),e);
+      getLoadableSingleton()->loadAsCopy(IGF, getSingletonAddress(IGF, addr), e,
+                                         isAtomic);
     }
 
     void loadForSwitch(IRGenFunction &IGF, Address addr, Explosion &e) const {
@@ -466,29 +467,32 @@ namespace {
       if (getLoadableSingleton()) getLoadableSingleton()->reexplode(IGF, src, dest);
     }
 
-    void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest)
-    const override {
-      if (getLoadableSingleton()) getLoadableSingleton()->copy(IGF, src, dest);
+    void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest,
+              bool isAtomic) const override {
+      if (getLoadableSingleton())
+        getLoadableSingleton()->copy(IGF, src, dest, isAtomic);
     }
 
-    void consume(IRGenFunction &IGF, Explosion &src) const override {
-      if (getLoadableSingleton()) getLoadableSingleton()->consume(IGF, src);
+    void consume(IRGenFunction &IGF, Explosion &src,
+                 bool isAtomic) const override {
+      if (getLoadableSingleton())
+        getLoadableSingleton()->consume(IGF, src, isAtomic);
     }
 
     void fixLifetime(IRGenFunction &IGF, Explosion &src) const override {
       if (getLoadableSingleton()) getLoadableSingleton()->fixLifetime(IGF, src);
     }
 
-    void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
-      if (getSingleton() && !getSingleton()->isPOD(ResilienceExpansion::Maximal))
+    void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                 bool isAtomic) const override {
+      if (getSingleton() &&
+          !getSingleton()->isPOD(ResilienceExpansion::Maximal))
         getSingleton()->destroy(IGF, getSingletonAddress(IGF, addr),
-                                getSingletonType(IGF.IGM, T));
+                                getSingletonType(IGF.IGM, T), isAtomic);
     }
 
-    void packIntoEnumPayload(IRGenFunction &IGF,
-                             EnumPayload &payload,
-                             Explosion &in,
-                             unsigned offset) const override {
+    void packIntoEnumPayload(IRGenFunction &IGF, EnumPayload &payload,
+                             Explosion &in, unsigned offset) const override {
       if (getLoadableSingleton())
         return getLoadableSingleton()->packIntoEnumPayload(IGF, payload,
                                                            in, offset);
@@ -830,8 +834,10 @@ namespace {
       return IGF.Builder.CreateStructGEP(addr, 0, Size(0));
     }
 
-    void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value) const {}
-    void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value) const {}
+    void emitScalarRetain(IRGenFunction &IGF, llvm::Value *value,
+                          bool isAtomic) const {}
+    void emitScalarRelease(IRGenFunction &IGF, llvm::Value *value,
+                           bool isAtomic) const {}
     void emitScalarFixLifetime(IRGenFunction &IGF, llvm::Value *value) const {}
 
     void initializeWithTake(IRGenFunction &IGF, Address dest, Address src,
@@ -1190,12 +1196,12 @@ namespace {
       loadForSwitch(IGF, addr, e);
     }
 
-    void loadAsCopy(IRGenFunction &IGF, Address addr, Explosion &e)
-    const override {
+    void loadAsCopy(IRGenFunction &IGF, Address addr, Explosion &e,
+                    bool isAtomic) const override {
       assert(TIK >= Loadable);
       Explosion tmp;
       loadAsTake(IGF, addr, tmp);
-      copy(IGF, tmp, e);
+      copy(IGF, tmp, e, isAtomic);
     }
 
     void assign(IRGenFunction &IGF, Explosion &e, Address addr) const override {
@@ -1205,7 +1211,7 @@ namespace {
         loadAsTake(IGF, addr, old);
       initialize(IGF, e, addr);
       if (!isPOD(ResilienceExpansion::Maximal))
-        consume(IGF, old);
+        consume(IGF, old, /* isAtomic */ true);
     }
 
     void initialize(IRGenFunction &IGF, Explosion &e, Address addr)
@@ -2012,7 +2018,7 @@ namespace {
                                  llvm::Value *ptr) const {
       switch (CopyDestroyKind) {
       case NullableRefcounted:
-        IGF.emitStrongRetain(ptr, Refcounting);
+        IGF.emitStrongRetain(ptr, Refcounting, /* isAtomic */ true);
         return;
       case POD:
       case Normal:
@@ -2036,7 +2042,7 @@ namespace {
                                   llvm::Value *ptr) const {
       switch (CopyDestroyKind) {
       case NullableRefcounted:
-        IGF.emitStrongRelease(ptr, Refcounting);
+        IGF.emitStrongRelease(ptr, Refcounting, /* isAtomic */ true);
         return;
       case POD:
       case Normal:
@@ -2045,7 +2051,7 @@ namespace {
     }
 
   public:
-    void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest)
+    void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest, bool isAtomic)
     const override {
       assert(TIK >= Loadable);
 
@@ -2068,7 +2074,7 @@ namespace {
           Explosion payloadCopy;
           auto &loadableTI = getLoadablePayloadTypeInfo();
           loadableTI.unpackFromEnumPayload(IGF, payload, payloadValue, 0);
-          loadableTI.copy(IGF, payloadValue, payloadCopy);
+          loadableTI.copy(IGF, payloadValue, payloadCopy, /* isAtomic */ true);
           payloadCopy.claimAll(); // FIXME: repack if not bit-identical
         }
 
@@ -2093,7 +2099,8 @@ namespace {
       }
     }
 
-    void consume(IRGenFunction &IGF, Explosion &src) const override {
+    void consume(IRGenFunction &IGF, Explosion &src,
+                 bool isAtomic) const override {
       assert(TIK >= Loadable);
 
       switch (CopyDestroyKind) {
@@ -2116,7 +2123,7 @@ namespace {
           Explosion payloadValue;
           auto &loadableTI = getLoadablePayloadTypeInfo();
           loadableTI.unpackFromEnumPayload(IGF, payload, payloadValue, 0);
-          loadableTI.consume(IGF, payloadValue);
+          loadableTI.consume(IGF, payloadValue, /* isAtomic */ true);
         }
 
         IGF.Builder.CreateBr(endBB);
@@ -2179,7 +2186,8 @@ namespace {
 
     }
 
-    void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+    void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                 bool isAtomic) const override {
       switch (CopyDestroyKind) {
       case POD:
         return;
@@ -2193,7 +2201,8 @@ namespace {
         // If there is, project and destroy it.
         Address payloadAddr = projectPayloadData(IGF, addr);
         getPayloadTypeInfo().destroy(IGF, payloadAddr,
-                                     getPayloadType(IGF.IGM, T));
+                                     getPayloadType(IGF.IGM, T),
+                                     /* isAtomic */ true);
 
         IGF.Builder.CreateBr(endBB);
         IGF.Builder.emitBlock(endBB);
@@ -2296,7 +2305,8 @@ namespace {
           IGF.Builder.emitBlock(destNoSrcPayloadBB);
           {
             ConditionalDominanceScope destNoSrcCondition(IGF);
-            getPayloadTypeInfo().destroy(IGF, destData, PayloadT);
+            getPayloadTypeInfo().destroy(IGF, destData, PayloadT,
+                                         /* isAtomic */ true);
             emitPrimitiveCopy(IGF, dest, src, T);
             IGF.Builder.CreateBr(endBB);
           }
@@ -2883,7 +2893,7 @@ namespace {
                                  llvm::Value *ptr) const {
       switch (CopyDestroyKind) {
       case TaggedRefcounted:
-        IGF.emitStrongRetain(ptr, Refcounting);
+        IGF.emitStrongRetain(ptr, Refcounting, /* isAtomic */ true);
         return;
       case POD:
       case BitwiseTakable:
@@ -2909,7 +2919,7 @@ namespace {
                                   llvm::Value *ptr) const {
       switch (CopyDestroyKind) {
       case TaggedRefcounted:
-        IGF.emitStrongRelease(ptr, Refcounting);
+        IGF.emitStrongRelease(ptr, Refcounting, /* isAtomic */ true);
         return;
       case POD:
       case BitwiseTakable:
@@ -3618,8 +3628,8 @@ namespace {
       emitNoPayloadInjection(IGF, out, emptyI - ElementsWithNoPayload.begin());
     }
 
-    void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest)
-    const override {
+    void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest,
+              bool isAtomic) const override {
       assert(TIK >= Loadable);
 
       switch (CopyDestroyKind) {
@@ -3638,7 +3648,7 @@ namespace {
             projectPayloadValue(IGF, parts.payload, tagIndex, lti, value);
 
             Explosion tmp;
-            lti.copy(IGF, value, tmp);
+            lti.copy(IGF, value, tmp, /* isAtomic */ true);
             tmp.claimAll(); // FIXME: repack if not bit-identical
           });
 
@@ -3671,7 +3681,8 @@ namespace {
 
     }
 
-    void consume(IRGenFunction &IGF, Explosion &src) const override {
+    void consume(IRGenFunction &IGF, Explosion &src,
+                 bool isAtomic) const override {
       assert(TIK >= Loadable);
 
       switch (CopyDestroyKind) {
@@ -3689,7 +3700,7 @@ namespace {
             Explosion value;
             projectPayloadValue(IGF, parts.payload, tagIndex, lti, value);
 
-            lti.consume(IGF, value);
+            lti.consume(IGF, value, /* isAtomic */ true);
           });
         return;
       }
@@ -3766,11 +3777,11 @@ namespace {
           if (isTake)
             loadAsTake(IGF, src, tmpSrc);
           else
-            loadAsCopy(IGF, src, tmpSrc);
+            loadAsCopy(IGF, src, tmpSrc, /* isAtomic */ true);
 
           loadAsTake(IGF, dest, tmpOld);
           initialize(IGF, tmpSrc, dest);
-          consume(IGF, tmpOld);
+          consume(IGF, tmpOld, /* isAtomic */ true);
           return;
         }
 
@@ -3785,7 +3796,7 @@ namespace {
         ConditionalDominanceScope condition(IGF);
 
         // Destroy the old value.
-        destroy(IGF, dest, T);
+        destroy(IGF, dest, T, /* isAtomic */ true);
 
         // Reinitialize with the new value.
         emitIndirectInitialize(IGF, dest, src, T, isTake);
@@ -3822,7 +3833,7 @@ namespace {
           if (isTake)
             loadAsTake(IGF, src, tmpSrc);
           else
-            loadAsCopy(IGF, src, tmpSrc);
+            loadAsCopy(IGF, src, tmpSrc, /* isAtomic */ true);
           initialize(IGF, tmpSrc, dest);
           return;
         }
@@ -3923,7 +3934,7 @@ namespace {
       emitIndirectInitialize(IGF, dest, src, T, IsTake);
     }
 
-    void destroy(IRGenFunction &IGF, Address addr, SILType T)
+    void destroy(IRGenFunction &IGF, Address addr, SILType T, bool isAtomic)
     const override {
       switch (CopyDestroyKind) {
       case POD:
@@ -3937,7 +3948,7 @@ namespace {
         if (TI->isLoadable()) {
           Explosion tmp;
           loadAsTake(IGF, addr, tmp);
-          consume(IGF, tmp);
+          consume(IGF, tmp, /* isAtomic */ true);
           return;
         }
 
@@ -3951,7 +3962,7 @@ namespace {
             Address dataAddr = IGF.Builder.CreateBitCast(addr,
                                       elt.ti->getStorageType()->getPointerTo());
             SILType payloadT = T.getEnumElementType(elt.decl, *IGF.IGM.SILMod);
-            elt.ti->destroy(IGF, dataAddr, payloadT);
+            elt.ti->destroy(IGF, dataAddr, payloadT, /* isAtomic */ true);
           });
         return;
       }
@@ -4440,7 +4451,7 @@ namespace {
                                  dest, src);
     }
 
-    void destroy(IRGenFunction &IGF, Address addr, SILType T)
+    void destroy(IRGenFunction &IGF, Address addr, SILType T, bool isAtomic)
     const override {
       emitDestroyCall(IGF, T, addr);
     }
@@ -4505,8 +4516,8 @@ namespace {
       llvm_unreachable("resilient enums are always indirect");
     }
 
-    void loadAsCopy(IRGenFunction &IGF, Address addr,
-                            Explosion &e) const override {
+    void loadAsCopy(IRGenFunction &IGF, Address addr, Explosion &e,
+                    bool isAtomic) const override {
       llvm_unreachable("resilient enums are always indirect");
     }
 
@@ -4530,12 +4541,13 @@ namespace {
       llvm_unreachable("resilient enums are always indirect");
     }
 
-    void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest)
-    const override {
+    void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest,
+              bool isAtomic) const override {
       llvm_unreachable("resilient enums are always indirect");
     }
 
-    void consume(IRGenFunction &IGF, Explosion &src) const override {
+    void consume(IRGenFunction &IGF, Explosion &src,
+                 bool isAtomic) const override {
       llvm_unreachable("resilient enums are always indirect");
     }
 
@@ -4788,8 +4800,9 @@ namespace {
     void getSchema(ExplosionSchema &s) const override {
       return Strategy.getSchema(s);
     }
-    void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
-      return Strategy.destroy(IGF, addr, T);
+    void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                 bool isAtomic) const override {
+      return Strategy.destroy(IGF, addr, T, isAtomic);
     }
     void initializeFromParams(IRGenFunction &IGF, Explosion &params,
                               Address dest, SILType T) const override {
@@ -4876,8 +4889,8 @@ namespace {
       return Strategy.getExplosionSize();
     }
     void loadAsCopy(IRGenFunction &IGF, Address addr,
-                    Explosion &e) const override {
-      return Strategy.loadAsCopy(IGF, addr, e);
+                    Explosion &e, bool isAtomic) const override {
+      return Strategy.loadAsCopy(IGF, addr, e, isAtomic);
     }
     void loadAsTake(IRGenFunction &IGF, Address addr,
                     Explosion &e) const override {
@@ -4896,11 +4909,12 @@ namespace {
       return Strategy.reexplode(IGF, src, dest);
     }
     void copy(IRGenFunction &IGF, Explosion &src,
-              Explosion &dest) const override {
-      return Strategy.copy(IGF, src, dest);
+              Explosion &dest, bool isAtomic) const override {
+      return Strategy.copy(IGF, src, dest, isAtomic);
     }
-    void consume(IRGenFunction &IGF, Explosion &src) const override {
-      return Strategy.consume(IGF, src);
+    void consume(IRGenFunction &IGF, Explosion &src,
+                 bool isAtomic) const override {
+      return Strategy.consume(IGF, src, isAtomic);
     }
     void fixLifetime(IRGenFunction &IGF, Explosion &src) const override {
       return Strategy.fixLifetime(IGF, src);

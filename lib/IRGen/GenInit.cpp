@@ -70,7 +70,7 @@ ContainedAddress FixedTypeInfo::allocateStack(IRGenFunction &IGF, SILType T,
 
 void FixedTypeInfo::destroyStack(IRGenFunction &IGF, Address addr,
                                  SILType T) const {
-  destroy(IGF, addr, T);
+  destroy(IGF, addr, T, /* isAtomic */ true);
   FixedTypeInfo::deallocateStack(IGF, addr, T);
 }
 

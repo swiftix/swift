@@ -394,8 +394,9 @@ public:
                                     Address src, SILType T) const = 0;
 
   /// Destroy an object of this type in memory.
-  virtual void destroy(IRGenFunction &IGF, Address address, SILType T) const = 0;
-  
+  virtual void destroy(IRGenFunction &IGF, Address address, SILType T,
+                       bool isAtomic) const = 0;
+
   /// Should optimizations be enabled which rely on the representation
   /// for this type being a single object pointer?
   ///

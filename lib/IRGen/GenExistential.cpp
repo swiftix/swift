@@ -345,7 +345,8 @@ public:
                                              srcBuffer);
   }
 
-  void destroy(IRGenFunction &IGF, Address addr, SILType T) const {
+  void destroy(IRGenFunction &IGF, Address addr, SILType T,
+               bool isAtomic) const {
     emitDestroyExistential(IGF, addr, getLayout());
   }
 };
@@ -421,7 +422,7 @@ public:
   }
 
   void destroy(IRGenFunction &IGF, Address existential,
-               SILType T) const override {
+               SILType T, bool isAtomic) const override {
     Address valueAddr = projectValue(IGF, existential);
     asDerived().emitValueDestroy(IGF, valueAddr);
   }
@@ -731,10 +732,10 @@ public:
   }
 
   void loadAsCopy(IRGenFunction &IGF, Address address,
-                  Explosion &out) const override {
+                  Explosion &out, bool isAtomic) const override {
     // Load the instance pointer, which is unknown-refcounted.
     llvm::Value *instance = asDerived().loadValue(IGF, address);
-    asDerived().emitValueRetain(IGF, instance);
+    asDerived().emitValueRetain(IGF, instance, isAtomic);
     out.add(instance);
 
     // Load the witness table pointers.
@@ -756,7 +757,7 @@ public:
     Address instanceAddr = asDerived().projectValue(IGF, address);
     llvm::Value *old = IGF.Builder.CreateLoad(instanceAddr);
     IGF.Builder.CreateStore(e.claimNext(), instanceAddr);
-    asDerived().emitValueRelease(IGF, old);
+    asDerived().emitValueRelease(IGF, old, /* isAtomic */ true);
 
     // Store the witness table pointers.
     asDerived().emitStoreOfTables(IGF, e, address);
@@ -772,22 +773,22 @@ public:
     asDerived().emitStoreOfTables(IGF, e, address);
   }
 
-  void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest)
+  void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest, bool isAtomic)
   const override {
     // Copy the instance pointer.
     llvm::Value *value = src.claimNext();
     dest.add(value);
-    asDerived().emitValueRetain(IGF, value);
+    asDerived().emitValueRetain(IGF, value, isAtomic);
 
     // Transfer the witness table pointers.
     src.transferInto(dest, getNumStoredProtocols());
   }
 
-  void consume(IRGenFunction &IGF, Explosion &src)
+  void consume(IRGenFunction &IGF, Explosion &src, bool isAtomic)
   const override {
     // Copy the instance pointer.
     llvm::Value *value = src.claimNext();
-    asDerived().emitValueRelease(IGF, value);
+    asDerived().emitValueRelease(IGF, value, isAtomic);
 
     // Throw out the witness table pointers.
     src.claim(getNumStoredProtocols());
@@ -802,9 +803,10 @@ public:
     src.claim(getNumStoredProtocols());
   }
 
-  void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+  void destroy(IRGenFunction &IGF, Address addr, SILType T,
+               bool isAtomic) const override {
     llvm::Value *value = asDerived().loadValue(IGF, addr);
-    asDerived().emitValueRelease(IGF, value);
+    asDerived().emitValueRelease(IGF, value, isAtomic);
   }
 
   void packIntoEnumPayload(IRGenFunction &IGF,
@@ -918,11 +920,13 @@ public:
     return IGF.Builder.CreateBitCast(valueAddr, ValueType->getPointerTo());
   }
 
-  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value,
+                       bool isAtomic) const {
     IGF.emitUnownedRetain(value, Refcounting);
   }
 
-  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value,
+                        bool isAtomic) const {
     IGF.emitUnownedRelease(value, Refcounting);
   }
 
@@ -990,11 +994,13 @@ public:
       return IGM.getUnknownObjectTypeInfo();
   }
 
-  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value,
+                       bool isAtomic) const {
     // do nothing
   }
 
-  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value,
+                        bool isAtomic) const {
     // do nothing
   }
 
@@ -1044,13 +1050,15 @@ public:
       return IGM.getUnknownObjectTypeInfo();
   }
 
-  void strongRetain(IRGenFunction &IGF, Explosion &e) const override {
-    IGF.emitStrongRetain(e.claimNext(), Refcounting);
+  void strongRetain(IRGenFunction &IGF, Explosion &e,
+                    bool isAtomic) const override {
+    IGF.emitStrongRetain(e.claimNext(), Refcounting, isAtomic);
     e.claim(getNumStoredProtocols());
   }
 
-  void strongRelease(IRGenFunction &IGF, Explosion &e) const override {
-    IGF.emitStrongRelease(e.claimNext(), Refcounting);
+  void strongRelease(IRGenFunction &IGF, Explosion &e,
+                     bool isAtomic) const override {
+    IGF.emitStrongRelease(e.claimNext(), Refcounting, isAtomic);
     e.claim(getNumStoredProtocols());
   }
 
@@ -1109,12 +1117,14 @@ public:
     IGF.emitUnownedAssign(value, valueAddr, Refcounting);
   }
 
-  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value) const {
-    IGF.emitStrongRetain(value, Refcounting);
+  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value,
+                       bool isAtomic) const {
+    IGF.emitStrongRetain(value, Refcounting, isAtomic);
   }
 
-  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value) const {
-    IGF.emitStrongRelease(value, Refcounting);
+  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value,
+                        bool isAtomic) const {
+    IGF.emitStrongRelease(value, Refcounting, isAtomic);
   }
 
   void emitValueFixLifetime(IRGenFunction &IGF, llvm::Value *value) const {
@@ -1225,11 +1235,13 @@ public:
     return MetatypeTI;
   }
 
-  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value,
+                       bool isAtomic) const {
     // do nothing
   }
 
-  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value,
+                        bool isAtomic) const {
     // do nothing
   }
 
