@@ -215,7 +215,7 @@ static llvm::Function *createDtorFn(IRGenModule &IGM,
       continue;
 
     field.getType().destroy(IGF, field.project(IGF, structAddr, offsets),
-                            fieldTy);
+                            fieldTy, /* isAtomic */ true);
   }
 
   emitDeallocateHeapObject(IGF, &*fn->arg_begin(), offsets.getSize(),
@@ -483,7 +483,8 @@ namespace {
       IGF.emitNativeWeakTakeAssign(destAddr, srcAddr);
     }
 
-    void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+    void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                 bool isAtomic) const override {
       IGF.emitNativeWeakDestroy(addr);
     }
 
@@ -640,7 +641,7 @@ namespace {
     }
 
     void destroy(IRGenFunction &IGF, Address addr,
-                 SILType type) const override {
+                 SILType type, bool isAtomic) const override {
       IGF.emitUnknownUnownedDestroy(addr);
     }
 
@@ -711,7 +712,8 @@ namespace {
       IGF.emitUnknownWeakTakeAssign(destAddr, srcAddr);
     }
 
-    void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+    void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                 bool isAtomic) const override {
       IGF.emitUnknownWeakDestroy(addr);
     }
                                 
@@ -940,9 +942,9 @@ void IRGenFunction::emitNativeStrongRetain(llvm::Value *value, bool isAtomic) {
   
   // Emit the call.
   llvm::CallInst *call =
-      (isAtomic)
-          ? Builder.CreateCall(IGM.getNativeStrongRetainFn(), value)
-          : Builder.CreateCall(IGM.getNativeNonAtomicStrongRetainFn(), value);
+      Builder.CreateCall((isAtomic) ? IGM.getNativeStrongRetainFn()
+                                    : IGM.getNativeNonAtomicStrongRetainFn(),
+                         value);
   call->setDoesNotThrow();
 }
 
@@ -1115,11 +1117,10 @@ void IRGenFunction::emitStrongRetainAndUnownedRelease(llvm::Value *value,
 /// Emit a release of a live value.
 void IRGenFunction::emitNativeStrongRelease(llvm::Value *value, bool isAtomic) {
   if (doesNotRequireRefCounting(value)) return;
-  if (isAtomic)
-    emitUnaryRefCountCall(*this, IGM.getNativeStrongReleaseFn(), value);
-  else
-    emitUnaryRefCountCall(*this, IGM.getNativeNonAtomicStrongReleaseFn(),
-                          value);
+  emitUnaryRefCountCall(*this,
+                        (isAtomic) ? IGM.getNativeStrongReleaseFn()
+                                   : IGM.getNativeNonAtomicStrongReleaseFn(),
+                        value);
 }
 
 void IRGenFunction::emitNativeSetDeallocating(llvm::Value *value) {

@@ -50,14 +50,14 @@ public:
   void initializeWithCopy(IRGenFunction &IGF, Address dest, Address src,
                           SILType T) const override {
     Explosion temp;
-    asDerived().Derived::loadAsCopy(IGF, src, temp);
+    asDerived().Derived::loadAsCopy(IGF, src, temp, /* isAtomic */ true);
     asDerived().Derived::initialize(IGF, temp, dest);
   }
 
   void assignWithCopy(IRGenFunction &IGF, Address dest, Address src,
                       SILType T) const override {
     Explosion temp;
-    asDerived().Derived::loadAsCopy(IGF, src, temp);
+    asDerived().Derived::loadAsCopy(IGF, src, temp, /* isAtomic */ true);
     asDerived().Derived::assign(IGF, temp, dest);
   }
 
@@ -124,7 +124,7 @@ public:
   }
 
   void loadAsCopy(IRGenFunction &IGF, Address addr,
-                  Explosion &out) const override {
+                  Explosion &out, bool isAtomic) const override {
     addr = asDerived().projectScalar(IGF, addr);
     llvm::Value *value = IGF.Builder.CreateLoad(addr);
     asDerived().emitScalarRetain(IGF, value, /* isAtomic */ true);
@@ -157,27 +157,30 @@ public:
     }
   }
 
-  void copy(IRGenFunction &IGF, Explosion &in, Explosion &out) const override {
+  void copy(IRGenFunction &IGF, Explosion &in, Explosion &out,
+            bool isAtomic) const override {
     llvm::Value *value = in.claimNext();
-    asDerived().emitScalarRetain(IGF, value, /* isAtomic */ true);
+    asDerived().emitScalarRetain(IGF, value, isAtomic);
     out.add(value);
   }
-  
-  void consume(IRGenFunction &IGF, Explosion &in) const override {
+
+  void consume(IRGenFunction &IGF, Explosion &in,
+               bool isAtomic) const override {
     llvm::Value *value = in.claimNext();
-    asDerived().emitScalarRelease(IGF, value, /* isAtomic */ true);
+    asDerived().emitScalarRelease(IGF, value, isAtomic);
   }
 
   void fixLifetime(IRGenFunction &IGF, Explosion &in) const override {
     llvm::Value *value = in.claimNext();
     asDerived().emitScalarFixLifetime(IGF, value);
   }
-  
-  void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+
+  void destroy(IRGenFunction &IGF, Address addr, SILType T,
+               bool isAtomic) const override {
     if (!Derived::IsScalarPOD) {
       addr = asDerived().projectScalar(IGF, addr);
       llvm::Value *value = IGF.Builder.CreateLoad(addr, "toDestroy");
-      asDerived().emitScalarRelease(IGF, value, /* isAtomic */ true);
+      asDerived().emitScalarRelease(IGF, value, isAtomic);
     }
   }
   

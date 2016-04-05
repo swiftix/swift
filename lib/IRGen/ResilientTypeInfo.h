@@ -137,7 +137,8 @@ public:
     emitInitializeArrayWithTakeBackToFrontCall(IGF, T, dest, src, count);
   }
 
-  void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+  void destroy(IRGenFunction &IGF, Address addr, SILType T,
+               bool isAtomic) const override {
     emitDestroyCall(IGF, T, addr);
   }
 

@@ -2913,7 +2913,7 @@ void IRGenSILFunction::visitRetainValueInst(swift::RetainValueInst *i) {
   Explosion in = getLoweredExplosion(i->getOperand());
   Explosion out;
   cast<LoadableTypeInfo>(getTypeInfo(i->getOperand()->getType()))
-    .copy(*this, in, out);
+    .copy(*this, in, out, i->isAtomic());
   out.claimAll();
 }
 
@@ -2964,7 +2964,7 @@ void IRGenSILFunction::visitSetDeallocatingInst(SetDeallocatingInst *i) {
 void IRGenSILFunction::visitReleaseValueInst(swift::ReleaseValueInst *i) {
   Explosion in = getLoweredExplosion(i->getOperand());
   cast<LoadableTypeInfo>(getTypeInfo(i->getOperand()->getType()))
-    .consume(*this, in);
+    .consume(*this, in, i->isAtomic());
 }
 
 void IRGenSILFunction::visitStructInst(swift::StructInst *i) {
@@ -3229,7 +3229,7 @@ void IRGenSILFunction::visitCopyBlockInst(CopyBlockInst *i) {
 void IRGenSILFunction::visitStrongPinInst(swift::StrongPinInst *i) {
   Explosion lowered = getLoweredExplosion(i->getOperand());
   llvm::Value *object = lowered.claimNext();
-  llvm::Value *pinHandle = emitNativeTryPin(object, !i->isNonAtomic());
+  llvm::Value *pinHandle = emitNativeTryPin(object, i->isAtomic());
 
   Explosion result;
   result.add(pinHandle);
@@ -3239,19 +3239,19 @@ void IRGenSILFunction::visitStrongPinInst(swift::StrongPinInst *i) {
 void IRGenSILFunction::visitStrongUnpinInst(swift::StrongUnpinInst *i) {
   Explosion lowered = getLoweredExplosion(i->getOperand());
   llvm::Value *pinHandle = lowered.claimNext();
-  emitNativeUnpin(pinHandle, !i->isNonAtomic());
+  emitNativeUnpin(pinHandle, i->isAtomic());
 }
 
 void IRGenSILFunction::visitStrongRetainInst(swift::StrongRetainInst *i) {
   Explosion lowered = getLoweredExplosion(i->getOperand());
   auto &ti = cast<ReferenceTypeInfo>(getTypeInfo(i->getOperand()->getType()));
-  ti.strongRetain(*this, lowered, !i->isNonAtomic());
+  ti.strongRetain(*this, lowered, i->isAtomic());
 }
 
 void IRGenSILFunction::visitStrongReleaseInst(swift::StrongReleaseInst *i) {
   Explosion lowered = getLoweredExplosion(i->getOperand());
   auto &ti = cast<ReferenceTypeInfo>(getTypeInfo(i->getOperand()->getType()));
-  ti.strongRelease(*this, lowered, !i->isNonAtomic());
+  ti.strongRelease(*this, lowered, i->isAtomic());
 }
 
 /// Given a SILType which is a ReferenceStorageType, return the type
@@ -4631,7 +4631,7 @@ void IRGenSILFunction::visitDestroyAddrInst(swift::DestroyAddrInst *i) {
 
   // Otherwise, do the normal thing.
   Address base = getLoweredAddress(i->getOperand());
-  addrTI.destroy(*this, base, addrTy);
+  addrTI.destroy(*this, base, addrTy, /* isAtomic */ true);
 }
 
 void IRGenSILFunction::visitCondFailInst(swift::CondFailInst *i) {

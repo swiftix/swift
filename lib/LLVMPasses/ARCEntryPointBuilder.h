@@ -210,14 +210,17 @@ public:
     return CI;
   }
 
-private:
-  Module &getModule() {
-    return *B.GetInsertBlock()->getModule();
-  }
-
   bool isNonAtomic(CallInst *I) {
     return (I->getCalledFunction()->getName().find("nonatomic") !=
             llvm::StringRef::npos);
+  }
+
+  bool isAtomic(CallInst *I) {
+    return !isNonAtomic(I);
+  }
+private:
+  Module &getModule() {
+    return *B.GetInsertBlock()->getModule();
   }
 
   /// getRetain - Return a callable function for swift_retain.
