@@ -856,7 +856,8 @@ static llvm::Function *emitObjCPartialApplicationForwarder(IRGenModule &IGM,
   Address selfAddr = fieldLayout.project(subIGF, dataAddr, None);
   Explosion selfParams;
   if (retainsSelf)
-    cast<LoadableTypeInfo>(selfTI).loadAsCopy(subIGF, selfAddr, selfParams);
+    cast<LoadableTypeInfo>(selfTI).loadAsCopy(subIGF, selfAddr, selfParams,
+                                              Atomicity::Atomic);
   else
     cast<LoadableTypeInfo>(selfTI).loadAsTake(subIGF, selfAddr, selfParams);
   llvm::Value *self = selfParams.claimNext();

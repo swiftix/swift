@@ -198,13 +198,15 @@ public:
     }
   }
 
-  void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+  void destroy(IRGenFunction &IGF, Address addr, SILType T,
+               Atomicity atomicity) const override {
     auto offsets = asImpl().getNonFixedOffsets(IGF, T);
     for (auto &field : getFields()) {
       if (field.isPOD()) continue;
 
       field.getTypeInfo().destroy(IGF, field.projectAddress(IGF, addr, offsets),
-                                  field.getType(IGF.IGM, T));
+                                  field.getType(IGF.IGM, T),
+                                  Atomicity::Atomic);
     }
   }
 };
@@ -419,6 +421,21 @@ private:
     }
   }
 
+  template <void (LoadableTypeInfo::*Op)(IRGenFunction &IGF, Address addr,
+                                         Explosion &out, Atomicity atomicity) const>
+  void forAllFields(IRGenFunction &IGF, Address addr, Explosion &out,
+                    Atomicity atomicity) const {
+    auto offsets = asImpl().getNonFixedOffsets(IGF);
+    for (auto &field : getFields()) {
+      if (field.isEmpty()) continue;
+
+      Address fieldAddr = field.projectAddress(IGF, addr, offsets);
+      (cast<LoadableTypeInfo>(field.getTypeInfo()).*Op)(IGF, fieldAddr, out,
+                                                        atomicity);
+    }
+  }
+
+
   template <void (LoadableTypeInfo::*Op)(IRGenFunction &IGF,
                                          Explosion &in,
                                          Address addr) const>
@@ -436,8 +453,8 @@ public:
   using super::getFields;
 
   void loadAsCopy(IRGenFunction &IGF, Address addr,
-                  Explosion &out) const override {
-    forAllFields<&LoadableTypeInfo::loadAsCopy>(IGF, addr, out);
+                  Explosion &out, Atomicity atomicity) const override {
+    forAllFields<&LoadableTypeInfo::loadAsCopy>(IGF, addr, out, atomicity);
   }
 
   void loadAsTake(IRGenFunction &IGF, Address addr,
@@ -465,14 +482,17 @@ public:
   }
 
   void copy(IRGenFunction &IGF, Explosion &src,
-            Explosion &dest) const override {
+            Explosion &dest, Atomicity atomicity) const override {
     for (auto &field : getFields())
-      cast<LoadableTypeInfo>(field.getTypeInfo()).copy(IGF, src, dest);
+      cast<LoadableTypeInfo>(field.getTypeInfo())
+          .copy(IGF, src, dest, Atomicity::Atomic);
   }
-      
-  void consume(IRGenFunction &IGF, Explosion &src) const override {
+
+  void consume(IRGenFunction &IGF, Explosion &src,
+               Atomicity atomicity) const override {
     for (auto &field : getFields())
-      cast<LoadableTypeInfo>(field.getTypeInfo()).consume(IGF, src);
+      cast<LoadableTypeInfo>(field.getTypeInfo())
+          .consume(IGF, src, Atomicity::Atomic);
   }
 
   void fixLifetime(IRGenFunction &IGF, Explosion &src) const override {

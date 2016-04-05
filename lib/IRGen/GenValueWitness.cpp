@@ -330,7 +330,7 @@ static void emitDefaultDestroyBuffer(IRGenFunction &IGF, Address buffer,
                                  T, type, buffer);
 
   Address object = emitDefaultProjectBuffer(IGF, buffer, T, type, packing);
-  type.destroy(IGF, object, T);
+  type.destroy(IGF, object, T, Atomicity::Atomic);
   emitDefaultDeallocateBuffer(IGF, buffer, T, type, packing);
 }
 
@@ -625,7 +625,7 @@ static void buildValueWitnessFunction(IRGenModule &IGM,
   case ValueWitness::Destroy: {
     Address object = getArgAs(IGF, argv, type, "object");
     getArgAsLocalSelfTypeMetadata(IGF, argv, abstractType);
-    type.destroy(IGF, object, concreteType);
+    type.destroy(IGF, object, concreteType, Atomicity::Atomic);
     IGF.Builder.CreateRetVoid();
     return;
   }
@@ -654,7 +654,7 @@ static void buildValueWitnessFunction(IRGenModule &IGM,
 
     IGF.Builder.emitBlock(loop);
     ConditionalDominanceScope condition(IGF);
-    type.destroy(IGF, element, concreteType);
+    type.destroy(IGF, element, concreteType, Atomicity::Atomic);
     auto nextCounter = IGF.Builder.CreateSub(counter,
                                      llvm::ConstantInt::get(IGM.SizeTy, 1));
     auto nextElement = type.indexArray(IGF, element,
@@ -1567,7 +1567,7 @@ void TypeInfo::destroyArray(IRGenFunction &IGF, Address array,
   IGF.Builder.emitBlock(loop);
   ConditionalDominanceScope condition(IGF);
 
-  destroy(IGF, element, T);
+  destroy(IGF, element, T, Atomicity::Atomic);
   auto nextCounter = IGF.Builder.CreateSub(counter,
                                    llvm::ConstantInt::get(IGF.IGM.SizeTy, 1));
   auto nextElement = indexArray(IGF, element,

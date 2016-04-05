@@ -345,7 +345,8 @@ public:
                                              srcBuffer);
   }
 
-  void destroy(IRGenFunction &IGF, Address addr, SILType T) const {
+  void destroy(IRGenFunction &IGF, Address addr, SILType T,
+               Atomicity atomicity) const {
     emitDestroyExistential(IGF, addr, getLayout());
   }
 };
@@ -421,7 +422,7 @@ public:
   }
 
   void destroy(IRGenFunction &IGF, Address existential,
-               SILType T) const override {
+               SILType T, Atomicity atomicity) const override {
     Address valueAddr = projectValue(IGF, existential);
     asDerived().emitValueDestroy(IGF, valueAddr);
   }
@@ -731,10 +732,10 @@ public:
   }
 
   void loadAsCopy(IRGenFunction &IGF, Address address,
-                  Explosion &out) const override {
+                  Explosion &out, Atomicity atomicity) const override {
     // Load the instance pointer, which is unknown-refcounted.
     llvm::Value *instance = asDerived().loadValue(IGF, address);
-    asDerived().emitValueRetain(IGF, instance);
+    asDerived().emitValueRetain(IGF, instance, atomicity);
     out.add(instance);
 
     // Load the witness table pointers.
@@ -756,7 +757,7 @@ public:
     Address instanceAddr = asDerived().projectValue(IGF, address);
     llvm::Value *old = IGF.Builder.CreateLoad(instanceAddr);
     IGF.Builder.CreateStore(e.claimNext(), instanceAddr);
-    asDerived().emitValueRelease(IGF, old);
+    asDerived().emitValueRelease(IGF, old, Atomicity::Atomic);
 
     // Store the witness table pointers.
     asDerived().emitStoreOfTables(IGF, e, address);
@@ -772,22 +773,23 @@ public:
     asDerived().emitStoreOfTables(IGF, e, address);
   }
 
-  void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest)
+  void copy(IRGenFunction &IGF, Explosion &src, Explosion &dest,
+            Atomicity atomicity)
   const override {
     // Copy the instance pointer.
     llvm::Value *value = src.claimNext();
     dest.add(value);
-    asDerived().emitValueRetain(IGF, value);
+    asDerived().emitValueRetain(IGF, value, atomicity);
 
     // Transfer the witness table pointers.
     src.transferInto(dest, getNumStoredProtocols());
   }
 
-  void consume(IRGenFunction &IGF, Explosion &src)
+  void consume(IRGenFunction &IGF, Explosion &src, Atomicity atomicity)
   const override {
     // Copy the instance pointer.
     llvm::Value *value = src.claimNext();
-    asDerived().emitValueRelease(IGF, value);
+    asDerived().emitValueRelease(IGF, value, atomicity);
 
     // Throw out the witness table pointers.
     src.claim(getNumStoredProtocols());
@@ -802,9 +804,10 @@ public:
     src.claim(getNumStoredProtocols());
   }
 
-  void destroy(IRGenFunction &IGF, Address addr, SILType T) const override {
+  void destroy(IRGenFunction &IGF, Address addr, SILType T,
+               Atomicity atomicity) const override {
     llvm::Value *value = asDerived().loadValue(IGF, addr);
-    asDerived().emitValueRelease(IGF, value);
+    asDerived().emitValueRelease(IGF, value, atomicity);
   }
 
   void packIntoEnumPayload(IRGenFunction &IGF,
@@ -918,11 +921,13 @@ public:
     return IGF.Builder.CreateBitCast(valueAddr, ValueType->getPointerTo());
   }
 
-  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value,
+                       Atomicity atomicity) const {
     IGF.emitUnownedRetain(value, Refcounting);
   }
 
-  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value,
+                        Atomicity atomicity) const {
     IGF.emitUnownedRelease(value, Refcounting);
   }
 
@@ -990,11 +995,13 @@ public:
       return IGM.getUnknownObjectTypeInfo();
   }
 
-  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value,
+                       Atomicity atomicity) const {
     // do nothing
   }
 
-  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value,
+                        Atomicity atomicity) const {
     // do nothing
   }
 
@@ -1044,13 +1051,15 @@ public:
       return IGM.getUnknownObjectTypeInfo();
   }
 
-  void strongRetain(IRGenFunction &IGF, Explosion &e) const override {
-    IGF.emitStrongRetain(e.claimNext(), Refcounting);
+  void strongRetain(IRGenFunction &IGF, Explosion &e,
+                    Atomicity atomicity) const override {
+    IGF.emitStrongRetain(e.claimNext(), Refcounting, atomicity);
     e.claim(getNumStoredProtocols());
   }
 
-  void strongRelease(IRGenFunction &IGF, Explosion &e) const override {
-    IGF.emitStrongRelease(e.claimNext(), Refcounting);
+  void strongRelease(IRGenFunction &IGF, Explosion &e,
+                     Atomicity atomicity) const override {
+    IGF.emitStrongRelease(e.claimNext(), Refcounting, atomicity);
     e.claim(getNumStoredProtocols());
   }
 
@@ -1109,12 +1118,14 @@ public:
     IGF.emitUnownedAssign(value, valueAddr, Refcounting);
   }
 
-  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value) const {
-    IGF.emitStrongRetain(value, Refcounting);
+  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value,
+                       Atomicity atomicity) const {
+    IGF.emitStrongRetain(value, Refcounting, atomicity);
   }
 
-  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value) const {
-    IGF.emitStrongRelease(value, Refcounting);
+  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value,
+                        Atomicity atomicity) const {
+    IGF.emitStrongRelease(value, Refcounting, atomicity);
   }
 
   void emitValueFixLifetime(IRGenFunction &IGF, llvm::Value *value) const {
@@ -1225,11 +1236,13 @@ public:
     return MetatypeTI;
   }
 
-  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRetain(IRGenFunction &IGF, llvm::Value *value,
+                       Atomicity atomicity) const {
     // do nothing
   }
 
-  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value) const {
+  void emitValueRelease(IRGenFunction &IGF, llvm::Value *value,
+                        Atomicity atomicity) const {
     // do nothing
   }
 

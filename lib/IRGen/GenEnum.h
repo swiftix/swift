@@ -343,8 +343,9 @@ public:
   /// \group Delegated TypeInfo operations
   
   virtual void getSchema(ExplosionSchema &schema) const = 0;
-  virtual void destroy(IRGenFunction &IGF, Address addr, SILType T) const = 0;
-  
+  virtual void destroy(IRGenFunction &IGF, Address addr, SILType T,
+                       Atomicity atomicity) const = 0;
+
   virtual void initializeFromParams(IRGenFunction &IGF, Explosion &params,
                                     Address dest, SILType T) const;
   
@@ -388,7 +389,7 @@ public:
   
   virtual unsigned getExplosionSize() const = 0;
   virtual void loadAsCopy(IRGenFunction &IGF, Address addr,
-                          Explosion &e) const = 0;
+                          Explosion &e, Atomicity atomicity) const = 0;
   virtual void loadAsTake(IRGenFunction &IGF, Address addr,
                           Explosion &e) const = 0;
   virtual void assign(IRGenFunction &IGF, Explosion &e,
@@ -398,8 +399,9 @@ public:
   virtual void reexplode(IRGenFunction &IGF, Explosion &src,
                          Explosion &dest) const = 0;
   virtual void copy(IRGenFunction &IGF, Explosion &src,
-                    Explosion &dest) const = 0;
-  virtual void consume(IRGenFunction &IGF, Explosion &src) const = 0;
+                    Explosion &dest, Atomicity atomicity) const = 0;
+  virtual void consume(IRGenFunction &IGF, Explosion &src,
+                       Atomicity atomicity) const = 0;
   virtual void fixLifetime(IRGenFunction &IGF, Explosion &src) const = 0;
   virtual void packIntoEnumPayload(IRGenFunction &IGF,
                                    EnumPayload &payload,
