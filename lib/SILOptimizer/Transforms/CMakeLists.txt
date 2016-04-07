@@ -14,6 +14,7 @@ set(TRANSFORMS_SOURCES
   Transforms/GenericSpecializer.cpp
   Transforms/MergeCondFail.cpp
   Transforms/PerformanceInliner.cpp
+  Transforms/NonAtomicRC.cpp
   Transforms/RedundantLoadElimination.cpp
   Transforms/RedundantOverflowCheckRemoval.cpp
   Transforms/ReleaseDevirtualizer.cpp

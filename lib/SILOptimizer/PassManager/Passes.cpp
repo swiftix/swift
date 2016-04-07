@@ -301,6 +301,10 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
   // Do the first stack promotion on high-level SIL.
   PM.addStackPromotion();
 
+  // Replace atomic RC instructions by non-atomic RC
+  // whenever possible.
+  PM.addNonAtomicRC();
+
   PM.runOneIteration();
   PM.resetAndRemoveTransformations();
 
@@ -338,6 +342,12 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Do the second stack promotion on low-level SIL.
   PM.addStackPromotion();
+
+  // Replace atomic RC instructions by non-atomic RC
+  // whenever possible.
+  PM.addNonAtomicRC();
+
+
 
   // Speculate virtual call targets.
   PM.addSpeculativeDevirtualization();
