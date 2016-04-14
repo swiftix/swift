@@ -450,12 +450,33 @@ SILFunction *swift::getTargetClassMethod(SILModule &M,
           isa<SuperMethodInst>(MI)) &&
          "Only class_method and witness_method instructions are supported");
 
-  SILDeclRef Member = MI->getMember();
-  if (ClassOrMetatypeType.is<MetatypeType>())
-    ClassOrMetatypeType = ClassOrMetatypeType.getMetatypeInstanceType(M);
+  if (isa<ClassMethodInst>(MI)) {
+    SILDeclRef Member = MI->getMember();
+    if (ClassOrMetatypeType.is<MetatypeType>())
+      ClassOrMetatypeType = ClassOrMetatypeType.getMetatypeInstanceType(M);
 
-  auto *CD = ClassOrMetatypeType.getClassOrBoundGenericClass();
-  return M.lookUpFunctionInVTable(CD, Member);
+    auto *CD = ClassOrMetatypeType.getClassOrBoundGenericClass();
+    return M.lookUpFunctionInVTable(CD, Member);
+  }
+
+  if (WitnessMethodInst *WMI = dyn_cast<WitnessMethodInst>(MI)) {
+    auto ND = ClassOrMetatypeType.getNominalOrBoundGenericNominal();
+    if (ND) {
+      ArrayRef<Substitution> Subs;
+      SILWitnessTable *WT;
+      auto Conformances = ND->getAllConformances();
+      SILDeclRef Member = WMI->getMember();
+      for (auto &C : Conformances) {
+        if (C->getProtocol() == WMI->getLookupProtocol()) {
+          SILFunction *F = nullptr;
+          std::tie(F, WT, Subs) =
+              M.lookUpFunctionInWitnessTable(ProtocolConformanceRef(C), Member);
+          return F;
+        }
+      }
+    }
+  }
+  return nullptr;
 }
 
 /// \brief Check if it is possible to devirtualize an Apply instruction
@@ -476,10 +497,12 @@ bool swift::canDevirtualizeClassMethod(FullApplySite AI,
   // either be a metatype or an alloc_ref.
   DEBUG(llvm::dbgs() << "        Origin Type: " << ClassOrMetatypeType);
 
-  auto *MI = cast<MethodInst>(AI.getCallee());
+  SILFunction *F = nullptr;
+  //auto *MI = cast<MethodInst>(AI.getCallee());
 
   // Find the implementation of the member which should be invoked.
-  auto *F = getTargetClassMethod(Mod, ClassOrMetatypeType, MI);
+  F = getTargetClassMethod(Mod, ClassOrMetatypeType,
+                           dyn_cast<MethodInst>(AI.getCallee()));
 
   // If we do not find any such function, we have no function to devirtualize
   // to... so bail.
@@ -560,13 +583,19 @@ DevirtualizationResult swift::devirtualizeClassMethod(FullApplySite AI,
 
   SILModule &Mod = AI.getModule();
   auto *MI = cast<MethodInst>(AI.getCallee());
-  auto ClassOrMetatypeType = ClassOrMetatype->getType();
-  auto *F = getTargetClassMethod(Mod, ClassOrMetatypeType, MI);
+  SILType ClassOrMetatypeType = ClassOrMetatype->getType();
+  SILType LookupType;
+  if (auto *MI = dyn_cast<MetatypeInst>(ClassOrMetatype)) {
+    LookupType = MI->getType().getMetatypeInstanceType(AI.getModule());
+  } else {
+    LookupType = ClassOrMetatypeType;
+  }
+  auto *F = getTargetClassMethod(Mod, LookupType, MI);
 
   CanSILFunctionType GenCalleeType = F->getLoweredFunctionType();
 
   auto Subs = getSubstitutionsForCallee(Mod, GenCalleeType,
-                                        ClassOrMetatypeType, AI);
+                                        LookupType, AI);
   CanSILFunctionType SubstCalleeType = GenCalleeType;
   if (GenCalleeType->isPolymorphic())
     SubstCalleeType = GenCalleeType->substGenericArgs(Mod, Mod.getSwiftModule(), Subs);
@@ -581,11 +610,12 @@ DevirtualizationResult swift::devirtualizeClassMethod(FullApplySite AI,
 
   auto IndirectResultArgs = AI.getIndirectResults();
   auto IndirectResultInfos = SubstCalleeType->getIndirectResults();
-  for (unsigned i : indices(IndirectResultArgs))
+  for (unsigned i : indices(IndirectResultArgs)) {
     NewArgs.push_back(castValueToABICompatibleType(&B, AI.getLoc(),
                               IndirectResultArgs[i],
                               IndirectResultArgs[i]->getType(),
                               IndirectResultInfos[i].getSILType()).getValue());
+  }
 
   auto Args = AI.getArgumentsWithoutIndirectResults();
   auto ParamTypes = SubstCalleeType->getParameterSILTypes();
@@ -601,7 +631,6 @@ DevirtualizationResult swift::devirtualizeClassMethod(FullApplySite AI,
                                                  ClassOrMetatype,
                                                  ClassOrMetatypeType,
                                                  SelfParamTy).getValue());
-
   SILType ResultTy = SubstCalleeType->getSILResult();
 
   SILType SubstCalleeSILType =

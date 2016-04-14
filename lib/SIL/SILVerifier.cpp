@@ -2170,13 +2170,29 @@ public:
     }
 
     if (isExact) {
-      require(fromCanTy.getClassOrBoundGenericClass(),
-              "downcast operand must be a class type");
-      require(toCanTy.getClassOrBoundGenericClass(),
-              "downcast must convert to a class type");
-      require(SILType::getPrimitiveObjectType(fromCanTy).
-              isBindableToSuperclassOf(SILType::getPrimitiveObjectType(toCanTy)),
-              "downcast must convert to a subclass");
+      if (fromCanTy.getClassOrBoundGenericClass()) {
+        // It is a cast of a class.
+        require(SILType::getPrimitiveObjectType(fromCanTy).
+                isBindableToSuperclassOf(
+                  SILType::getPrimitiveObjectType(toCanTy)),
+                "downcast must convert to a subclass");
+
+      } else {
+        require(fromCanTy->isAnyExistentialType() ||
+                fromCanTy->is<AnyMetatypeType>() ||
+                fromCanTy->getNominalOrBoundGenericNominal() ||
+                (isa<ArchetypeType>(fromCanTy)),
+                "downcast operand must be a class type or opened existential");
+        // It is a cast of an opened class existential.
+        //require(fromCanTy.isAnyClassReferenceType() &&
+        //        isa<ArchetypeType>(fromCanTy),
+        //        "downcast operand must be a class type or opened existential");
+      }
+      require(toCanTy.getNominalOrBoundGenericNominal(),
+              "downcast must convert to a nominal type");
+
+      //require(toCanTy.getClassOrBoundGenericClass(),
+      //        "downcast must convert to a class type");
     }
   }
 
