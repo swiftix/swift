@@ -1121,7 +1121,8 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
 
   // We don't support this yet.
   if (AI.hasSubstitutions()) {
-    return nullptr;
+    // Try inlining of generics.
+    //return nullptr;
   }
 
   // We don't support inlining a function that binds dynamic self because we
@@ -1471,9 +1472,20 @@ bool SILPerformanceInliner::inlineCallsIntoFunction(SILFunction *Caller) {
     // Notice that we will skip all of the newly inlined ApplyInsts. That's
     // okay because we will visit them in our next invocation of the inliner.
     TypeSubstitutionMap ContextSubs;
+    std::vector<Substitution> ApplySubs(AI.getSubstitutions());
+
+    //if (PAI) {
+    //  auto PAISubs = PAI->getSubstitutions();
+    //  ApplySubs.insert(ApplySubs.end(), PAISubs.begin(), PAISubs.end());
+    //}
+
+    ContextSubs.copyFrom(
+        Callee->getContextGenericParams()->getSubstitutionMap(
+            ApplySubs));
+
     SILInliner Inliner(*Caller, *Callee,
-                       SILInliner::InlineKind::PerformanceInline, ContextSubs,
-                       AI.getSubstitutions());
+                       SILInliner::InlineKind::PerformanceInline,
+                       ContextSubs, ApplySubs);
 
     auto Success = Inliner.inlineFunction(AI, Args);
     (void) Success;
