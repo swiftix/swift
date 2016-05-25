@@ -26,6 +26,7 @@
 #include "swift/SILOptimizer/Utils/Local.h"
 #include "swift/SILOptimizer/Utils/ConstantFolding.h"
 #include "swift/SILOptimizer/Utils/SILInliner.h"
+#include "swift/Strings.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -1122,7 +1123,26 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
   // We don't support this yet.
   if (AI.hasSubstitutions()) {
     // Try inlining of generics.
-    //return nullptr;
+    // return nullptr;
+    // Do not inline functions with @_semantics
+    // inside the stdlib.
+    // Or do not inline generic functions in stdlib at all?
+#if 0
+    if (Callee->hasSemanticsAttrs() &&
+        AI.getModule().getSwiftModule()->getName().str() == STDLIB_NAME)
+      return nullptr;
+#endif
+    // Inline generics only very late, when everything else has been inlined
+    // and specialized already.
+    if (WhatToInline != InlineSelection::Everything)
+      return nullptr;
+    // No generics inlining when producing pre-specializations, because
+    // otherwise specialized functions are not produced at all.
+    if (//Callee->hasSemanticsAttrs() &&
+        AI.getModule().getSwiftModule()->getName().str() == SWIFT_ONONE_SUPPORT
+        || AI.getModule().getSwiftModule()->getName().str() == STDLIB_NAME
+        )
+      return nullptr;
   }
 
   // We don't support inlining a function that binds dynamic self because we

@@ -255,8 +255,27 @@ void AddSSAPasses(SILPassManager &PM, OptimizationLevelKind OpLevel) {
   PM.addReleaseHoisting();
   PM.addARCSequenceOpts();
   PM.addRemovePins();
-}
 
+#if 0
+  // Running inliner after another inliner and SILCombine creates
+  // new opportunities for removing partial_applies, at least
+  // if the inlining of generics is enabled.
+  // Probably, the inliner should be improved to support
+  // inlining of partial applies without SILCombine.
+  switch (OpLevel) {
+    case OptimizationLevelKind::HighLevel:
+      // Does not inline functions with defined semantics.
+      PM.addEarlyInliner();
+      break;
+#if 0
+   case OptimizationLevelKind::LowLevel:
+      // Inlines everything
+      PM.addLateInliner();
+      break;
+#endif
+  }
+#endif
+}
 
 void swift::runSILOptimizationPasses(SILModule &Module,
                                      ExecutableAction &SerializeAction) {
