@@ -818,6 +818,35 @@ static bool performCompile(CompilerInstance &Instance,
     SM->verify();
   }
 
+  ExecuteOnceAction SerializeSILModuleAction( [&]() {
+    if (!opts.ModuleOutputPath.empty() || !opts.ModuleDocOutputPath.empty()) {
+      auto DC = PrimarySourceFile ? ModuleOrSourceFile(PrimarySourceFile)
+                                  : Instance.getMainModule();
+      if (!opts.ModuleOutputPath.empty()) {
+        SerializationOptions serializationOpts;
+        serializationOpts.OutputPath = opts.ModuleOutputPath.c_str();
+        serializationOpts.DocOutputPath = opts.ModuleDocOutputPath.c_str();
+        serializationOpts.GroupInfoPath = opts.GroupInfoPath.c_str();
+        serializationOpts.SerializeAllSIL = opts.SILSerializeAll;
+        if (opts.SerializeBridgingHeader)
+          serializationOpts.ImportedHeader = opts.ImplicitObjCHeaderPath;
+        serializationOpts.ModuleLinkName = opts.ModuleLinkName;
+        serializationOpts.ExtraClangOptions =
+            Invocation.getClangImporterOptions().ExtraArgs;
+        if (!IRGenOpts.ForceLoadSymbolName.empty())
+          serializationOpts.AutolinkForceLoad = true;
+
+        // Options contain information about the developer's computer,
+        // so only serialize them if the module isn't going to be shipped to
+        // the public.
+        serializationOpts.SerializeOptionsForDebugging =
+            !moduleIsPublic || opts.AlwaysSerializeDebuggingOptions;
+
+        serialize(DC, serializationOpts, SM.get());
+      }
+    }
+  });
+
   // Perform SIL optimization passes if optimizations haven't been disabled.
   // These may change across compiler versions.
   {
@@ -829,7 +858,7 @@ static bool performCompile(CompilerInstance &Instance,
       if (!CustomPipelinePath.empty()) {
         runSILOptimizationPassesWithFileSpecification(*SM, CustomPipelinePath);
       } else {
-        runSILOptimizationPasses(*SM);
+        runSILOptimizationPasses(*SM, SerializeSILModuleAction);
       }
     } else {
       runSILPassesForOnone(*SM);
@@ -878,31 +907,7 @@ static bool performCompile(CompilerInstance &Instance,
   }
 
   if (!opts.ModuleOutputPath.empty() || !opts.ModuleDocOutputPath.empty()) {
-    auto DC = PrimarySourceFile ? ModuleOrSourceFile(PrimarySourceFile) :
-                                  Instance.getMainModule();
-    if (!opts.ModuleOutputPath.empty()) {
-      SerializationOptions serializationOpts;
-      serializationOpts.OutputPath = opts.ModuleOutputPath.c_str();
-      serializationOpts.DocOutputPath = opts.ModuleDocOutputPath.c_str();
-      serializationOpts.GroupInfoPath = opts.GroupInfoPath.c_str();
-      serializationOpts.SerializeAllSIL = opts.SILSerializeAll;
-      if (opts.SerializeBridgingHeader)
-        serializationOpts.ImportedHeader = opts.ImplicitObjCHeaderPath;
-      serializationOpts.ModuleLinkName = opts.ModuleLinkName;
-      serializationOpts.ExtraClangOptions =
-          Invocation.getClangImporterOptions().ExtraArgs;
-      if (!IRGenOpts.ForceLoadSymbolName.empty())
-        serializationOpts.AutolinkForceLoad = true;
-
-      // Options contain information about the developer's computer,
-      // so only serialize them if the module isn't going to be shipped to
-      // the public.
-      serializationOpts.SerializeOptionsForDebugging =
-          !moduleIsPublic || opts.AlwaysSerializeDebuggingOptions;
-
-      serialize(DC, serializationOpts, SM.get());
-    }
-
+    SerializeSILModuleAction.run();
     if (Action == FrontendOptions::EmitModuleOnly)
       return false;
   }

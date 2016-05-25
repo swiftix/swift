@@ -23,13 +23,46 @@ namespace swift {
   class SILOptions;
   class SILTransform;
 
+
+  //typedef std::function<void()> ActionCallback;
+  typedef llvm::function_ref<void()> ActionCallback;
+
+  // An executabe action.
+  class ExecutableAction {
+    llvm::function_ref<void()> Action;
+
+  public:
+    ExecutableAction(ActionCallback Action = [] {}) : Action(Action) {}
+    virtual ~ExecutableAction() {}
+    virtual void run() { Action(); }
+  };
+
+  class ExecuteOnceAction : public ExecutableAction {
+    bool Executed;
+
+  public:
+    ExecuteOnceAction(ActionCallback action = [] {})
+        : ExecutableAction(action), Executed(false) {}
+    virtual void run() override {
+      if (Executed)
+        return;
+      Executed = true;
+      ExecutableAction::run();
+    }
+    bool isExecuted() const { return Executed; }
+    virtual ~ExecuteOnceAction() {}
+  };
+
   /// \brief Run all the SIL diagnostic passes on \p M.
   ///
   /// \returns true if the diagnostic passes produced an error
   bool runSILDiagnosticPasses(SILModule &M);
 
   /// \brief Run all the SIL performance optimization passes on \p M.
-  void runSILOptimizationPasses(SILModule &M);
+  ///  SerializableAction may be called in the middle of the
+  ///  optimization pipeline to serialize the SIL module \M.
+  void runSILOptimizationPasses(SILModule &M,
+                                ExecutableAction &SerializeAction);
 
   /// \brief Run all SIL passes for -Onone on module \p M.
   void runSILPassesForOnone(SILModule &M);

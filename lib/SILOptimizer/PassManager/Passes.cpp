@@ -258,7 +258,8 @@ void AddSSAPasses(SILPassManager &PM, OptimizationLevelKind OpLevel) {
 }
 
 
-void swift::runSILOptimizationPasses(SILModule &Module) {
+void swift::runSILOptimizationPasses(SILModule &Module,
+                                     ExecutableAction &SerializeAction) {
   // Verify the module, if required.
   if (Module.getOptions().VerifyAll)
     Module.verify();
@@ -303,6 +304,10 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   PM.runOneIteration();
   PM.resetAndRemoveTransformations();
+
+  // Serialize SIL module after high-level optimization passes
+  // to preserve the functons annotated with semantics.
+  SerializeAction.run();
 
   // Run an iteration of the mid-level SSA passes.
   PM.setStageName("MidLevel");

@@ -302,10 +302,12 @@ int main(int argc, char **argv) {
   if (VerifyMode)
     enableDiagnosticVerifier(CI.getSourceMgr());
 
+  ExecutableAction DoNothingAction;
+
   if (OptimizationGroup == OptGroup::Diagnostics) {
     runSILDiagnosticPasses(*CI.getSILModule());
   } else if (OptimizationGroup == OptGroup::Performance) {
-    runSILOptimizationPasses(*CI.getSILModule());
+    runSILOptimizationPasses(*CI.getSILModule(), DoNothingAction);
   } else {
     runCommandLineSelectedPasses(CI.getSILModule());
   }
