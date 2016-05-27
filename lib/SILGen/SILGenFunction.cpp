@@ -35,10 +35,12 @@ using namespace Lowering;
 SILGenFunction::SILGenFunction(SILGenModule &SGM, SILFunction &F)
   : SGM(SGM), F(F),
     B(*this, createBasicBlock()),
+    OpenedArchetypes(F),
     CurrentSILLoc(F.getLocation()),
     Cleanups(*this)
 {
   B.setCurrentDebugScope(F.getDebugScope());
+  B.setOpenedArchetypes(OpenedArchetypes);
 }
 
 /// SILGenFunction destructor - called after the entire function's AST has been

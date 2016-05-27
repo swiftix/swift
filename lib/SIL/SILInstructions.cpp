@@ -31,6 +31,71 @@
 using namespace swift;
 using namespace Lowering;
 
+class UndefAllocator {
+  ASTContext &Ctx;
+public:
+  UndefAllocator(ASTContext &Ctx): Ctx(Ctx) {}
+  void *allocate(unsigned Size, unsigned Align) const {
+    return Ctx.Allocate(Size, Align);
+  }
+};
+
+// Produce an Undef value of the same type as V.
+SILValue swift::getUndefValue(SILType V) {
+  UndefAllocator Allocator(V.getSwiftRValueType()->getASTContext());
+  return SILUndef::getSentinelValue(V, &Allocator);
+}
+
+// Produce an Undef value, which is not a typedef
+SILValue swift::getEmptyTypeDef(SILType V) {
+  UndefAllocator Allocator(V.getSwiftRValueType()->getASTContext());
+  return SILUndef::getSentinelValue(
+      SILType::getBuiltinWordType(V.getSwiftRValueType()->getASTContext()),
+      &Allocator);
+}
+
+SILValue getUndefValue(SILType Ty, SILModule &M) {
+  return SILUndef::get(Ty, M);
+}
+
+// Collect opened archetypes from the list of substitutions.
+static void collectOpenedArchetypes(ArrayRef<Substitution> subs,
+                                    SmallVectorImpl<CanType> &openedArchetypes) {
+  openedArchetypes.clear();
+  for (auto sub : subs) {
+    auto Ty = sub.getReplacement().getCanonicalTypeOrNull();
+    if (!Ty->hasOpenedExistential())
+      continue;
+    // Process all opened archetypes that are found in the
+    // Replacement. (Can there be more than one?)
+    Ty.visit([&](Type t) {
+      if (t->isOpenedExistential()) {
+        // Add this opened archetype if it was not seen yet.
+        if (std::find(openedArchetypes.begin(), openedArchetypes.end(),
+                      t.getCanonicalTypeOrNull()) == openedArchetypes.end())
+          openedArchetypes.push_back(t.getCanonicalTypeOrNull());
+      }
+    });
+  }
+}
+
+// Collects all opened archetypes from a substitutions list
+// and form a corresponding list of typedefs.
+// We need to know the number of opened archetypes to estimate
+// the number of typedef parameters for the apply instruction
+// being formed, because we need to reserve enough memory
+// for these typedef parameters.
+static void collectTypeDefs(ArrayRef<Substitution> subs,
+                            SmallVectorImpl<SILValue> &typedefs,
+                            SILModule &Module) {
+  SmallVector<CanType, 32> openedArchetypes;
+  collectOpenedArchetypes(subs, openedArchetypes);
+  for (auto archetype : openedArchetypes) {
+    auto SILArchetypeTy = SILType::getPrimitiveObjectType(archetype);
+    typedefs.push_back(getUndefValue(SILArchetypeTy, Module));
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // SILInstruction Subclasses
 //===----------------------------------------------------------------------===//
@@ -200,10 +265,11 @@ InitBlockStorageHeaderInst::create(SILFunction &F,
 
 ApplyInst::ApplyInst(SILDebugLocation Loc, SILValue Callee,
                      SILType SubstCalleeTy, SILType Result,
-                     ArrayRef<Substitution> Subs, ArrayRef<SILValue> Args,
+                     ArrayRef<Substitution> Subs,
+                     ArrayRef<SILValue> Args, ArrayRef<SILValue> TypeDefs,
                      bool isNonThrowing)
     : ApplyInstBase(ValueKind::ApplyInst, Loc, Callee, SubstCalleeTy, Subs,
-                    Args, Result) {
+                    Args, TypeDefs, Result) {
   setNonThrowing(isNonThrowing);
 }
 
@@ -212,9 +278,11 @@ ApplyInst *ApplyInst::create(SILDebugLocation Loc, SILValue Callee,
                              ArrayRef<Substitution> Subs,
                              ArrayRef<SILValue> Args, bool isNonThrowing,
                              SILFunction &F) {
-  void *Buffer = allocate(F, Subs, Args);
+  SmallVector<SILValue, 32> TypeDefs;
+  collectTypeDefs(Subs, TypeDefs, F.getModule());
+  void *Buffer = allocate(F, Subs, TypeDefs, Args);
   return ::new(Buffer) ApplyInst(Loc, Callee, SubstCalleeTy,
-                                 Result, Subs, Args, isNonThrowing);
+                                 Result, Subs, Args, TypeDefs, isNonThrowing);
 }
 
 bool swift::doesApplyCalleeHaveSemantics(SILValue callee, StringRef semantics) {
@@ -231,22 +299,26 @@ void *swift::allocateApplyInst(SILFunction &F, size_t size, size_t alignment) {
 PartialApplyInst::PartialApplyInst(SILDebugLocation Loc, SILValue Callee,
                                    SILType SubstCalleeTy,
                                    ArrayRef<Substitution> Subs,
-                                   ArrayRef<SILValue> Args, SILType ClosureType)
+                                   ArrayRef<SILValue> Args,
+                                   ArrayRef<SILValue> TypeDefs,
+                                   SILType ClosureType)
     // FIXME: the callee should have a lowered SIL function type, and
     // PartialApplyInst
     // should derive the type of its result by partially applying the callee's
     // type.
     : ApplyInstBase(ValueKind::PartialApplyInst, Loc, Callee, SubstCalleeTy,
-                    Subs, Args, ClosureType) {}
+                    Subs, Args, TypeDefs, ClosureType) {}
 
 PartialApplyInst *
 PartialApplyInst::create(SILDebugLocation Loc, SILValue Callee,
                          SILType SubstCalleeTy, ArrayRef<Substitution> Subs,
                          ArrayRef<SILValue> Args, SILType ClosureType,
                          SILFunction &F) {
-  void *Buffer = allocate(F, Subs, Args);
+  SmallVector<SILValue, 32> TypeDefs;
+  collectTypeDefs(Subs, TypeDefs, F.getModule());
+  void *Buffer = allocate(F, Subs, TypeDefs, Args);
   return ::new(Buffer) PartialApplyInst(Loc, Callee, SubstCalleeTy,
-                                        Subs, Args, ClosureType);
+                                        Subs, Args, TypeDefs, ClosureType);
 }
 
 TryApplyInstBase::TryApplyInstBase(ValueKind valueKind, SILDebugLocation Loc,
@@ -256,10 +328,11 @@ TryApplyInstBase::TryApplyInstBase(ValueKind valueKind, SILDebugLocation Loc,
 
 TryApplyInst::TryApplyInst(SILDebugLocation Loc, SILValue callee,
                            SILType substCalleeTy, ArrayRef<Substitution> subs,
-                           ArrayRef<SILValue> args, SILBasicBlock *normalBB,
-                           SILBasicBlock *errorBB)
+                           ArrayRef<SILValue> args, ArrayRef<SILValue> typedefs,
+                           SILBasicBlock *normalBB, SILBasicBlock *errorBB)
     : ApplyInstBase(ValueKind::TryApplyInst, Loc, callee, substCalleeTy, subs,
-                    args, normalBB, errorBB) {}
+                    args, typedefs, normalBB, errorBB) {}
+
 
 TryApplyInst *TryApplyInst::create(SILDebugLocation Loc, SILValue callee,
                                    SILType substCalleeTy,
@@ -267,9 +340,11 @@ TryApplyInst *TryApplyInst::create(SILDebugLocation Loc, SILValue callee,
                                    ArrayRef<SILValue> args,
                                    SILBasicBlock *normalBB,
                                    SILBasicBlock *errorBB, SILFunction &F) {
-  void *buffer = allocate(F, subs, args);
+  SmallVector<SILValue, 32> typedefs;
+  collectTypeDefs(subs, typedefs, F.getModule());
+  void *buffer = allocate(F, subs, typedefs, args);
   return ::new (buffer)
-      TryApplyInst(Loc, callee, substCalleeTy, subs, args, normalBB, errorBB);
+      TryApplyInst(Loc, callee, substCalleeTy, subs, args, typedefs, normalBB, errorBB);
 }
 
 FunctionRefInst::FunctionRefInst(SILDebugLocation Loc, SILFunction *F)

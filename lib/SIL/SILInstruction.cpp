@@ -662,6 +662,81 @@ namespace {
     }
 #include "swift/SIL/SILNodes.def"
   };
+
+#define IMPLEMENTS_METHOD(DerivedClass, BaseClass, MemberName, ExpectedType)  \
+  (!::std::is_same<BaseClass, GET_IMPLEMENTING_CLASS(DerivedClass, MemberName,\
+                                                     ExpectedType)>::value)
+
+  class TypeDefOperandsAccessor : public SILVisitor<TypeDefOperandsAccessor,
+                                                ArrayRef<Operand> > {
+  public:
+#define VALUE(CLASS, PARENT) \
+    ArrayRef<Operand> visit##CLASS(const CLASS *I) {                    \
+      llvm_unreachable("accessing non-instruction " #CLASS);            \
+    }
+#define INST(CLASS, PARENT, MEMBEHAVIOR, RELEASINGBEHAVIOR)                    \
+    ArrayRef<Operand> visit##CLASS(const CLASS *I) {                           \
+      if (!IMPLEMENTS_METHOD(CLASS, SILInstruction, getTypeDefOperands,        \
+                             ArrayRef<Operand>() const))                       \
+        return {};                                                             \
+      return I->getTypeDefOperands();                                          \
+    }
+#include "swift/SIL/SILNodes.def"
+  };
+
+  class TypeDefOperandsMutableAccessor
+    : public SILVisitor<TypeDefOperandsMutableAccessor,
+                        MutableArrayRef<Operand> > {
+  public:
+#define VALUE(CLASS, PARENT) \
+    MutableArrayRef<Operand> visit##CLASS(const CLASS *I) {             \
+      llvm_unreachable("accessing non-instruction " #CLASS);            \
+    }
+#define INST(CLASS, PARENT, MEMBEHAVIOR, RELEASINGBEHAVIOR)                    \
+    MutableArrayRef<Operand> visit##CLASS(CLASS *I) {                          \
+      if (!IMPLEMENTS_METHOD(CLASS, SILInstruction, getTypeDefOperands,        \
+                             MutableArrayRef<Operand>()))                      \
+        return {};                                                             \
+      return I->getTypeDefOperands();                                          \
+    }
+#include "swift/SIL/SILNodes.def"
+  };
+
+  class TypeDefOperandsBufAccessor
+    : public SILVisitor<TypeDefOperandsBufAccessor,
+                        ArrayRef<Operand> > {
+  public:
+#define VALUE(CLASS, PARENT) \
+    ArrayRef<Operand> visit##CLASS(const CLASS *I) {             \
+      llvm_unreachable("accessing non-instruction " #CLASS);            \
+    }
+#define INST(CLASS, PARENT, MEMBEHAVIOR, RELEASINGBEHAVIOR)                    \
+    ArrayRef<Operand> visit##CLASS(CLASS *I) {                                 \
+      if (!IMPLEMENTS_METHOD(CLASS, SILInstruction, getTypeDefOperandsBuf,     \
+                             ArrayRef<Operand>() const))                       \
+        return {};                                                             \
+      return I->getTypeDefOperandsBuf();                                       \
+    }
+#include "swift/SIL/SILNodes.def"
+  };
+
+  class TypeDefOperandsBufMutableAccessor
+    : public SILVisitor<TypeDefOperandsBufMutableAccessor,
+                        MutableArrayRef<Operand> > {
+  public:
+#define VALUE(CLASS, PARENT) \
+    MutableArrayRef<Operand> visit##CLASS(const CLASS *I) {             \
+      llvm_unreachable("accessing non-instruction " #CLASS);            \
+    }
+#define INST(CLASS, PARENT, MEMBEHAVIOR, RELEASINGBEHAVIOR)                    \
+    MutableArrayRef<Operand> visit##CLASS(CLASS *I) {                          \
+      if (!IMPLEMENTS_METHOD(CLASS, SILInstruction, getTypeDefOperandsBuf,     \
+                             MutableArrayRef<Operand>()))                      \
+        return {};                                                             \
+      return I->getTypeDefOperandsBuf();                                       \
+    }
+#include "swift/SIL/SILNodes.def"
+  };
 } // end anonymous namespace
 
 ArrayRef<Operand> SILInstruction::getAllOperands() const {
@@ -671,6 +746,23 @@ ArrayRef<Operand> SILInstruction::getAllOperands() const {
 MutableArrayRef<Operand> SILInstruction::getAllOperands() {
   return AllOperandsMutableAccessor().visit(this);
 }
+
+ArrayRef<Operand> SILInstruction::getTypeDefOperands() const {
+  return TypeDefOperandsAccessor().visit(const_cast<SILInstruction*>(this));
+}
+
+MutableArrayRef<Operand> SILInstruction::getTypeDefOperands() {
+  return TypeDefOperandsMutableAccessor().visit(this);
+}
+
+MutableArrayRef<Operand> SILInstruction::getTypeDefOperandsBuf() {
+  return TypeDefOperandsBufMutableAccessor().visit(this);
+}
+
+ArrayRef<Operand> SILInstruction::getTypeDefOperandsBuf() const {
+  return TypeDefOperandsBufAccessor().visit(const_cast<SILInstruction*>(this));
+}
+
 
 /// getOperandNumber - Return which operand this is in the operand list of the
 /// using instruction.

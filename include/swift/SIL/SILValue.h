@@ -422,6 +422,52 @@ public:
 };
 
 /// An operator list with a fixed number of known operands
+/// (possibly zero) and a fixed number of optional extra
+/// operands (also possibly zero).  The number of optional operands
+/// is permanently set at instantiation time.
+///
+/// 'N' is the number of known operands.
+/// 'M' is the number of optional operands.
+///
+/// This class assumes that a number of bytes of extra storage have
+/// been allocated immediately after it.  This means that this class
+/// must always be the final data member in a class.
+
+template <unsigned N, unsigned M> class FixedAndOptionalOperandList {
+  Operand Buffer[N+M];
+
+  FixedAndOptionalOperandList(const FixedAndOptionalOperandList &) = delete;
+  FixedAndOptionalOperandList &
+  operator=(const FixedAndOptionalOperandList &) = delete;
+
+public:
+  template <class... T> FixedAndOptionalOperandList(SILInstruction *user,
+                                                    T&&...args)
+      : Buffer{ { user, std::forward<T>(args) }... } {
+    static_assert(sizeof...(args) >= N && sizeof...(args) <= N + M,
+                  "wrong number of initializers");
+  }
+
+  /// Returns the full list of operands.
+  MutableArrayRef<Operand> asArray() {
+    return MutableArrayRef<Operand>(Buffer, N);
+  }
+  ArrayRef<Operand> asArray() const {
+    return ArrayRef<Operand>(Buffer, N);
+  }
+
+  /// Returns the full list of operand values.
+  OperandValueArrayRef asValueArray() const {
+    return OperandValueArrayRef(asArray());
+  }
+
+  /// Indexes into the full list of operands.
+  Operand &operator[](unsigned i) { return asArray()[i]; }
+  const Operand &operator[](unsigned i) const { return asArray()[i]; }
+};
+
+
+/// An operator list with a fixed number of known operands
 /// (possibly zero) and a dynamically-determined set of extra
 /// operands (also possibly zero).  The number of dynamic operands
 /// is permanently set at initialization time.
@@ -463,6 +509,31 @@ public:
       new (dynamicSlot++) Operand(user, value);
     }
   }
+
+  /// Initialize this operand list.
+  ///
+  /// The dynamic operands are actually out of order: logically they
+  /// will placed after the fixed operands, not before them.  But
+  /// the variadic arguments have to come last.
+  template <class... T>
+  TailAllocatedOperandList(SILInstruction *user,
+                           ArrayRef<SILValue> dynamicArgs,
+                           ArrayRef<SILValue> additionalDynamicArgs,
+                           T&&... fixedArgs)
+      : NumExtra(dynamicArgs.size() + additionalDynamicArgs.size()),
+        Buffer{ { user, std::forward<T>(fixedArgs) }... } {
+    static_assert(sizeof...(fixedArgs) == N, "wrong number of initializers");
+
+    Operand *dynamicSlot = Buffer + N;
+    for (auto value : dynamicArgs) {
+      new (dynamicSlot++) Operand(user, value);
+    }
+
+    for (auto value : additionalDynamicArgs) {
+      new (dynamicSlot++) Operand(user, value);
+    }
+ }
+
 
   ~TailAllocatedOperandList() {
     for (auto &op : getDynamicAsArray()) {

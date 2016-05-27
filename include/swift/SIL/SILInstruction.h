@@ -52,6 +52,9 @@ class ValueDecl;
 class VarDecl;
 class FunctionRefInst;
 
+SILValue getUndefValue(SILType Ty);
+SILValue getEmptyTypeDef(SILType Ty);
+
 template <typename ImplClass> class SILClonerWithScopes;
 
 /// This is the root class for all instructions that can be used as the contents
@@ -168,11 +171,40 @@ public:
   /// Return the array of operands for this instruction.
   ArrayRef<Operand> getAllOperands() const;
 
+  /// Return the array of typedef operands for this instruction.
+  ArrayRef<Operand> getTypeDefOperands() const;
+
+  /// Return the buffer for typedef operands of this instruction.
+  ArrayRef<Operand> getTypeDefOperandsBuf() const;
+
   /// Return the array of mutable operands for this instruction.
   MutableArrayRef<Operand> getAllOperands();
 
+  /// Return the array of typedef operands for this instruction.
+  MutableArrayRef<Operand> getTypeDefOperands();
+
+  /// Return the buffer for typedef operands of this instruction.
+  MutableArrayRef<Operand> getTypeDefOperandsBuf();
+
   unsigned getNumOperands() const { return getAllOperands().size(); }
-  SILValue getOperand(unsigned Num) const { return getAllOperands()[Num].get();}
+
+  unsigned getNumTypeDefOperands() const {
+    return getTypeDefOperandsBuf().size();
+  }
+
+  bool isTypeDefOperand(unsigned i) const {
+    return i >= getNumOperands() - getNumTypeDefOperands();
+  }
+
+  bool isTypeDefOperand(Operand &O) const {
+    assert(O.getUser() == this &&
+           "Operand does not belong to a SILInstruction");
+    return isTypeDefOperand(O.getOperandNumber());
+  }
+
+  SILValue getOperand(unsigned Num) const {
+    return getAllOperands()[Num].get();
+  }
   void setOperand(unsigned Num, SILValue V) { getAllOperands()[Num].set(V); }
   void swapOperands(unsigned Num1, unsigned Num2) {
     getAllOperands()[Num1].swap(getAllOperands()[Num2]);
@@ -306,7 +338,8 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
 /// and has no result or a single value result.
 template<ValueKind KIND, typename BASE = SILInstruction, bool HAS_RESULT = true>
 class UnaryInstructionBase : public BASE {
-  FixedOperandList<1> Operands;
+  // Space for 2 operands: the actual operand and the typedef operand.
+  FixedOperandList<2> Operands;
 
   /// Check HAS_RESULT in enable_if predicates by injecting a dependency on
   /// a template argument.
@@ -317,13 +350,15 @@ class UnaryInstructionBase : public BASE {
 
 public:
   UnaryInstructionBase(SILDebugLocation DebugLoc, SILValue Operand)
-      : BASE(KIND, DebugLoc), Operands(this, Operand) {}
+      : BASE(KIND, DebugLoc),
+        Operands(this, Operand, getEmptyTypeDef(Operand->getType())) {}
 
   template <typename X = void>
   UnaryInstructionBase(
       SILDebugLocation DebugLoc, SILValue Operand,
       typename std::enable_if<has_result<X>::value, SILType>::type Ty)
-      : BASE(KIND, DebugLoc, Ty), Operands(this, Operand) {}
+      : BASE(KIND, DebugLoc, Ty),
+        Operands(this, Operand, getEmptyTypeDef(Ty)) {}
 
   template <typename X = void, typename... A>
   UnaryInstructionBase(
@@ -331,7 +366,7 @@ public:
       typename std::enable_if<has_result<X>::value, SILType>::type Ty,
       A &&... args)
       : BASE(KIND, DebugLoc, Ty, std::forward<A>(args)...),
-        Operands(this, Operand) {}
+        Operands(this, Operand, getEmptyTypeDef(Ty)) {}
 
   SILValue getOperand() const { return Operands[0].get(); }
   void setOperand(SILValue V) { Operands[0].set(V); }
@@ -343,8 +378,43 @@ public:
   typename std::enable_if<has_result<X>::value, SILType>::type
   getType() const { return ValueBase::getType(); }
 
-  ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
-  MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
+  ArrayRef<Operand> getAllOperands() const {
+    return {&Operands.asArray()[0],
+            static_cast<size_t>(1 + (hasTypeDefOperands() ? 1 : 0))};
+  }
+
+  MutableArrayRef<Operand> getAllOperands() {
+    return {&Operands.asArray()[0],
+            static_cast<size_t>(1 + (hasTypeDefOperands() ? 1 : 0))};
+  }
+
+  bool hasTypeDefOperands() const {
+    auto V = Operands[1].get();
+    if (!V)
+      return false;
+    return V->getKind() != ValueKind::SILUndef ||
+           V->getType().getSwiftRValueType()->isOpenedExistential();
+  }
+
+  ArrayRef<Operand> getTypeDefOperands() const {
+    if (!hasTypeDefOperands())
+      return {};
+    return { &Operands.asArray()[1], 1 };
+  }
+
+  MutableArrayRef<Operand> getTypeDefOperands() {
+    if (Operands[1].get()->getKind() == ValueKind::SILUndef)
+      return {};
+    return { &Operands.asArray()[1], 1 };
+  }
+
+  ArrayRef<Operand> getTypeDefOperandsBuf() const {
+    return { &Operands.asArray()[1], 1 };
+  }
+
+  MutableArrayRef<Operand> getTypeDefOperandsBuf() {
+    return { &Operands.asArray()[1], 1 };
+  }
 
   static bool classof(const ValueBase *V) {
     return V->getKind() == KIND;
@@ -637,6 +707,9 @@ class ApplyInstBase<Impl, Base, false> : public Base {
   /// list's tail allocation.
   unsigned NumSubstitutions;
 
+  /// The number of call arguments as required by the callee.
+  unsigned NumCallArguments;
+
   /// Used for apply_inst instructions: true if the called function has an
   /// error result but is not actually throwing.
   bool NonThrowing;
@@ -656,10 +729,11 @@ protected:
   template <class... As>
   ApplyInstBase(ValueKind kind, SILDebugLocation DebugLoc, SILValue callee,
                 SILType substCalleeType, ArrayRef<Substitution> substitutions,
-                ArrayRef<SILValue> args, As... baseArgs)
+                ArrayRef<SILValue> args, ArrayRef<SILValue> typedefs,
+                As... baseArgs)
       : Base(kind, DebugLoc, baseArgs...), SubstCalleeType(substCalleeType),
-        NumSubstitutions(substitutions.size()), NonThrowing(false),
-        Operands(this, args, callee) {
+        NumSubstitutions(substitutions.size()), NumCallArguments(args.size()),
+        NonThrowing(false), Operands(this, args, typedefs, callee) {
     static_assert(sizeof(Impl) == sizeof(*this),
         "subclass has extra storage, cannot use TailAllocatedOperandList");
     memcpy(getSubstitutionsStorage(), substitutions.begin(),
@@ -668,10 +742,12 @@ protected:
 
   static void *allocate(SILFunction &F,
                         ArrayRef<Substitution> substitutions,
+                        ArrayRef<SILValue> typedefs,
                         ArrayRef<SILValue> args) {
     return allocateApplyInst(F,
                     sizeof(Impl) +
-                    decltype(Operands)::getExtraSize(args.size()) +
+                    decltype(Operands)::getExtraSize(args.size() +
+                                                     typedefs.size()) +
                     sizeof(substitutions[0]) * substitutions.size(),
                              alignof(Impl));
   }
@@ -742,23 +818,24 @@ public:
 
   /// The arguments passed to this instruction.
   MutableArrayRef<Operand> getArgumentOperands() {
-    return Operands.getDynamicAsArray();
+    return { Operands.getDynamicAsArray().data(), getNumCallArguments() };
   }
 
   ArrayRef<Operand> getArgumentOperands() const {
-    return Operands.getDynamicAsArray();
+    return { Operands.getDynamicAsArray().data(), getNumCallArguments() };
   }
 
   /// The arguments passed to this instruction.
   OperandValueArrayRef getArguments() const {
-    return Operands.getDynamicValuesAsArray();
+    return OperandValueArrayRef(
+        { Operands.getDynamicAsArray().data(), getNumCallArguments()});
   }
 
   /// Returns the number of arguments for this partial apply.
   unsigned getNumArguments() const { return getArguments().size(); }
 
   Operand &getArgumentRef(unsigned i) {
-    return Operands.getDynamicAsArray()[i];
+    return getArgumentOperands()[i];
   }
 
   /// Return the ith argument passed to this instruction.
@@ -772,6 +849,42 @@ public:
   ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
 
   MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
+
+  unsigned getNumCallArguments() const {
+    return NumCallArguments;
+  }
+
+  bool hasTypeDefOperands() const {
+    return getAllOperands().size() - 1 - getNumCallArguments() != 0;
+  }
+
+  ArrayRef<Operand> getTypeDefOperands() const {
+    if (!hasTypeDefOperands())
+      return {};
+    return { getArgumentOperands().data() + NumCallArguments,
+            getAllOperands().size() - NumCallArguments - 1 };
+  }
+
+  ArrayRef<Operand> getTypeDefOperandsBuf() const {
+    if (!hasTypeDefOperands())
+      return {};
+    return { getArgumentOperands().data() + NumCallArguments,
+            getAllOperands().size() - NumCallArguments - 1 };
+  }
+
+  MutableArrayRef<Operand> getTypeDefOperands() {
+    if (!hasTypeDefOperands())
+      return {};
+    return { getArgumentOperands().data() + NumCallArguments,
+            getAllOperands().size() - NumCallArguments - 1 };
+  }
+
+  MutableArrayRef<Operand> getTypeDefOperandsBuf() {
+    if (!hasTypeDefOperands())
+      return {};
+    return { getArgumentOperands().data() + NumCallArguments,
+            getAllOperands().size() - NumCallArguments - 1 };
+  }
 };
 
 /// Given the callee operand of an apply or try_apply instruction,
@@ -900,7 +1013,8 @@ class ApplyInst : public ApplyInstBase<ApplyInst, SILInstruction> {
 
   ApplyInst(SILDebugLocation DebugLoc, SILValue Callee,
             SILType SubstCalleeType, SILType ReturnType,
-            ArrayRef<Substitution> Substitutions, ArrayRef<SILValue> Args,
+            ArrayRef<Substitution> Substitutions,
+            ArrayRef<SILValue> Args, ArrayRef<SILValue> TypeDefs,
             bool isNonThrowing);
 
   static ApplyInst *create(SILDebugLocation DebugLoc, SILValue Callee,
@@ -930,7 +1044,9 @@ class PartialApplyInst
   PartialApplyInst(SILDebugLocation DebugLoc, SILValue Callee,
                    SILType SubstCalleeType,
                    ArrayRef<Substitution> Substitutions,
-                   ArrayRef<SILValue> Args, SILType ClosureType);
+                   ArrayRef<SILValue> Args,
+                   ArrayRef<SILValue> TypeDefs,
+                   SILType ClosureType);
 
   static PartialApplyInst *create(SILDebugLocation DebugLoc, SILValue Callee,
                                   SILType SubstCalleeType,
@@ -3067,6 +3183,7 @@ class WitnessMethodInst : public MethodInst {
 
   CanType LookupType;
   ProtocolConformanceRef Conformance;
+  // Optional type definition of the opened archetype used by this instruction.
   Optional<FixedOperandList<1>> OptionalOperand;
 
   WitnessMethodInst(SILDebugLocation DebugLoc, CanType LookupType,
@@ -3114,6 +3231,26 @@ public:
   MutableArrayRef<Operand> getAllOperands() {
     return OptionalOperand ? OptionalOperand->asArray()
                            : MutableArrayRef<Operand>{};
+  }
+
+  ArrayRef<Operand> getTypeDefOperands() const {
+    if (!OptionalOperand)
+      return {};
+    return OptionalOperand->asArray();
+  }
+
+  MutableArrayRef<Operand> getTypeDefOperands() {
+    if (!OptionalOperand)
+      return {};
+    return OptionalOperand->asArray();
+  }
+
+  MutableArrayRef<Operand> getTypeDefOperandsBuf() {
+    return getTypeDefOperands();
+  }
+
+  ArrayRef<Operand> getTypeDefOperandsBuf() const {
+    return getTypeDefOperands();
   }
 
   static bool classof(const ValueBase *V) {
@@ -4337,19 +4474,50 @@ class CheckedCastBranchInst : public TermInst {
   SILType DestTy;
   bool IsExact;
 
-  FixedOperandList<1> Operands;
+  // One operand for the source value and one for the eventual
+  // type definition of a target type.
+  FixedOperandList<2> Operands;
   SILSuccessor DestBBs[2];
 
   CheckedCastBranchInst(SILDebugLocation DebugLoc, bool IsExact,
                         SILValue Operand, SILType DestTy,
                         SILBasicBlock *SuccessBB, SILBasicBlock *FailureBB)
       : TermInst(ValueKind::CheckedCastBranchInst, DebugLoc), DestTy(DestTy),
-        IsExact(IsExact), Operands{this, Operand},
+        IsExact(IsExact),
+        Operands{this, Operand, getUndefValue(DestTy)},
         DestBBs{{this, SuccessBB}, {this, FailureBB}} {}
 
 public:
   ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
   MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
+
+  bool hasTypeDefOperands() const {
+    auto V = Operands[1].get();
+    if (!V)
+      return false;
+    return V->getKind() != ValueKind::SILUndef ||
+           V->getType().getSwiftRValueType()->isOpenedExistential();
+  }
+
+  ArrayRef<Operand> getTypeDefOperands() const {
+    if (!hasTypeDefOperands())
+      return {};
+    return { &Operands.asArray()[1], 1 };
+  }
+
+  MutableArrayRef<Operand> getTypeDefOperands() {
+    if (Operands[1].get()->getKind() == ValueKind::SILUndef)
+      return {};
+    return { &Operands.asArray()[1], 1 };
+  }
+
+  ArrayRef<Operand> getTypeDefOperandsBuf() const {
+    return { &Operands.asArray()[1], 1 };
+  }
+
+  MutableArrayRef<Operand> getTypeDefOperandsBuf() {
+    return { &Operands.asArray()[1], 1 };
+  }
 
   SILValue getOperand() const { return Operands[0].get(); }
   bool isExact() const { return IsExact; }
@@ -4470,8 +4638,8 @@ class TryApplyInst
 
   TryApplyInst(SILDebugLocation DebugLoc, SILValue callee,
                SILType substCalleeType, ArrayRef<Substitution> substitutions,
-               ArrayRef<SILValue> args, SILBasicBlock *normalBB,
-               SILBasicBlock *errorBB);
+               ArrayRef<SILValue> args, ArrayRef<SILValue> typedefs,
+               SILBasicBlock *normalBB, SILBasicBlock *errorBB);
 
   static TryApplyInst *create(SILDebugLocation DebugLoc, SILValue callee,
                               SILType substCalleeType,
@@ -4613,6 +4781,11 @@ public:
   /// The arguments passed to this instruction.
   OperandValueArrayRef getArguments() const {
     FOREACH_IMPL_RETURN(getArguments());
+  }
+
+  /// The number of call arguments.
+  unsigned getNumCallArguments() const {
+    FOREACH_IMPL_RETURN(getNumCallArguments());
   }
 
   /// The arguments passed to this instruction, without self.

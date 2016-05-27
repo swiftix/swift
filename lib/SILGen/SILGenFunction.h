@@ -353,6 +353,8 @@ public:
   /// into.
   SILGenBuilder B;
 
+  SILOpenedArchetypesTracker OpenedArchetypes;
+
   struct BreakContinueDest {
     LabeledStmt *Target;
     JumpDest BreakDest;

@@ -507,7 +507,7 @@ void SILSerializer::writeOneTypeOneOperandLayout(ValueKind valueKind,
 /// Write an instruction that looks exactly like a conversion: all
 /// important information is encoded in the operand and the result type.
 void SILSerializer::writeConversionLikeInstruction(const SILInstruction *I) {
-  assert(I->getNumOperands() == 1);
+  assert(I->getNumOperands() - I->getTypeDefOperands().size() == 1);
   writeOneTypeOneOperandLayout(I->getKind(), 0, I->getType(),
                                I->getOperand(0));
 }

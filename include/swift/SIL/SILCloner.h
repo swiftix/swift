@@ -17,6 +17,7 @@
 #ifndef SWIFT_SIL_SILCLONER_H
 #define SWIFT_SIL_SILCLONER_H
 
+#include "swift/SIL/SILOpenedArchetypesTracker.h"
 #include "swift/SIL/SILBuilder.h"
 #include "swift/SIL/SILDebugScope.h"
 #include "swift/SIL/SILVisitor.h"
@@ -39,9 +40,19 @@ class SILCloner : protected SILVisitor<ImplClass> {
 public:
   using SILVisitor<ImplClass>::asImpl;
 
+  explicit SILCloner(SILFunction &F,
+                     SILOpenedArchetypesTracker &OpenedArchetypes)
+      : Builder(F), InsertBeforeBB(nullptr),
+        OpenedArchetypes(F, OpenedArchetypes) {
+    Builder.setOpenedArchetypes(OpenedArchetypes);
+  }
+
   explicit SILCloner(SILFunction &F)
-    : Builder(F), InsertBeforeBB(nullptr) { }
-  
+      : Builder(F), InsertBeforeBB(nullptr),
+        OpenedArchetypes(F) {
+    Builder.setOpenedArchetypes(OpenedArchetypes);
+  }
+
   /// Clients of SILCloner who want to know about any newly created
   /// instructions can install a SmallVector into the builder to collect them.
   void setTrackingList(SmallVectorImpl<SILInstruction*> *II) {
@@ -203,6 +214,53 @@ public:
     asImpl().postProcess(Orig, Cloned);
     assert((Orig->getDebugScope() ? Cloned->getDebugScope()!=nullptr : true) &&
            "cloned instruction dropped debug scope");
+
+    // Take care of typedef operands after cloning.
+    // Remap typedefs assuming no type substitutions, which means
+    // that the old and the new instructions have the same set of typedefs.
+    // All referenced opened archetypes definitions are supposed to be mapped
+    // already.
+
+    // Nothing to do if the cloned instruction does not have any typedef operands.
+    auto ClonedTypeDefOperands = Cloned->getTypeDefOperands();
+    if (ClonedTypeDefOperands.empty())
+      return;
+
+    // True if the original and the cloned instruction have the same number
+    // of typedef operands.
+    bool sameNumOfOpenedArchetypes = Orig->getTypeDefOperands().size() ==
+                                     ClonedTypeDefOperands.size();
+
+    auto OrigTypeDef = Orig->getTypeDefOperands().begin();
+    for (auto &TypeDef : ClonedTypeDefOperands) {
+      // Continue if this archetype was remapped already.
+      if (TypeDef.get()->getKind() != ValueKind::SILUndef) {
+        ++OrigTypeDef;
+        continue;
+      }
+      auto TypeDefArchetype =
+          getOpenedArchetypeOf(TypeDef.get()->getType().getSwiftRValueType());
+      assert(TypeDefArchetype &&
+             "Each typedef operand should have an opened archetype type");
+      if (sameNumOfOpenedArchetypes) {
+        // Remap the typedef from the original instruction.
+        assert(isa<SILInstruction>(OrigTypeDef->get()) &&
+               "Typedef operand should refer to a SILInstruction");
+        assert(getOpASTType(getOpenedArchetypeOf(cast<SILInstruction>(
+                   OrigTypeDef->get()))) == TypeDefArchetype &&
+               "Opened archetypes should match");
+        TypeDef.set(getOpValue(OrigTypeDef->get()));
+      } else {
+        // Use the opened archetype tracker to find out the required archetype
+        // for the cloned instruction.
+        auto Def = OpenedArchetypes.getOpenedArchetypeDef(
+            TypeDef.get()->getType().getSwiftRValueType());
+        assert(Def && "Cannot find a definition of an opened archetype");
+        if (Def)
+          TypeDef.set(Def);
+      }
+      ++OrigTypeDef;
+    }
   }
 
 protected:
@@ -217,6 +275,8 @@ protected:
   llvm::MapVector<SILBasicBlock*, SILBasicBlock*> BBMap;
 
   TypeSubstitutionMap OpenedExistentialSubs;
+  SILOpenedArchetypesTracker OpenedArchetypes;
+
   /// Set of basic blocks where unreachable was inserted.
   SmallPtrSet<SILBasicBlock *, 32> BlocksWithUnreachables;
 };
@@ -253,8 +313,10 @@ template<typename ImplClass>
 class SILClonerWithScopes : public SILCloner<ImplClass> {
   friend class SILCloner<ImplClass>;
 public:
-  SILClonerWithScopes(SILFunction &To, bool Disable = false)
-    : SILCloner<ImplClass>(To) {
+  SILClonerWithScopes(SILFunction &To,
+                      SILOpenedArchetypesTracker &OpenedArchetypes,
+                      bool Disable = false)
+      : SILCloner<ImplClass>(To, OpenedArchetypes) {
 
     // We only want to do this when we generate cloned functions, not
     // when we inline.
@@ -268,6 +330,24 @@ public:
 
     scopeCloner.reset(new ScopeCloner(To));
   }
+
+  SILClonerWithScopes(SILFunction &To,
+                      bool Disable = false)
+      : SILCloner<ImplClass>(To) {
+
+    // We only want to do this when we generate cloned functions, not
+    // when we inline.
+
+    // FIXME: This is due to having TypeSubstCloner inherit from
+    //        SILClonerWithScopes, and having TypeSubstCloner be used
+    //        both by passes that clone whole functions and ones that
+    //        inline functions.
+    if (Disable)
+      return;
+
+    scopeCloner.reset(new ScopeCloner(To));
+  }
+
 
 private:
   std::unique_ptr<ScopeCloner> scopeCloner;
@@ -1252,15 +1332,28 @@ void
 SILCloner<ImplClass>::visitWitnessMethodInst(WitnessMethodInst *Inst) {
   auto conformance =
     getOpConformance(Inst->getLookupType(), Inst->getConformance());
+  auto lookupType = Inst->getLookupType();
+  auto newLookupType = getOpASTType(lookupType);
+  SILValue OpenedExistential;
+  if (Inst->hasOperand())
+    OpenedExistential = getOpValue(Inst->getOperand());
+  else if (newLookupType->isOpenedExistential()) {
+    // Obtain the instruction defining this opened archetype.
+    assert(OpenedArchetypes.getOpenedArchetypeDef(newLookupType) &&
+           "Definition of an opened archetype should have been seen before its "
+           "use");
+    OpenedExistential = OpenedArchetypes.getOpenedArchetypeDef(newLookupType);
+  }
+
   getBuilder().setCurrentDebugScope(getOpScope(Inst->getDebugScope()));
   doPostProcess(
       Inst,
       getBuilder()
           .createWitnessMethod(
               getOpLocation(Inst->getLoc()),
-              getOpASTType(Inst->getLookupType()), conformance,
+              newLookupType, conformance,
               Inst->getMember(), getOpType(Inst->getType()),
-              Inst->hasOperand() ? getOpValue(Inst->getOperand()) : SILValue(),
+              OpenedExistential,
               Inst->isVolatile()));
 }
 

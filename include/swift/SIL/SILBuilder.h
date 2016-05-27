@@ -16,6 +16,7 @@
 #include "swift/SIL/SILDebugScope.h"
 #include "swift/SIL/SILFunction.h"
 #include "swift/SIL/SILModule.h"
+#include "swift/SIL/SILOpenedArchetypesTracker.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -39,6 +40,40 @@ class SILBuilder {
   /// If this pointer is non-null, then any inserted instruction is
   /// recorded in this list.
   SmallVectorImpl<SILInstruction *> *InsertedInstrs = nullptr;
+
+  /// Maps opened archetypes to their definitions. If provided,
+  /// can be used by the builder. It is supposed to be used
+  /// only by SILGen or SIL deserializers.
+  SILOpenedArchetypesTracker *OpenedArchetypes = nullptr;
+
+  bool canProvideTypeDefs() const {
+    return OpenedArchetypes != nullptr;
+  }
+
+  // Build a set of typedef operands for an apply instruction. This is done by
+  // scanning the list of substitutions and collecting all opened archetypes.
+  void createApplyTypeDefs(SILInstruction *I, ArrayRef<Substitution> Subs) {
+    // Copy the typedefs into the apply instruction.
+    if (canProvideTypeDefs()) {
+      unsigned Idx = 0;
+      auto TypeDefs = I->getTypeDefOperandsBuf();
+      for (auto Sub : Subs) {
+        auto Ty = Sub.getReplacement().getCanonicalTypeOrNull();
+        if (!Ty->hasOpenedExistential())
+          continue;
+        Ty.visit([&](Type t) {
+          if (t->isOpenedExistential()) {
+            auto Def =
+                getOpenedArchetypeDef(getModule().Types.getLoweredType(t),
+                                      getModule(), OpenedArchetypes);
+            assert(getOpenedArchetypeOf(Def->getType().getSwiftRValueType()) &&
+                   "Typedef should be of an opened existential type");
+            TypeDefs[Idx++].set(Def);
+          }
+        });
+      }
+    }
+  }
 
 public:
   SILBuilder(SILFunction &F) : F(F), BB(0) {}
@@ -73,6 +108,14 @@ public:
   ASTContext &getASTContext() const { return F.getASTContext(); }
   const Lowering::TypeLowering &getTypeLowering(SILType T) const {
     return F.getModule().getTypeLowering(T);
+  }
+
+  void setOpenedArchetypes(SILOpenedArchetypesTracker  &OpenedArchetypes) {
+    this->OpenedArchetypes = &OpenedArchetypes;
+  }
+
+  SILOpenedArchetypesTracker *getOpenedArchetypes() const {
+    return OpenedArchetypes;
   }
 
   void setCurrentDebugScope(const SILDebugScope *DS) { CurDebugScope = DS; }
@@ -260,8 +303,10 @@ public:
   ApplyInst *createApply(SILLocation Loc, SILValue Fn, SILType SubstFnTy,
                          SILType Result, ArrayRef<Substitution> Subs,
                          ArrayRef<SILValue> Args, bool isNonThrowing) {
-    return insert(ApplyInst::create(getSILDebugLocation(Loc), Fn, SubstFnTy,
+    auto *I = insert(ApplyInst::create(getSILDebugLocation(Loc), Fn, SubstFnTy,
                                     Result, Subs, Args, isNonThrowing, F));
+    createApplyTypeDefs(I, Subs);
+    return I;
   }
 
   ApplyInst *createApply(SILLocation Loc, SILValue Fn, ArrayRef<SILValue> Args,
@@ -276,9 +321,11 @@ public:
                                ArrayRef<Substitution> subs,
                                ArrayRef<SILValue> args, SILBasicBlock *normalBB,
                                SILBasicBlock *errorBB) {
-    return insertTerminator(TryApplyInst::create(getSILDebugLocation(Loc),
+    auto *I = insertTerminator(TryApplyInst::create(getSILDebugLocation(Loc),
                                                  fn, substFnTy, subs, args,
                                                  normalBB, errorBB, F));
+    createApplyTypeDefs(I, subs);
+    return I;
   }
 
   PartialApplyInst *createPartialApply(SILLocation Loc, SILValue Fn,
@@ -286,8 +333,10 @@ public:
                                        ArrayRef<Substitution> Subs,
                                        ArrayRef<SILValue> Args,
                                        SILType ClosureTy) {
-    return insert(PartialApplyInst::create(
+    auto I = insert(PartialApplyInst::create(
         getSILDebugLocation(Loc), Fn, SubstFnTy, Subs, Args, ClosureTy, F));
+    createApplyTypeDefs(I, Subs);
+    return I;
   }
 
   BuiltinInst *createBuiltin(SILLocation Loc, Identifier Name, SILType ResultTy,
@@ -526,8 +575,11 @@ public:
 
   UncheckedRefCastInst *createUncheckedRefCast(SILLocation Loc, SILValue Op,
                                                SILType Ty) {
-    return insert(new (F.getModule()) UncheckedRefCastInst(
+    auto *I = insert(new (F.getModule()) UncheckedRefCastInst(
         getSILDebugLocation(Loc), Op, Ty));
+    I->getTypeDefOperandsBuf()[0].set(
+        getOpenedArchetypeDef(Ty, getModule(), OpenedArchetypes));
+    return I;
   }
 
   UncheckedRefCastAddrInst *
@@ -539,20 +591,29 @@ public:
 
   UncheckedAddrCastInst *createUncheckedAddrCast(SILLocation Loc, SILValue Op,
                                                  SILType Ty) {
-    return insert(new (F.getModule()) UncheckedAddrCastInst(
+    auto *I = insert(new (F.getModule()) UncheckedAddrCastInst(
         getSILDebugLocation(Loc), Op, Ty));
+    I->getTypeDefOperandsBuf()[0].set(
+        getOpenedArchetypeDef(Ty, getModule(), OpenedArchetypes));
+    return I;
   }
 
   UncheckedTrivialBitCastInst *
   createUncheckedTrivialBitCast(SILLocation Loc, SILValue Op, SILType Ty) {
-    return insert(new (F.getModule()) UncheckedTrivialBitCastInst(
+    auto *I = insert(new (F.getModule()) UncheckedTrivialBitCastInst(
         getSILDebugLocation(Loc), Op, Ty));
+    I->getTypeDefOperandsBuf()[0].set(
+        getOpenedArchetypeDef(Ty, getModule(), OpenedArchetypes));
+    return I;
   }
 
   UncheckedBitwiseCastInst *
   createUncheckedBitwiseCast(SILLocation Loc, SILValue Op, SILType Ty) {
-    return insert(new (F.getModule()) UncheckedBitwiseCastInst(
+    auto *I = insert(new (F.getModule()) UncheckedBitwiseCastInst(
         getSILDebugLocation(Loc), Op, Ty));
+    I->getTypeDefOperandsBuf()[0].set(
+        getOpenedArchetypeDef(Ty, getModule(), OpenedArchetypes));
+    return I;
   }
 
   RefToBridgeObjectInst *createRefToBridgeObject(SILLocation Loc, SILValue Ref,
@@ -648,8 +709,11 @@ public:
 
   UnconditionalCheckedCastInst *
   createUnconditionalCheckedCast(SILLocation Loc, SILValue op, SILType destTy) {
-    return insert(new (F.getModule()) UnconditionalCheckedCastInst(
+    auto *I = insert(new (F.getModule()) UnconditionalCheckedCastInst(
         getSILDebugLocation(Loc), op, destTy));
+    I->getTypeDefOperandsBuf()[0].set(
+        getOpenedArchetypeDef(destTy, getModule(), OpenedArchetypes));
+    return I;
   }
 
   UnconditionalCheckedCastAddrInst *createUnconditionalCheckedCastAddr(
@@ -912,55 +976,78 @@ public:
 
   OpenExistentialAddrInst *
   createOpenExistentialAddr(SILLocation Loc, SILValue Operand, SILType SelfTy) {
-    return insert(new (F.getModule()) OpenExistentialAddrInst(
+    auto *I = insert(new (F.getModule()) OpenExistentialAddrInst(
         getSILDebugLocation(Loc), Operand, SelfTy));
+    if (canProvideTypeDefs())
+      OpenedArchetypes->registerOpenedArchetypes(I);
+    return I;
   }
 
   OpenExistentialMetatypeInst *createOpenExistentialMetatype(SILLocation Loc,
                                                              SILValue operand,
                                                              SILType selfTy) {
-    return insert(new (F.getModule()) OpenExistentialMetatypeInst(
+    auto *I = insert(new (F.getModule()) OpenExistentialMetatypeInst(
         getSILDebugLocation(Loc), operand, selfTy));
-  }
+    if (canProvideTypeDefs())
+      OpenedArchetypes->registerOpenedArchetypes(I);
+    return I;
+ }
 
   OpenExistentialRefInst *
   createOpenExistentialRef(SILLocation Loc, SILValue Operand, SILType Ty) {
-    return insert(new (F.getModule()) OpenExistentialRefInst(
+    auto *I = insert(new (F.getModule()) OpenExistentialRefInst(
         getSILDebugLocation(Loc), Operand, Ty));
+    if (canProvideTypeDefs())
+      OpenedArchetypes->registerOpenedArchetypes(I);
+    return I;
   }
 
   OpenExistentialBoxInst *
   createOpenExistentialBox(SILLocation Loc, SILValue Operand, SILType Ty) {
-    return insert(new (F.getModule()) OpenExistentialBoxInst(
+    auto *I = insert(new (F.getModule()) OpenExistentialBoxInst(
         getSILDebugLocation(Loc), Operand, Ty));
-  }
+    if (canProvideTypeDefs())
+      OpenedArchetypes->registerOpenedArchetypes(I);
+    return I;
+ }
 
   InitExistentialAddrInst *
   createInitExistentialAddr(SILLocation Loc, SILValue Existential,
                             CanType FormalConcreteType,
                             SILType LoweredConcreteType,
                             ArrayRef<ProtocolConformanceRef> Conformances) {
-    return insert(InitExistentialAddrInst::create(
+    auto *I = insert(InitExistentialAddrInst::create(
         getSILDebugLocation(Loc), Existential, FormalConcreteType,
         LoweredConcreteType, Conformances, &F));
+    I->getTypeDefOperandsBuf()[0].set(getOpenedArchetypeDef(
+        getModule().Types.getLoweredType(FormalConcreteType), getModule(),
+        OpenedArchetypes));
+    return I;
   }
 
   InitExistentialMetatypeInst *
   createInitExistentialMetatype(SILLocation Loc, SILValue metatype,
                                 SILType existentialType,
                                 ArrayRef<ProtocolConformanceRef> conformances) {
-    return insert(InitExistentialMetatypeInst::create(
+    auto *I = insert(InitExistentialMetatypeInst::create(
         getSILDebugLocation(Loc), existentialType, metatype, conformances,
         &F));
+    I->getTypeDefOperandsBuf()[0].set(
+        getOpenedArchetypeDef(existentialType, getModule(), OpenedArchetypes));
+    return I;
   }
 
   InitExistentialRefInst *
   createInitExistentialRef(SILLocation Loc, SILType ExistentialType,
                            CanType FormalConcreteType, SILValue Concrete,
                            ArrayRef<ProtocolConformanceRef> Conformances) {
-    return insert(InitExistentialRefInst::create(
+    auto *I = insert(InitExistentialRefInst::create(
         getSILDebugLocation(Loc), ExistentialType, FormalConcreteType,
         Concrete, Conformances, &F));
+    I->getTypeDefOperandsBuf()[0].set(getOpenedArchetypeDef(
+        getModule().Types.getLoweredType(FormalConcreteType), getModule(),
+        OpenedArchetypes));
+    return I;
   }
 
   DeinitExistentialAddrInst *createDeinitExistentialAddr(SILLocation Loc,
@@ -1306,9 +1393,12 @@ public:
                                                  SILValue op, SILType destTy,
                                                  SILBasicBlock *successBB,
                                                  SILBasicBlock *failureBB) {
-    return insertTerminator(new (F.getModule()) CheckedCastBranchInst(
-        getSILDebugLocation(Loc), isExact, op, destTy, successBB,
-        failureBB));
+    auto *I = insertTerminator(new (F.getModule()) CheckedCastBranchInst(
+        getSILDebugLocation(Loc), isExact, op, destTy,
+        successBB, failureBB));
+    I->getTypeDefOperandsBuf()[0].set(
+        getOpenedArchetypeDef(destTy, getModule(), OpenedArchetypes));
+    return I;
   }
 
   CheckedCastAddrBranchInst *

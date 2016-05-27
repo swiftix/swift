@@ -615,7 +615,8 @@ static SILValue getAddressOfStackInit(AllocStackInst *ASI,
 /// Find the init_existential, which could be used to determine a concrete
 /// type of the \p Self.
 static SILInstruction *findInitExistential(FullApplySite AI, SILValue Self,
-                                           CanType &OpenedArchetype) {
+                                           CanType &OpenedArchetype,
+                                           SILValue &OpenedArchetypeDef) {
   if (auto *Instance = dyn_cast<AllocStackInst>(Self)) {
     // In case the Self operand is an alloc_stack where a copy_addr copies the
     // result of an open_existential_addr to this stack location.
@@ -638,12 +639,14 @@ static SILInstruction *findInitExistential(FullApplySite AI, SILValue Self,
       return nullptr;
 
     OpenedArchetype = Open->getType().getSwiftRValueType();
+    OpenedArchetypeDef = Open;
     return IE;
   }
 
   if (auto *Open = dyn_cast<OpenExistentialRefInst>(Self)) {
     if (auto *IE = dyn_cast<InitExistentialRefInst>(Open->getOperand())) {
       OpenedArchetype = Open->getType().getSwiftRValueType();
+      OpenedArchetypeDef = Open;
       return IE;
     }
     return nullptr;
@@ -655,6 +658,7 @@ static SILInstruction *findInitExistential(FullApplySite AI, SILValue Self,
       OpenedArchetype = Open->getType().getSwiftRValueType();
       while (auto Metatype = dyn_cast<MetatypeType>(OpenedArchetype))
         OpenedArchetype = Metatype.getInstanceType();
+      OpenedArchetypeDef = Open;
       return IE;
     }
     return nullptr;
@@ -669,6 +673,7 @@ SILCombiner::createApplyWithConcreteType(FullApplySite AI,
                                          SILValue NewSelf,
                                          SILValue Self,
                                          CanType ConcreteType,
+                                         SILValue ConcreteTypeDef,
                                          ProtocolConformanceRef Conformance,
                                          CanType OpenedArchetype) {
   // Create a set of arguments.
@@ -714,6 +719,16 @@ SILCombiner::createApplyWithConcreteType(FullApplySite AI,
                                                TypeSubstitutions);
   }
 
+  SILOpenedArchetypesTracker *OldOpenedArchetypes =
+    Builder.getOpenedArchetypes();
+
+  if (ConcreteType->isOpenedExistential()) {
+    // Prepare a mini-mapping for opened archetypes.
+    SILOpenedArchetypesTracker OpenedArchetypes(*AI.getFunction());
+    OpenedArchetypes.addOpenedArchetypeDef(ConcreteType, ConcreteTypeDef);
+    Builder.setOpenedArchetypes(OpenedArchetypes);
+  }
+
   FullApplySite NewAI;
   Builder.setCurrentDebugScope(AI.getDebugScope());
 
@@ -732,12 +747,15 @@ SILCombiner::createApplyWithConcreteType(FullApplySite AI,
     replaceInstUsesWith(*AI.getInstruction(), NewAI.getInstruction());
   eraseInstFromFunction(*AI.getInstruction());
 
+  if (OldOpenedArchetypes)
+    Builder.setOpenedArchetypes(*OldOpenedArchetypes);
+
   return NewAI.getInstruction();
 }
 
 /// Derive a concrete type of self and conformance from the init_existential
 /// instruction.
-static Optional<std::pair<ProtocolConformanceRef, CanType>>
+static Optional<std::tuple<ProtocolConformanceRef, CanType, SILValue>>
 getConformanceAndConcreteType(FullApplySite AI,
                               SILInstruction *InitExistential,
                               ProtocolDecl *Protocol,
@@ -745,6 +763,7 @@ getConformanceAndConcreteType(FullApplySite AI,
                               ArrayRef<ProtocolConformanceRef> &Conformances) {
   // Try to derive the concrete type of self from the found init_existential.
   CanType ConcreteType;
+  SILValue ConcreteTypeDef;
   if (auto IE = dyn_cast<InitExistentialAddrInst>(InitExistential)) {
     Conformances = IE->getConformances();
     ConcreteType = IE->getFormalConcreteType();
@@ -767,19 +786,25 @@ getConformanceAndConcreteType(FullApplySite AI,
     return None;
   }
 
+  if (ConcreteType->isOpenedExistential()) {
+    assert(!InitExistential->getTypeDefOperands().empty() &&
+           "init_existential is supposed to have a typedef operand");
+    ConcreteTypeDef = InitExistential->getTypeDefOperands()[0].get();
+  }
+
   // Find the conformance for the protocol we're interested in.
   for (auto Conformance : Conformances) {
     auto Requirement = Conformance.getRequirement();
     if (Requirement == Protocol) {
-      return std::make_pair(Conformance, ConcreteType);
+      return std::make_tuple(Conformance, ConcreteType, ConcreteTypeDef);
     }
     if (Requirement->inheritsFrom(Protocol)) {
       // If Requirement != Protocol, then the abstract conformance cannot be used
       // as is and we need to create a proper conformance.
-      return std::make_pair(Conformance.isAbstract()
+      return std::make_tuple(Conformance.isAbstract()
                                 ? ProtocolConformanceRef(Protocol)
                                 : Conformance,
-                            ConcreteType);
+                            ConcreteType, ConcreteTypeDef);
     }
   }
 
@@ -811,8 +836,9 @@ SILCombiner::propagateConcreteTypeOfInitExistential(FullApplySite AI,
   // Try to find the init_existential, which could be used to
   // determine a concrete type of the self.
   CanType OpenedArchetype;
+  SILValue OpenedArchetypeDef;
   SILInstruction *InitExistential =
-    findInitExistential(AI, Self, OpenedArchetype);
+    findInitExistential(AI, Self, OpenedArchetype, OpenedArchetypeDef);
   if (!InitExistential)
     return nullptr;
 
@@ -826,8 +852,9 @@ SILCombiner::propagateConcreteTypeOfInitExistential(FullApplySite AI,
   if (!ConformanceAndConcreteType)
     return nullptr;
 
-  auto ConcreteType = ConformanceAndConcreteType->second;
-  auto Conformance = ConformanceAndConcreteType->first;
+  ProtocolConformanceRef Conformance = std::get<0>(*ConformanceAndConcreteType);
+  CanType ConcreteType = std::get<1>(*ConformanceAndConcreteType);
+  SILValue ConcreteTypeDef = std::get<2>(*ConformanceAndConcreteType);
 
   // Propagate the concrete type into the callee-operand if required.
   Propagate(ConcreteType, Conformance);
@@ -835,7 +862,7 @@ SILCombiner::propagateConcreteTypeOfInitExistential(FullApplySite AI,
   // Create a new apply instruction that uses the concrete type instead
   // of the existential type.
   return createApplyWithConcreteType(AI, NewSelf, Self,
-                                     ConcreteType, Conformance,
+                                     ConcreteType, ConcreteTypeDef, Conformance,
                                      OpenedArchetype);
 }
 
