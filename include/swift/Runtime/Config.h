@@ -138,7 +138,7 @@
 // supported by the current target.
 // TODO: Define it once the runtime calling convention support has
 // been integrated into clang and llvm.
-#define SWIFT_RT_USE_RegisterPreservingCC 0
+#define SWIFT_RT_USE_RegisterPreservingCC 1
 
 #if  __has_attribute(preserve_most)
 #define SWIFT_BACKEND_SUPPORTS_RegisterPreservingCC 1

@@ -2680,7 +2680,7 @@ llvm::Function *IRGenModule::getAddrOfValueWitness(CanType abstractType,
       cast<llvm::PointerType>(getValueWitnessTy(index))
         ->getElementType());
   LinkInfo link = LinkInfo::get(*this, entity, forDefinition);
-  entry = link.createFunction(*this, fnType, DefaultCC, llvm::AttributeSet());
+  entry = link.createFunction(*this, fnType, RegisterPreservingCC, llvm::AttributeSet());
   return entry;
 }
 

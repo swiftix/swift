@@ -866,22 +866,27 @@ static llvm::Constant *asOpaquePtr(IRGenModule &IGM, llvm::Constant *in) {
 /// void immediately.
 static llvm::Constant *getNoOpVoidFunction(IRGenModule &IGM) {
   llvm::Type *argTys[] = { IGM.Int8PtrTy, IGM.TypeMetadataPtrTy };
-  return IGM.getOrCreateHelperFunction("__swift_noop_void_return",
+  auto fn = IGM.getOrCreateHelperFunction("__swift_noop_void_return",
                                        IGM.VoidTy, argTys,
                                        [&](IRGenFunction &IGF) {
     IGF.Builder.CreateRetVoid();
   });
+
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 /// Return a function which takes two pointer arguments and returns
 /// the first one immediately.
 static llvm::Constant *getReturnSelfFunction(IRGenModule &IGM) {
   llvm::Type *argTys[] = { IGM.Int8PtrTy, IGM.TypeMetadataPtrTy };
-  return IGM.getOrCreateHelperFunction(
+  auto fn = IGM.getOrCreateHelperFunction(
       "__swift_noop_self_return", IGM.Int8PtrTy, argTys,
       [&](IRGenFunction &IGF) {
         IGF.Builder.CreateRet(&*IGF.CurFn->arg_begin());
       });
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 /// Return a function which takes three pointer arguments and does a
@@ -891,7 +896,7 @@ static llvm::Constant *getReturnSelfFunction(IRGenModule &IGM) {
 static llvm::Constant *getAssignWithCopyStrongFunction(IRGenModule &IGM) {
   llvm::Type *ptrPtrTy = IGM.RefCountedPtrTy->getPointerTo();
   llvm::Type *argTys[] = { ptrPtrTy, ptrPtrTy, IGM.WitnessTablePtrTy };
-  return IGM.getOrCreateHelperFunction("__swift_assignWithCopy_strong",
+  auto fn = IGM.getOrCreateHelperFunction("__swift_assignWithCopy_strong",
                                        ptrPtrTy, argTys,
                                        [&](IRGenFunction &IGF) {
     auto it = IGF.CurFn->arg_begin();
@@ -906,6 +911,8 @@ static llvm::Constant *getAssignWithCopyStrongFunction(IRGenModule &IGM) {
 
     IGF.Builder.CreateRet(dest.getAddress());
   });
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 /// Return a function which takes three pointer arguments and does a
@@ -915,7 +922,7 @@ static llvm::Constant *getAssignWithCopyStrongFunction(IRGenModule &IGM) {
 static llvm::Constant *getAssignWithTakeStrongFunction(IRGenModule &IGM) {
   llvm::Type *ptrPtrTy = IGM.RefCountedPtrTy->getPointerTo();
   llvm::Type *argTys[] = { ptrPtrTy, ptrPtrTy, IGM.WitnessTablePtrTy };
-  return IGM.getOrCreateHelperFunction("__swift_assignWithTake_strong",
+  auto fn = IGM.getOrCreateHelperFunction("__swift_assignWithTake_strong",
                                        ptrPtrTy, argTys,
                                        [&](IRGenFunction &IGF) {
     auto it = IGF.CurFn->arg_begin();
@@ -929,6 +936,8 @@ static llvm::Constant *getAssignWithTakeStrongFunction(IRGenModule &IGM) {
 
     IGF.Builder.CreateRet(dest.getAddress());
   });
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 /// Return a function which takes three pointer arguments and does a
@@ -937,7 +946,7 @@ static llvm::Constant *getAssignWithTakeStrongFunction(IRGenModule &IGM) {
 static llvm::Constant *getInitWithCopyStrongFunction(IRGenModule &IGM) {
   llvm::Type *ptrPtrTy = IGM.RefCountedPtrTy->getPointerTo();
   llvm::Type *argTys[] = { ptrPtrTy, ptrPtrTy, IGM.WitnessTablePtrTy };
-  return IGM.getOrCreateHelperFunction("__swift_initWithCopy_strong",
+  auto fn = IGM.getOrCreateHelperFunction("__swift_initWithCopy_strong",
                                        ptrPtrTy, argTys,
                                        [&](IRGenFunction &IGF) {
     auto it = IGF.CurFn->arg_begin();
@@ -950,19 +959,23 @@ static llvm::Constant *getInitWithCopyStrongFunction(IRGenModule &IGM) {
 
     IGF.Builder.CreateRet(dest.getAddress());
   });
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 /// Return a function which takes two pointer arguments, loads a
 /// pointer from the first, and calls swift_release on it immediately.
 static llvm::Constant *getDestroyStrongFunction(IRGenModule &IGM) {
   llvm::Type *argTys[] = { IGM.Int8PtrPtrTy, IGM.WitnessTablePtrTy };
-  return IGM.getOrCreateHelperFunction("__swift_destroy_strong",
+  auto fn = IGM.getOrCreateHelperFunction("__swift_destroy_strong",
                                        IGM.VoidTy, argTys,
                                        [&](IRGenFunction &IGF) {
     Address arg(IGF.CurFn->arg_begin(), IGM.getPointerAlignment());
     IGF.emitNativeStrongRelease(IGF.Builder.CreateLoad(arg));
     IGF.Builder.CreateRetVoid();
   });
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 /// Return a function which takes two pointer arguments, memcpys
@@ -989,7 +1002,7 @@ static llvm::Constant *getMemCpyFunction(IRGenModule &IGM,
   }
 
   llvm::Type *argTys[] = { IGM.Int8PtrTy, IGM.Int8PtrTy, IGM.TypeMetadataPtrTy };
-  return IGM.getOrCreateHelperFunction(name, IGM.Int8PtrTy, argTys,
+  auto fn = IGM.getOrCreateHelperFunction(name, IGM.Int8PtrTy, argTys,
                                        [&](IRGenFunction &IGF) {
     auto it = IGF.CurFn->arg_begin();
     Address dest(it++, fixedTI->getFixedAlignment());
@@ -997,6 +1010,8 @@ static llvm::Constant *getMemCpyFunction(IRGenModule &IGM,
     IGF.emitMemCpy(dest, src, fixedTI->getFixedSize());
     IGF.Builder.CreateRet(dest.getAddress());
   });
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 /// Return a function which takes two buffer arguments, copies
@@ -1005,7 +1020,7 @@ static llvm::Constant *getCopyOutOfLinePointerFunction(IRGenModule &IGM) {
   llvm::Type *argTys[] = { IGM.Int8PtrPtrTy, IGM.Int8PtrPtrTy,
                            IGM.TypeMetadataPtrTy };
 
-  return IGM.getOrCreateHelperFunction("__swift_copy_outline_pointer",
+  auto fn = IGM.getOrCreateHelperFunction("__swift_copy_outline_pointer",
                                        IGM.Int8PtrTy, argTys,
                                        [&](IRGenFunction &IGF) {
     auto it = IGF.CurFn->arg_begin();
@@ -1015,6 +1030,8 @@ static llvm::Constant *getCopyOutOfLinePointerFunction(IRGenModule &IGM) {
     IGF.Builder.CreateStore(ptr, dest);
     IGF.Builder.CreateRet(ptr);
   });
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 namespace {
@@ -1055,7 +1072,7 @@ static llvm::Constant *getMemOpArrayFunction(IRGenModule &IGM,
     nameStream << fixedTI.getFixedAlignment().getValue();
   }
 
-  return IGM.getOrCreateHelperFunction(name, IGM.Int8PtrTy, argTys,
+  auto fn = IGM.getOrCreateHelperFunction(name, IGM.Int8PtrTy, argTys,
                                        [&](IRGenFunction &IGF) {
     auto it = IGF.CurFn->arg_begin();
     Address dest(it++, fixedTI.getFixedAlignment());
@@ -1076,6 +1093,8 @@ static llvm::Constant *getMemOpArrayFunction(IRGenModule &IGM,
     }
     IGF.Builder.CreateRet(dest.getAddress());
   });
+  static_cast<llvm::Function *>(fn)->setCallingConv(IGM.RegisterPreservingCC);
+  return fn;
 }
 
 static llvm::Constant *getMemMoveArrayFunction(IRGenModule &IGM,
