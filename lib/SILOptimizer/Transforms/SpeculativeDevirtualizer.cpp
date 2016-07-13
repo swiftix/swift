@@ -308,6 +308,35 @@ static bool isDefaultCaseKnown(ClassHierarchyAnalysis *CHA,
   return true;
 }
 
+// Replace the original class_method invocation by the invocation of a
+// generated polymorphic cache trampoline function.
+// The trampoline function should have the same signature as the original one.
+static void callPolymorphicCache(FullApplySite AI, SILFunction *Cache) {
+  SILBuilderWithScope Builder(AI.getInstruction());
+  auto Callee = Builder.createFunctionRef(AI.getLoc(), Cache);
+  auto Args = AI.getArguments();
+  SmallVector<SILValue, 8> NewArgs;
+  for (auto Arg : Args)
+    NewArgs.push_back(Arg);
+
+  SILInstruction *NewInst = nullptr;
+  if (auto *ApplyI = dyn_cast<ApplyInst>(AI)) {
+    NewInst = Builder.createApply(AI.getLoc(), Callee,
+                                  NewArgs,
+                                  ApplyI->isNonThrowing());
+  } else if (auto *TryApplyI = dyn_cast<TryApplyInst>(AI)) {
+    NewInst = Builder.createTryApply(
+        AI.getLoc(), Callee, Callee->getType(),
+        AI.getSubstitutions(),
+        NewArgs, TryApplyI->getNormalBB(),
+        TryApplyI->getErrorBB());
+  } else {
+    llvm_unreachable("Unsupported kind of apply instruction");
+  }
+  AI.getInstruction()->replaceAllUsesWith(NewInst);
+  AI.getInstruction()->eraseFromParent();
+}
+
 /// \brief Try to speculate the call target for the call \p AI. This function
 /// returns true if a change was made.
 static bool tryToSpeculateTarget(FullApplySite AI,
@@ -407,6 +436,22 @@ static bool tryToSpeculateTarget(FullApplySite AI,
 
   DEBUG(llvm::dbgs() << "Class " << CD->getName() << " is a superclass. "
         "Inserting polymorphic speculative call.\n");
+
+  // TODO: Generate a thunk performing the polymorphic speculative call.
+  // Re-use an existing thunk if it is present.
+  SmallVector<char, 256> CacheName;
+  auto PolymorphicCacheName =
+      (CMI->getMember().getDecl()->getNameStr() + "_trampoline_for_" +
+       SubType.getNominalOrBoundGenericNominal()->getNameStr())
+          .toStringRef(CacheName);
+  auto PolymorphicCache = M.lookUpFunction(PolymorphicCacheName);
+  if (PolymorphicCache) {
+    // Re-use an existing cache.
+    callPolymorphicCache(AI, PolymorphicCache);
+    return true;
+  }
+
+  // Create a trampoline function.
 
   // Try to devirtualize the static class of instance
   // if it is possible.
