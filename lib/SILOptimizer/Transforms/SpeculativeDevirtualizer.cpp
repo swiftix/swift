@@ -311,7 +311,7 @@ static bool isDefaultCaseKnown(ClassHierarchyAnalysis *CHA,
 // Replace the original class_method invocation by the invocation of a
 // generated polymorphic cache trampoline function.
 // The trampoline function should have the same signature as the original one.
-static void callPolymorphicCache(FullApplySite AI, SILFunction *Cache) {
+static void callPolymorphicCacheThunk(FullApplySite AI, SILFunction *Cache) {
   SILBuilderWithScope Builder(AI.getInstruction());
   auto Callee = Builder.createFunctionRef(AI.getLoc(), Cache);
   auto Args = AI.getArguments();
@@ -337,10 +337,117 @@ static void callPolymorphicCache(FullApplySite AI, SILFunction *Cache) {
   AI.getInstruction()->eraseFromParent();
 }
 
+// Generate a thunk(trampoline function) performing the polymorphic speculative
+// call. Re-use an existing thunk if it is present.
+// Replace apply(class_method) by apply(thunk) and let thunk perform
+// the required speculative calls.
+static SILFunction *
+createPolymorphicCacheThunk(FullApplySite &AI, SILType SubType,
+                       SmallVectorImpl<SILFunction *> &NewFunctions) {
+  // Generate trampolines only for non-generic invocations inside
+  // non-trampoline functions.
+  if (!AI.hasSubstitutions() &&
+      !AI.getFunction()->isFragile() &&
+      AI.getFunction()->getName().find("_trampoline_for_") == StringRef::npos) {
+    auto CMI = cast<ClassMethodInst>(AI.getCallee());
+    auto &M = CMI->getModule();
+    auto OrigAI = AI;
+    SmallVector<char, 256> CacheName;
+    auto PolymorphicCacheThunkName =
+        (CMI->getMember().getDecl()->getNameStr() + "_trampoline_for_" +
+         SubType.getNominalOrBoundGenericNominal()->getNameStr())
+            .toStringRef(CacheName);
+    auto PolymorphicCacheThunk = M.lookUpFunction(PolymorphicCacheThunkName);
+    // Nothing to do, if the think exists already.
+    if (PolymorphicCacheThunk)
+      return PolymorphicCacheThunk;
+    // Create a trampoline function.
+    // The trampoline function should have the same signature as the original
+    // one.
+    // It would perform a type-based dispatch and then call a concrete method.
+    // The trampoline is essentially a call forwader, therefore the optimizer
+    // should be able to optimize its body down to a tail call.
+    auto FnType = AI.getCallee()->getType().castTo<SILFunctionType>();
+    PolymorphicCacheThunk = M.getOrCreateFunction(
+        AI.getLoc(), PolymorphicCacheThunkName, SILLinkage::Hidden, FnType,
+        IsNotBare, IsNotTransparent, IsNotFragile);
+    NewFunctions.push_back(PolymorphicCacheThunk);
+    // Do not inline the thunk. The whole idea of this thunk is
+    // to reduce the code size.
+    // FIXME: May be setting NoInline is going a bit too far.
+    // Instead, the inliner may cosider the cost of inlining this
+    // thunk to be very high, unless it can prove that inlining
+    // it would create a lot of opporunities (e.g. because
+    // a constant argument can lead to constand folding, or a
+    // concrete dynamic type is know, etc).
+    PolymorphicCacheThunk->setInlineStrategy(Inline_t::NoInline);
+    // Add the copy of apply into the newly generated thunk.
+    auto EntryBB = PolymorphicCacheThunk->createBasicBlock();
+    auto ParamSILTypes = FnType->getParameterSILTypes();
+    // Add proper BB arguments to the entry BB.
+    for (auto ParamSILType : ParamSILTypes) {
+      EntryBB->createBBArg(ParamSILType);
+    }
+    // AI = create a clone of OrigAI in the thunk.
+    // Map each passed argument to a BBArg of the new EntryBB, because
+    // these arguments become
+    SILBuilder ThunkBuilder(EntryBB);
+    // auto ClonedAI = CloneApply(AI, ThunkBuilder);
+    SmallVector<SILValue, 8> Args;
+    for (auto Arg : EntryBB->getBBArgs()) {
+      Args.push_back(Arg);
+    }
+    // Assumes that "self" is the last operand.
+    auto ThunkCM =
+        ThunkBuilder.createClassMethod(AI.getLoc(), EntryBB->getBBArgs().back(),
+                                       CMI->getMember(), CMI->isVolatile());
+    SILInstruction *ClonedAI;
+    if (isa<ApplyInst>(AI)) {
+      ClonedAI = ThunkBuilder.createApply(
+          AI.getLoc(), ThunkCM, Args,
+          dyn_cast<ApplyInst>(AI.getInstruction())->isNonThrowing());
+      SILValue ReturnValue;
+      if (FnType->getSILResult().isVoid())
+        ReturnValue = ThunkBuilder.createTuple(AI.getLoc(),
+                                               M.Types.getEmptyTupleType(), {});
+      else
+        ReturnValue = ClonedAI;
+      ThunkBuilder.createReturn(AI.getLoc(), ReturnValue);
+    } else if (auto TryApplyI = dyn_cast<TryApplyInst>(AI)) {
+      auto NormalBB = PolymorphicCacheThunk->createBasicBlock();
+      auto ErrorBB = PolymorphicCacheThunk->createBasicBlock();
+
+      NormalBB->createBBArg(FnType->getSILResult());
+      ErrorBB->createBBArg(TryApplyI->getErrorBB()->getBBArg(0)->getType());
+
+      ClonedAI = ThunkBuilder.createTryApply(
+          AI.getLoc(), ThunkCM, SILType::getPrimitiveObjectType(FnType), {},
+          Args, NormalBB, ErrorBB);
+
+      ThunkBuilder.setInsertionPoint(NormalBB);
+      SILValue ReturnValue;
+      if (FnType->getSILResult().isVoid())
+        ReturnValue = ThunkBuilder.createTuple(AI.getLoc(),
+                                               M.Types.getEmptyTupleType(), {});
+      else
+        ReturnValue = NormalBB->getBBArg(0);
+      ThunkBuilder.createReturn(AI.getLoc(), ReturnValue);
+
+      ThunkBuilder.setInsertionPoint(ErrorBB);
+      ThunkBuilder.createThrow(AI.getLoc(), ErrorBB->getBBArg(0));
+    } else {
+      llvm_unreachable("Unsupported kind of apply");
+    }
+    AI = FullApplySite::isa(ClonedAI);
+    return PolymorphicCacheThunk;
+  }
+  return nullptr;
+}
 /// \brief Try to speculate the call target for the call \p AI. This function
 /// returns true if a change was made.
 static bool tryToSpeculateTarget(FullApplySite AI,
-                                 ClassHierarchyAnalysis *CHA) {
+                                 ClassHierarchyAnalysis *CHA,
+                                 SmallVectorImpl<SILFunction *> &NewFunctions) {
   ClassMethodInst *CMI = cast<ClassMethodInst>(AI.getCallee());
 
   // We cannot devirtualize in cases where dynamic calls are
@@ -437,21 +544,14 @@ static bool tryToSpeculateTarget(FullApplySite AI,
   DEBUG(llvm::dbgs() << "Class " << CD->getName() << " is a superclass. "
         "Inserting polymorphic speculative call.\n");
 
-  // TODO: Generate a thunk performing the polymorphic speculative call.
-  // Re-use an existing thunk if it is present.
-  SmallVector<char, 256> CacheName;
-  auto PolymorphicCacheName =
-      (CMI->getMember().getDecl()->getNameStr() + "_trampoline_for_" +
-       SubType.getNominalOrBoundGenericNominal()->getNameStr())
-          .toStringRef(CacheName);
-  auto PolymorphicCache = M.lookUpFunction(PolymorphicCacheName);
-  if (PolymorphicCache) {
+  auto OrigAI = AI;
+  auto PolymorphicCacheThunk = createPolymorphicCacheThunk(AI, SubType,
+                                                           NewFunctions);
+  if (PolymorphicCacheThunk) {
     // Re-use an existing cache.
-    callPolymorphicCache(AI, PolymorphicCache);
+    callPolymorphicCacheThunk(OrigAI, PolymorphicCacheThunk);
     return true;
   }
-
-  // Create a trampoline function.
 
   // Try to devirtualize the static class of instance
   // if it is possible.
@@ -593,12 +693,16 @@ namespace {
         }
       }
 
+      SmallVector<SILFunction *, 8> NewFunctions;
+
       // Go over the collected calls and try to insert speculative calls.
       for (auto AI : ToSpecialize)
-        Changed |= tryToSpeculateTarget(AI, CHA);
+        Changed |= tryToSpeculateTarget(AI, CHA, NewFunctions);
 
       if (Changed) {
         invalidateAnalysis(SILAnalysis::InvalidationKind::FunctionBody);
+        for (auto NewFn : NewFunctions)
+          PM->notifyTransformationOfFunction(NewFn);
       }
     }
 
