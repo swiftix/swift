@@ -355,7 +355,8 @@ createPolymorphicCacheThunk(FullApplySite &AI, SILType SubType,
     llvm::raw_svector_ostream Buffer(CacheName);
     SmallVector<char, 256> PrefixStr;
 
-    OS << CMI->getMember().mangle();
+    // Create a unique name for the trampoline.
+    Buffer << CMI->getMember().mangle();
 
     SILType Ty = SubType;
     while (Ty.is<AnyMetatypeType>()) {
