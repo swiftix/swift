@@ -9,11 +9,13 @@
 // See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
 //
 //===----------------------------------------------------------------------===//
-
+#define DEBUG_TYPE "parse-sil"
 #include "swift/Basic/Defer.h"
+#include "swift/Basic/Demangle.h"
 #include "swift/Basic/Fallthrough.h"
 #include "swift/AST/ArchetypeBuilder.h"
 #include "swift/AST/NameLookup.h"
+#include "swift/IDE/Utils.h"
 #include "swift/Parse/Parser.h"
 #include "swift/Parse/Lexer.h"
 #include "swift/SIL/AbstractionPattern.h"
@@ -262,6 +264,7 @@ namespace {
       SmallVector<ValueDecl *, 4> values;
       return parseSILDeclRef(Result, values);
     }
+    bool parseMangledSILDeclRef(SILDeclRef &Result);
     bool parseGlobalName(Identifier &Name);
     bool parseValueName(UnresolvedValueName &Name);
     bool parseValueRef(SILValue &Result, SILType Ty, SILLocation Loc,
@@ -956,6 +959,278 @@ static AccessorKind getAccessorKind(StringRef ident) {
            .Case("materializeForSet", AccessorKind::IsMaterializeForSet)
            .Default(AccessorKind::NotAccessor);
 }
+
+static NominalTypeDecl *
+getTypeFromDemangledName(swift::Demangle::NodePointer demangledName,
+                         SILModule &SILMod) {
+  NominalTypeDecl *VD = nullptr;
+  SILDeclRef::Kind kind = SILDeclRef::Kind::Func;
+  swift::Demangle::NodePointer SeenType = nullptr;
+
+  while(demangledName->hasChildren()) {
+    auto elementKind = demangledName->getKind();
+    if (elementKind == swift::Demangle::Node::Kind::Class||
+        elementKind == swift::Demangle::Node::Kind::Structure ||
+        elementKind == swift::Demangle::Node::Kind::Protocol
+        ) {
+      SeenType = demangledName;
+    }
+
+    switch(elementKind) {
+    case swift::Demangle::Node::Kind::IVarDestroyer: kind = SILDeclRef::Kind::IVarDestroyer; break;
+    case swift::Demangle::Node::Kind::IVarInitializer: kind = SILDeclRef::Kind::IVarInitializer; break;
+#if 0
+    case swift::Demangle::Node::Kind::Destructor: break;
+    case swift::Demangle::Node::Kind::Constructor: break;
+    case swift::Demangle::Node::Kind::Initializer: break;
+    case swift::Demangle::Node::Kind::Getter: break;
+    case swift::Demangle::Node::Kind::Setter: break;
+    case swift::Demangle::Node::Kind::WillSet: break;
+    case swift::Demangle::Node::Kind::DidSet: break;
+    case swift::Demangle::Node::Kind::MaterializeForSet: break;
+#endif
+    default: break;
+    };
+    demangledName = demangledName->getFirstChild();
+  }
+
+  // Find a type decl where this symbol is defined.
+  assert(SeenType && "Class or struct should have been seen");
+  ModuleDecl *M = SILMod.getSwiftModule();
+  ModuleDecl *CurrentM = M;
+  unsigned startIdx = 0;
+  if (SeenType->getNumChildren() > 1) {
+    swift::Demangle::NodePointer Module = SeenType->getFirstChild();
+    assert(Module->getKind() == swift::Demangle::Node::Kind::Module && "Module name expected");
+    assert(Module->hasText() && "Wrong module name");
+    M = SILMod.getASTContext().getModuleByName(Module->getText());
+    if (!M) {
+      DEBUG (llvm::dbgs() << "SILDeclRef Lookup: Module not found: " << Module->getText() << "\n");
+      DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Current module: "
+                         << CurrentM->getNameStr() << " from file "
+                         << CurrentM->getModuleFilename() << "\n");
+      // Use current module instead. This is useful if you do something like:
+      // swiftc -emit-sil file.swift | sil-opt
+      if (CurrentM->getModuleFilename().empty() ||
+          CurrentM->getModuleFilename() == "<stdin>") {
+       if (CurrentM->getNameStr() != Module->getText()) {
+          // FIXME: Is it a good idea to change the module name on the file?
+          // A better solution would be if sil would contain the name of the
+          // module at the beginning.
+          DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Rename module: "
+                             << CurrentM->getNameStr() << " into "
+                             << Module->getText() << "\n");
+          CurrentM->setName(
+              CurrentM->getASTContext().getIdentifier(Module->getText()));
+        }
+        M = CurrentM;
+      }
+    }
+    assert(M && "Unknown module");
+    DEBUG (llvm::dbgs() << "SILDeclRef Lookup: Found module: " << Module->getText() << "\n");
+    startIdx = 1;
+    demangledName = SeenType->getChild(1);
+    assert(demangledName->hasText() && "Wrong module name");
+  }
+
+  SmallVector<Identifier, 4> qualifiedName;
+  SmallVector<ValueDecl*, 4> Results;
+  DeclContext *Context = M;
+
+  for (unsigned idx = startIdx; idx < SeenType->getNumChildren(); idx++) {
+    auto element = SeenType->getChild(idx);
+    assert(element->hasText() && "Expected qualified name");
+    Identifier elementName(M->getASTContext().getIdentifier(element->getText()));
+    Results.clear();
+    M->lookupMember(Results, Context, elementName, Identifier());
+    //M->lookupValue({}, elementName, swift::NLKind::UnqualifiedLookup, Results);
+    assert(Results.size() == 1 && "Wrong lookup");
+    if (idx < SeenType->getNumChildren() - 1) {
+      assert(isa<DeclContext>(Results[0]) && "Should be a DeclContext");
+      Context = cast<DeclContext>(Results[0]);
+    } else {
+      VD = cast<NominalTypeDecl>(Results[0]);
+      DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Found decl: " << elementName.str() << "\n");
+      break;
+    }
+  }
+
+  return VD;
+}
+
+/// Find a member of the type, so that the mangled name of a SILDeclRef to
+/// this member is the same as \mangledSILDeclRefName. If such a
+/// member is found, set \Result with a SILDeclRef referring to it.
+///
+/// returns false if a member was found, true otherwise.
+static bool findMatchingMember(NominalTypeDecl *VD,
+                               StringRef mangledSILDeclRefName,
+                               SILDeclRef &Result) {
+#if 0
+  std::string error;
+  auto SD = swift::ide::getDeclFromMangledSymbolName(
+      SILMod.getASTContext(), mangledSILDeclRefName.str(), error);
+  if (!SD) {
+    llvm::errs() << error << "\n";
+    return true;
+  }
+
+  SILDeclRef::Kind kind;
+  // Create a SILDeclRef from it.
+  switch (SD->getKind()) {
+  case DeclKind::Func: kind = SILDeclRef::Kind::Func; break;
+  case DeclKind::Constructor: kind = SILDeclRef::Kind::Allocator; break;
+  case DeclKind::Destructor: kind = SILDeclRef::Kind::Deallocator; break;
+  default: llvm_unreachable("Only functions are supported");
+  }
+
+  assert(isa<ValueDecl>(SD) && "Expected a ValueDecl");
+  SILDeclRef ref(cast<ValueDecl>(SD), kind);
+  Result = ref;
+  assert(mangledSILDeclRefName.str() == ref.mangle() &&
+         "Mangled names should be the same");
+
+  return false;
+#endif
+
+
+#if 0
+  // If symbol to be found has a name
+  auto Results = VD->lookupDirect(Identifier("Test"));
+  if (Results.size() == 1) {
+    // This is the declaration we are looking for.
+  } else {
+    for (auto Result : Results) {
+      if (!isa<AbstractFunctionDecl>(Result))
+        continue;
+      // Create a SILDeclRef
+      // Check if its mangled name matches.
+    }
+  }
+#endif
+
+  //SmallVector<ValueDecl*, 4> Results;
+  //SILMod.getSwiftModule()->lookupValue({}, typeDeclName, swift::NLKind::UnqualifiedLookup, Results);
+  //assert(Results.size() == 1 && "Wrong lookup");
+  //VD = cast<NominalTypeDecl>(Results[0]);
+
+  // Iterate over all members of a type decl and find a method
+  // which has the same mangled name as mangledSILDeclRefName.
+  // TODO: Cache the mapping from mangled names to the ValueDecls or
+  // SILDeclRefs.
+  for (auto member : VD->getMembers()) {
+    SILDeclRef::Loc refLoc;
+    // Create a SILDeclRef from it.
+    switch (member->getKind()) {
+    case DeclKind::Func: break;
+    case DeclKind::Constructor: break;
+    case DeclKind::Destructor: break;
+    case DeclKind::Class: break;
+    default: continue;
+    }
+
+    refLoc = SILDeclRef::Loc(dyn_cast<ValueDecl>(member));
+    //SILDeclRef ref(memberDecl, kind);
+    SILDeclRef ref(refLoc);
+    auto mangledMemberName = ref.mangle("");
+
+    DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Considering candidate: " << mangledMemberName << "\n");
+    if (mangledSILDeclRefName.str() == mangledMemberName) {
+      Result = ref;
+      return false;
+    }
+    if (ref.isConstructor()) {
+      ref = SILDeclRef(dyn_cast<ValueDecl>(member),
+                       SILDeclRef::Kind::Initializer);
+      mangledMemberName = ref.mangle("");
+      DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Considering candidate: "
+                   << mangledMemberName << "\n");
+      if (mangledSILDeclRefName.str() == mangledMemberName) {
+        Result = ref;
+        return false;
+      }
+    } else
+    if (ref.isDestructor()) {
+      ref = SILDeclRef(dyn_cast<ValueDecl>(member),
+                       SILDeclRef::Kind::Destroyer);
+      mangledMemberName = ref.mangle("");
+      DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Considering candidate: "
+                   << mangledMemberName << "\n");
+      if (mangledSILDeclRefName.str() == mangledMemberName) {
+        Result = ref;
+        return false;
+      }
+    } 
+
+    if (isa<ClassDecl>(member)) {
+      ref = SILDeclRef(dyn_cast<ValueDecl>(member),
+                       SILDeclRef::Kind::IVarInitializer);
+      mangledMemberName = ref.mangle("");
+      DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Considering candidate: "
+                   << mangledMemberName << "\n");
+      if (mangledSILDeclRefName.str() == mangledMemberName) {
+        Result = ref;
+        return false;
+      }
+      ref = SILDeclRef(dyn_cast<ValueDecl>(member),
+                       SILDeclRef::Kind::IVarDestroyer);
+      mangledMemberName = ref.mangle("");
+      DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Considering candidate: "
+                   << mangledMemberName << "\n");
+      if (mangledSILDeclRefName.str() == mangledMemberName) {
+        Result = ref;
+        return false;
+      }
+    }
+  }
+  if (isa<ClassDecl>(VD)) {
+    SILDeclRef ref = SILDeclRef(dyn_cast<ValueDecl>(VD),
+                                SILDeclRef::Kind::IVarInitializer);
+    auto mangledMemberName = ref.mangle("");
+    DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Considering candidate: "
+                 << mangledMemberName << "\n");
+    if (mangledSILDeclRefName.str() == mangledMemberName) {
+      Result = ref;
+      return false;
+    }
+    ref = SILDeclRef(dyn_cast<ValueDecl>(VD),
+                     SILDeclRef::Kind::IVarDestroyer);
+    mangledMemberName = ref.mangle("");
+    DEBUG(llvm::dbgs() << "SILDeclRef Lookup: Considering candidate: "
+                 << mangledMemberName << "\n");
+    if (mangledSILDeclRefName.str() == mangledMemberName) {
+      Result = ref;
+      return false;
+    }
+  }
+  // No matching member was found.
+  return true;
+}
+
+///  mangled-sil-decl-ref ::= '@' sil-identifier
+bool SILParser::parseMangledSILDeclRef(SILDeclRef &Result) {
+  Identifier mangledSILDeclRefName;
+  SourceLoc declRefLoc;
+
+  if (!P.Tok.is(tok::at_sign))
+    return true;
+  if (P.parseToken(tok::at_sign, diag::expected_sil_value_name) ||
+      parseSILIdentifier(mangledSILDeclRefName, declRefLoc,
+                         diag::expected_sil_value_name))
+    return true;
+
+  // Demangle the mangled name of the symbol.
+  auto demangledName = swift::Demangle::demangleSymbolAsNode(
+      mangledSILDeclRefName.str().data(), mangledSILDeclRefName.str().size());
+
+  // First find the type where a member is defined.
+  auto VD = getTypeFromDemangledName(demangledName, SILMod);
+  if (!VD)
+    return true;
+  // Then find the member inside this type.
+  return findMatchingMember(VD, mangledSILDeclRefName.str(), Result);
+}
+
 
 ///  sil-decl-ref ::= '#' sil-identifier ('.' sil-identifier)* sil-decl-subref?
 ///  sil-decl-subref ::= '!' sil-decl-subref-part ('.' sil-decl-uncurry-level)?
@@ -4138,7 +4413,9 @@ bool Parser::parseSILVTable() {
       SILDeclRef Ref;
       Identifier FuncName;
       SourceLoc FuncLoc;
-      if (VTableState.parseSILDeclRef(Ref))
+      if (VTableState.parseMangledSILDeclRef(Ref) &&
+          VTableState.parseSILDeclRef(Ref))
+      //if (VTableState.parseSILDeclRef(Ref))
         return true;
       SILFunction *Func = nullptr;
       if (Tok.is(tok::kw_nil)) {
@@ -4531,7 +4808,9 @@ bool Parser::parseSILWitnessTable() {
       SILDeclRef Ref;
       Identifier FuncName;
       SourceLoc FuncLoc;
-      if (WitnessState.parseSILDeclRef(Ref) ||
+      if ((WitnessState.parseMangledSILDeclRef(Ref) &&
+          WitnessState.parseSILDeclRef(Ref)) ||
+      //if (WitnessState.parseSILDeclRef(Ref) ||
           parseToken(tok::colon, diag::expected_sil_witness_colon))
         return true;
       
@@ -4626,7 +4905,9 @@ bool Parser::parseSILDefaultWitnessTable() {
       SILDeclRef Ref;
       Identifier FuncName;
       SourceLoc FuncLoc;
-      if (WitnessState.parseSILDeclRef(Ref) ||
+      if ((WitnessState.parseMangledSILDeclRef(Ref) &&
+          WitnessState.parseSILDeclRef(Ref)) ||
+      //if (WitnessState.parseSILDeclRef(Ref) ||
           parseToken(tok::colon, diag::expected_sil_witness_colon))
         return true;
       

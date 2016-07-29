@@ -2059,9 +2059,12 @@ void SILVTable::print(llvm::raw_ostream &OS, bool Verbose) const {
   OS << "sil_vtable " << getClass()->getName() << " {\n";
   for (auto &entry : getEntries()) {
     OS << "  ";
-    entry.first.print(OS);
+    //entry.first.print(OS);
+    OS << "@" << entry.first.mangle();
     OS << ": " << entry.second->getName()
-       << "\t// " << demangleSymbol(entry.second->getName()) << "\n";
+       << "\t// ";
+    entry.first.print(OS);
+    OS << ": " << demangleSymbol(entry.second->getName()) << "\n";
   }
   OS << "}\n\n";
 }
@@ -2095,12 +2098,14 @@ void SILWitnessTable::print(llvm::raw_ostream &OS, bool Verbose) const {
       // method #declref: @function
       auto &methodWitness = witness.getMethodWitness();
       OS << "method ";
-      methodWitness.Requirement.print(OS);
+      //methodWitness.Requirement.print(OS);
+      OS << "@" << methodWitness.Requirement.mangle();
       OS << ": ";
       if (methodWitness.Witness) {
         methodWitness.Witness->printName(OS);
-        OS << "\t// "
-           << demangleSymbol(methodWitness.Witness->getName());
+        OS << "\t// ";
+        methodWitness.Requirement.print(OS);
+        OS << ": " << demangleSymbol(methodWitness.Witness->getName());
       } else {
         OS << "nil";
       }
