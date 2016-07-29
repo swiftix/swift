@@ -452,6 +452,7 @@ struct PrintOptions {
     result.PrintForSIL = true;
     result.PrintInSILBody = true;
     result.PreferTypeRepr = false;
+    result.FullyQualifiedTypesIfAmbiguous = true;
     return result;
   }
 

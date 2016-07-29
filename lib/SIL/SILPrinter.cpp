@@ -1447,19 +1447,20 @@ public:
   void visitClassMethodInst(ClassMethodInst *AMI) {
     printMethodInst(AMI, AMI->getOperand());
     *this << " : " << AMI->getMember().getDecl()->getInterfaceType();
-    *this << " , ";
+    *this << ", ";
     *this << AMI->getType();
   }
   void visitSuperMethodInst(SuperMethodInst *AMI) {
     printMethodInst(AMI, AMI->getOperand());
     *this << " : " << AMI->getMember().getDecl()->getInterfaceType();
-    *this << " , ";
+    *this << ", ";
     *this << AMI->getType();
   }
   void visitWitnessMethodInst(WitnessMethodInst *WMI) {
     if (WMI->isVolatile())
       *this << "[volatile] ";
-    *this << "$" << WMI->getLookupType() << ", " << WMI->getMember();
+    *this << "$" << WMI->getLookupType() << ", " << WMI->getMember() 
+          << " : " << WMI->getMember().getDecl()->getInterfaceType();
     if (!WMI->getTypeDependentOperands().empty()) {
       *this << ", ";
       *this << getIDAndType(WMI->getTypeDependentOperands()[0].get());
@@ -2182,10 +2183,13 @@ void ValueBase::printInContext(llvm::raw_ostream &OS) const {
 
 void SILVTable::print(llvm::raw_ostream &OS, bool Verbose) const {
   OS << "sil_vtable " << getClass()->getName() << " {\n";
+  PrintOptions Options = PrintOptions::printSIL();
   for (auto &entry : getEntries()) {
     OS << "  ";
     entry.Method.print(OS);
     OS << ": ";
+    entry.Method.getDecl()->getInterfaceType().print(OS, Options);
+    OS << " : ";
     if (entry.Linkage !=
         stripExternalFromLinkage(entry.Implementation->getLinkage())) {
       OS << getLinkageString(entry.Linkage);
@@ -2227,6 +2231,9 @@ void SILWitnessTable::print(llvm::raw_ostream &OS, bool Verbose) const {
       OS << "method ";
       methodWitness.Requirement.print(OS);
       OS << ": ";
+      methodWitness.Requirement.getDecl()->getInterfaceType().print(OS,
+                                                                    Options);
+      OS << " : ";
       if (methodWitness.Witness) {
         methodWitness.Witness->printName(OS);
         OS << "\t// "
@@ -2284,6 +2291,7 @@ void SILWitnessTable::dump() const {
 
 void SILDefaultWitnessTable::print(llvm::raw_ostream &OS, bool Verbose) const {
   // sil_default_witness_table [<Linkage>] <Protocol> <MinSize>
+  PrintOptions Options = PrintOptions::printSIL();
   OS << "sil_default_witness_table ";
   printLinkage(OS, getLinkage(), ForDefinition);
   OS << getProtocol()->getName() << " {\n";
@@ -2298,6 +2306,9 @@ void SILDefaultWitnessTable::print(llvm::raw_ostream &OS, bool Verbose) const {
     OS << "  method ";
     witness.getRequirement().print(OS);
     OS << ": ";
+    witness.getRequirement().getDecl()->getInterfaceType().print(OS, Options);
+
+    OS << " : ";
     witness.getWitness()->printName(OS);
     OS << "\t// "
        << demangleSymbolAsString(witness.getWitness()->getName());
