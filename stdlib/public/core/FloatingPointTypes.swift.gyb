@@ -67,7 +67,8 @@ def intFormatFix(bits):
     return bits
 }%
 
-//  TODO: remove once integer proposal is available ----------------------------
+// TODO: remove once integer proposal is available ----------------------------
+// FIXME(integers): ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 %for bits in [32,64]:
 extension UInt${bits} {
   var signBitIndex: Int {
@@ -114,8 +115,8 @@ public struct ${Self} {
   var _value: Builtin.FPIEEE${bits}
 
   /// Create an instance initialized to zero.
-  @_transparent public
-  init() {
+  @_transparent
+  public init() {
     let zero: Int64 = 0
     self._value = Builtin.sitofp_Int64_FPIEEE${bits}(zero._value)
   }
@@ -143,6 +144,7 @@ extension ${Self} : CustomDebugStringConvertible {
 
 extension ${Self}: BinaryFloatingPoint {
 
+  public typealias Magnitude = ${Self}
   public typealias Exponent = Int
   public typealias RawSignificand = ${RawSignificand}
 
@@ -359,7 +361,8 @@ extension ${Self}: BinaryFloatingPoint {
     if exponentBitPattern > UInt(${Self}.significandBitCount) {
       // self is large enough that self.ulp is normal, so we just compute its
       // exponent and construct it with a significand of zero.
-      let ulpExponent = exponentBitPattern - UInt(${Self}.significandBitCount)
+      let ulpExponent =
+        exponentBitPattern - UInt(${Self}.significandBitCount)
       return ${Self}(sign: .plus,
         exponentBitPattern: ulpExponent,
         significandBitPattern: 0)
@@ -748,10 +751,15 @@ extension ${Self} : Hashable {
   }
 }
 
-extension ${Self} : Arithmetic {
+extension ${Self} {
   @_transparent
   public var magnitude: ${Self} {
     return ${Self}(_bits: Builtin.int_fabs_FPIEEE${bits}(_value))
+  }
+
+  // FIXME(integers): implement properly
+  public init?<T : BinaryInteger>(exactly source: T) {
+    fatalError()
   }
 }
 

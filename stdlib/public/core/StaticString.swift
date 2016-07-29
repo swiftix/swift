@@ -160,7 +160,9 @@ public struct StaticString
     // unrelated buffer is not accessed or freed.
     self._startPtrOrData = Builtin.ptrtoint_Word(_start)
     self._utf8CodeUnitCount = utf8CodeUnitCount
-    self._flags = Bool(isASCII) ? (0x2 as UInt8)._value : (0x0 as UInt8)._value
+    self._flags = Bool(isASCII)
+      ? (0x2 as UInt8)._value
+      : (0x0 as UInt8)._value
   }
 
   @_versioned

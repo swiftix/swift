@@ -242,8 +242,9 @@ extension String {
   ///     let max = String(Int.max)
   ///     print("\(max) has \(max.utf16.count) digits.")
   ///     // Prints "9223372036854775807 has 19 digits."
-  public init<T : _SignedInteger>(_ v: T) {
-    self = _int64ToString(v.toIntMax())
+  // FIXME(integers): support a more general BinaryInteger protocol
+  public init<T : FixedWidthInteger>(_ v: T) {
+    self = _int64ToString(Int64(v))
   }
   
   /// Creates a string representing the given value in base 10.
@@ -254,8 +255,10 @@ extension String {
   ///     let max = String(UInt.max)
   ///     print("\(max) has \(max.utf16.count) digits.")
   ///     // Prints "18446744073709551615 has 20 digits."
-  public init<T : UnsignedInteger>(_ v: T) {
-    self = _uint64ToString(v.toUIntMax())
+  // FIXME(integers): support a more general BinaryInteger protocol
+  public init<T : FixedWidthInteger>(_ v: T)
+    where T : UnsignedInteger {
+    self = _uint64ToString(UInt64(v))
   }
 
   /// Creates a string representing the given value in the specified base.
@@ -279,12 +282,13 @@ extension String {
   ///   - uppercase: Pass `true` to use uppercase letters to represent numerals
   ///     greater than 9, or `false` to use lowercase letters. The default is
   ///     `false`.
-  public init<T : _SignedInteger>(
+  // FIXME(integers): support a more general BinaryInteger protocol
+  public init<T : FixedWidthInteger>(
     _ value: T, radix: Int, uppercase: Bool = false
   ) {
     _precondition(radix > 1, "Radix must be greater than 1")
     self = _int64ToString(
-      value.toIntMax(), radix: Int64(radix), uppercase: uppercase)
+      Int64(value), radix: Int64(radix), uppercase: uppercase)
   }
   
   /// Creates a string representing the given value in the specified base.
@@ -308,12 +312,13 @@ extension String {
   ///   - uppercase: Pass `true` to use uppercase letters to represent numerals
   ///     greater than 9, or `false` to use lowercase letters. The default is
   ///     `false`.
-  public init<T : UnsignedInteger>(
+  // FIXME(integers): support a more general BinaryInteger protocol
+  public init<T : FixedWidthInteger>(
     _ value: T, radix: Int, uppercase: Bool = false
-  ) {
+  ) where T : UnsignedInteger {
     _precondition(radix > 1, "Radix must be greater than 1")
     self = _uint64ToString(
-      value.toUIntMax(), radix: Int64(radix), uppercase: uppercase)
+      UInt64(value), radix: Int64(radix), uppercase: uppercase)
   }
 }
 
