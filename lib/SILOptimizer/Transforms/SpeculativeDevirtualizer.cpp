@@ -337,51 +337,6 @@ static void callPolymorphicCacheThunk(FullApplySite AI, SILFunction *Cache) {
   AI.getInstruction()->eraseFromParent();
 }
 
-// Create a name for a member reference. The name should be
-// different for different SILDeclRefs, i.e. it should take into
-// account not only the name of the symbol, but also its parameter
-// types and return values types.
-// TODO: Use mangler to create such a name!
-static void getMemberName(SILDeclRef Member, llvm::raw_svector_ostream &OS) {
-
-  OS << Member.mangle();
-#if 0
-  auto *AFD = dyn_cast<AbstractFunctionDecl>(Member.getDecl());
-  assert(AFD && "Member should refer to a function declaration");
-  if (AFD->isStatic())
-      OS << "_type";
-  if (auto FD = dyn_cast<FuncDecl>(AFD)) {
-  if (auto *ASD = FD->getAccessorStorageDecl()) {
-    switch (FD->getAccessorKind()) {
-    case AccessorKind::NotAccessor: llvm_unreachable("Isn't an accessor?");
-    case AccessorKind::IsGetter: OS << "_getter"; break;
-    case AccessorKind::IsSetter: OS << "_setter"; break;
-    case AccessorKind::IsWillSet: OS << "_willset"; break;
-    case AccessorKind::IsDidSet: OS << "_didset"; break;
-    case AccessorKind::IsMaterializeForSet: OS << "_materializeForSet"; break;
-    case AccessorKind::IsAddressor: OS << "_addressor"; break;
-    case AccessorKind::IsMutableAddressor: OS << "_mutableAddressor"; break;
-    }
-    OS << "_for_" << ASD->getFullName();
-  } else {
-    OS << FD->getNameStr();
-  }
-  return;
-  }
-  if (auto CD = dyn_cast<ConstructorDecl>(AFD)) {
-    OS << "_constructor";
-    return;
-  }
-
-  if (auto DD = dyn_cast<DestructorDecl>(AFD)) {
-    OS << "_destructor";
-    return;
-  }
-
-  llvm_unreachable("Unsupported member reference");
-#endif
-}
-
 // Generate a thunk(trampoline function) performing the polymorphic speculative
 // call. Re-use an existing thunk if it is present.
 // Replace apply(class_method) by apply(thunk) and let thunk perform
@@ -400,7 +355,7 @@ createPolymorphicCacheThunk(FullApplySite &AI, SILType SubType,
     llvm::raw_svector_ostream Buffer(CacheName);
     SmallVector<char, 256> PrefixStr;
 
-    getMemberName(CMI->getMember(), Buffer);
+    OS << CMI->getMember().mangle();
 
     SILType Ty = SubType;
     while (Ty.is<AnyMetatypeType>()) {
