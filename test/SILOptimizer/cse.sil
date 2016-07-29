@@ -1249,7 +1249,7 @@ protocol Pingable { func ping() }
 
 // CHECK-LABEL: CSE_Existential_Simple
 // CHECK: open_existential_addr %0 : $*Pingable to $*@opened("1E467EB8-D5C5-11E5-8C0E-A82066121073")
-// CHECK: witness_method $@opened("1E467EB8-D5C5-11E5-8C0E-A82066121073") Pingable, #Pingable.ping!1, %2
+// CHECK: witness_method $@opened("1E467EB8-D5C5-11E5-8C0E-A82066121073") Pingable, #Pingable.ping!1 : {{.*}} , %2
 // CHECK: apply %3<@opened("1E467EB8-D5C5-11E5-8C0E-A82066121073") Pingable>(%2)
 // CHECK: open_existential_addr
 // CHECK: witness_method
