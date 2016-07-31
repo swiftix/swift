@@ -795,6 +795,43 @@ public struct ${Self}
   : FixedWidthInteger, ${Unsigned}Integer,
     _ExpressibleByBuiltinIntegerLiteral {
 
+% if z == 's':
+  //public typealias Stride = ${Self}
+  public func advanced(by n: ${Self}) -> ${Self} {
+    return self.adding(n)
+  }
+
+  public func distance(to other: ${Self}) -> ${Self} {
+    return other.subtracting(self)
+  }
+% else:
+/*
+  // public typealias Stride = ${OtherSelf}
+  public func advanced(by n: ${OtherSelf}) -> ${Self} {
+    if n >= 0 {
+      return self.adding(${Self}(n))
+    }
+    return self.subtracting(${Self}(-n))
+  }
+
+  public func distance(to other: ${Self}) -> ${OtherSelf} {
+    //return Stride(other.subtracting(self))
+    if other >= self {
+      return ${OtherSelf}(other.subtracting(self))
+    }
+    return -${OtherSelf}(bitPattern: self.subtracting(other))
+  }
+*/
+  public func advanced(by n: ${OtherSelf}) -> ${Self} {
+    return ${Self}(self.adding(${Self}(n)))
+  }
+
+  public func distance(to other: ${Self}) -> ${OtherSelf} {
+    return ${OtherSelf}(other.subtracting(self))
+  }
+
+% end
+
   @_transparent
   public init(_builtinIntegerLiteral x: _MaxBuiltinIntegerType) {
     _value = Builtin.truncOrBitCast_${IntLiteral}_Int${bits}(x)
