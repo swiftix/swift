@@ -235,7 +235,7 @@ int main(int argc, char **argv) {
 // Bugpoint has the ability of generating a plethora of core files, so to
 // avoid filling up the disk, we prevent it
 #ifndef DEBUG_BUGPOINT
-    sys::Process::PreventCoreFiles();
+    //sys::Process::PreventCoreFiles();
 #endif
 
     std::string Error;
@@ -278,7 +278,7 @@ int main(int argc, char **argv) {
 // Bugpoint has the ability of generating a plethora of core files, so to
 // avoid filling up the disk, we prevent it
 #ifndef DEBUG_BUGPOINT
-    sys::Process::PreventCoreFiles();
+    // sys::Process::PreventCoreFiles();
 #endif
 
     std::string Error;

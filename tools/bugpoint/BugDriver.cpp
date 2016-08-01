@@ -152,9 +152,30 @@ std::unique_ptr<swift::SILModule> parseSILFile(StringRef InputFilename,
   swift::SourceManager SM;
   swift::DiagnosticEngine Diags(SM);
   SmallVector<const char *, 16> Args;
+  std::string SDKPath;
+  std::string ResourceDir;
   //Args.append(toolArgs.begin(), toolArgs.end());
-  for (auto toolArg : toolArgs)
-    Args.push_back(StringRef(toolArg).data());
+  for (auto Arg = toolArgs.begin(), End = toolArgs.end(); Arg != End; ++Arg) {
+    if (StringRef("-sdk") == *Arg) {
+      ++Arg;
+      if (Arg != End) {
+        SDKPath = *Arg;
+       continue;
+      }
+      llvm::errs() << "-sdk should be followed by a path";
+    }
+    if (StringRef("-resource-dir") == *Arg) {
+      ++Arg;
+      if (Arg != End) {
+        ResourceDir = *Arg;
+       continue;
+      }
+      llvm::errs() << "-resource-dir should be followed by a path";
+    }
+
+    Args.push_back(StringRef(*Arg).data());
+  }
+
   Invocation.parseArgs(Args, Diags);
   // Parse toolArgs and initialize global flags from it.
   // TODO: It would be better if all those global flags are encapsulated
@@ -167,22 +188,23 @@ std::unique_ptr<swift::SILModule> parseSILFile(StringRef InputFilename,
       llvm::sys::fs::getMainExecutable(argv[0],
           reinterpret_cast<void *>(&anchorForGetMainExecutable)));
 */
-#if 0
+
   // Give the context the list of search paths to use for modules.
   // Invocation.setImportSearchPaths(ImportPaths);
-  Invocation.setFrameworkSearchPaths(FrameworkPaths);
+  //Invocation.setFrameworkSearchPaths(FrameworkPaths);
   // Set the SDK path and target if given.
-  if (SDKPath.getNumOccurrences() == 0) {
+  if (SDKPath.empty()) {
     const char *SDKROOT = getenv("SDKROOT");
     if (SDKROOT)
       SDKPath = SDKROOT;
   }
   if (!SDKPath.empty())
     Invocation.setSDKPath(SDKPath);
-  if (!Target.empty())
-    Invocation.setTargetTriple(Target);
   if (!ResourceDir.empty())
     Invocation.setRuntimeResourcePath(ResourceDir);
+#if 0
+  if (!Target.empty())
+    Invocation.setTargetTriple(Target);
   Invocation.getFrontendOptions().EnableResilience = EnableResilience;
   // Set the module cache path. If not passed in we use the default swift module
   // cache.
@@ -351,7 +373,7 @@ std::unique_ptr<swift::SILModule> parseSILFile(StringRef InputFilename,
     }
   }
 
-  return std::unique_ptr<swift::SILModule>(CI.getSILModule());
+  return std::unique_ptr<swift::SILModule>(CI.takeSILModule());
 }
 
 std::unique_ptr<swift::SILModule> llvm::parseSILInputFile(StringRef Filename,
@@ -384,7 +406,7 @@ std::unique_ptr<swift::SILModule> llvm::parseSILInputFile(StringRef Filename,
 
     TargetTriple.setTriple(TheTriple.getTriple());
 #endif
-    assert(0 && "Not implemented yet");
+    //assert(0 && "Not implemented yet");
   }
 
   //Result->setTargetTriple(TargetTriple.getTriple()); // override the triple
