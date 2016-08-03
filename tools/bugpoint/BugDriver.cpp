@@ -139,7 +139,8 @@ static void runCommandLineSelectedPasses(swift::SILModule *Module) {
   PM.run();
 }
 
-
+// FIXME: SILModule cannot outlive the CompilerInvocation.
+// Therefore, the CompilerInvocation should be preserved.
 std::unique_ptr<swift::SILModule> parseSILFile(StringRef InputFilename,
                                                SMDiagnostic &Err,
                                                llvm::LLVMContext &Ctxt,
@@ -321,6 +322,7 @@ std::unique_ptr<swift::SILModule> parseSILFile(StringRef InputFilename,
   bool EmitSIB = false;
   StringRef OutputFilename;
   if (EmitSIB) {
+    // Output SIL in a binary form.
     llvm::SmallString<128> OutputFile;
     if (OutputFilename.size()) {
       OutputFile = OutputFilename;
@@ -339,12 +341,16 @@ std::unique_ptr<swift::SILModule> parseSILFile(StringRef InputFilename,
 
     swift::serialize(CI.getMainModule(), serializationOpts, CI.getSILModule());
   } else {
+    // Output SIL in textual form.
     const StringRef OutputFile = OutputFilename.size() ?
                                    StringRef(OutputFilename) : "-";
 
     if (OutputFile == "-") {
+      // TODO: It should not be possible that there is no output file name!
+#if 0
       CI.getSILModule()->print(llvm::outs(), EmitVerboseSIL, CI.getMainModule(),
                                EnableSILSortOutput, !DisableASTDump);
+#endif
     } else {
       std::error_code EC;
       llvm::raw_fd_ostream OS(OutputFile, EC, llvm::sys::fs::F_None);
