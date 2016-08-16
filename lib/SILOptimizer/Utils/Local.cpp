@@ -1983,9 +1983,12 @@ simplifyCheckedCastAddrBranchInst(CheckedCastAddrBranchInst *Inst) {
 SILInstruction *
 CastOptimizer::simplifyCheckedCastBranchInst(CheckedCastBranchInst *Inst) {
   if (Inst->isExact()) {
-    auto *ARI = dyn_cast<AllocRefInst>(stripUpCasts(Inst->getOperand()));
-    if (!ARI)
-      return nullptr;
+    SILInstruction *I = dyn_cast<AllocRefInst>(stripUpCasts(Inst->getOperand()));
+    if (!I) {
+      I = dyn_cast<MetatypeInst>(stripUpCasts(Inst->getOperand()));
+      if (!I)
+        return nullptr;
+    }
 
     // We know the dynamic type of the operand.
     SILBuilderWithScope Builder(Inst);
@@ -1993,10 +1996,10 @@ CastOptimizer::simplifyCheckedCastBranchInst(CheckedCastBranchInst *Inst) {
     auto *SuccessBB = Inst->getSuccessBB();
     auto *FailureBB = Inst->getFailureBB();
 
-    if (ARI->getType() == Inst->getCastType()) {
+    if (I->getType() == Inst->getCastType()) {
       // This exact cast will succeed.
       SmallVector<SILValue, 1> Args;
-      Args.push_back(ARI);
+      Args.push_back(I);
       auto *NewI = Builder.createBranch(Loc, SuccessBB, Args);
       EraseInstAction(Inst);
       WillSucceedAction();

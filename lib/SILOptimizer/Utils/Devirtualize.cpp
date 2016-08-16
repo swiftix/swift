@@ -450,7 +450,7 @@ SILFunction *swift::getTargetClassMethod(SILModule &M,
           isa<SuperMethodInst>(MI)) &&
          "Only class_method and witness_method instructions are supported");
 
-  if (isa<ClassMethodInst>(MI)) {
+  if (isa<ClassMethodInst>(MI) || isa<SuperMethodInst>(MI)) {
     SILDeclRef Member = MI->getMember();
     if (ClassOrMetatypeType.is<MetatypeType>())
       ClassOrMetatypeType = ClassOrMetatypeType.getMetatypeInstanceType(M);
