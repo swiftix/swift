@@ -740,6 +740,22 @@ Optional<SILValue> swift::castValueToABICompatibleType(SILBuilder *B, SILLocatio
     }
   }
 
+  if (auto SNTD = SrcTy.getNominalOrBoundGenericNominal()) {
+    if (auto DNTD = DestTy.getNominalOrBoundGenericNominal()) {
+      if (SNTD == DNTD) {
+        // Both types refer to the same nominal type. It may
+        // happen e.g. if one of them the types contains has
+        // unbound generic parameters and the other one has
+        // bound generic parameters.
+        // Such types are ABI compatible. Use a bitwise cast for them.
+        if (CheckOnly)
+          return Value;
+        CastedValue = B->createUncheckedBitCast(Loc, Value, DestTy);
+        return CastedValue;
+      }
+    }
+  }
+
   if (CheckOnly)
     return None;
   llvm_unreachable("Unknown combination of types for casting");

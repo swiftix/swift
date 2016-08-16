@@ -52,6 +52,7 @@ STATISTIC(NumTargetsPredicted, "Number of monomorphic functions predicted");
 static FullApplySite CloneApply(FullApplySite AI, SILBuilder &Builder) {
   // Clone the Apply.
   Builder.setCurrentDebugScope(AI.getDebugScope());
+  Builder.getOpenedArchetypes().addOpenedArchetypeOperands(AI.getInstruction()->getTypeDependentOperands());
   auto Args = AI.getArguments();
   SmallVector<SILValue, 8> Ret(Args.size());
   for (unsigned i = 0, e = Args.size(); i != e; ++i)
@@ -82,6 +83,7 @@ static FullApplySite CloneApply(FullApplySite AI, SILBuilder &Builder) {
     llvm_unreachable("Trying to clone an unsupported apply instruction");
   }
 
+  Builder.getOpenedArchetypes().addOpenedArchetypeOperands({});
   NAI.getInstruction();
   return NAI;
 }
@@ -360,6 +362,7 @@ static FullApplySite speculateMonomorphicTarget(FullApplySite AI,
   SILBasicBlock *Continue = Entry->splitBasicBlock(It);
 
   SILBuilderWithScope Builder(Entry, AI.getInstruction());
+  Builder.getOpenedArchetypes().addOpenedArchetypeOperands(AI.getInstruction()->getTypeDependentOperands());
 
   auto Loc = AI.getLoc();
   // Check if the type of of self is identical to the subtype.
@@ -387,8 +390,6 @@ static FullApplySite speculateMonomorphicTarget(FullApplySite AI,
     Builder.createCheckedCastBranch(AI.getLoc(), /*exact*/ true,
                                     MetaTy, TargetType, Iden,
                                     Virt);
-
-
   }
 
   SILBuilderWithScope VirtBuilder(Virt, AI.getInstruction());
@@ -429,7 +430,8 @@ static FullApplySite speculateMonomorphicTarget(FullApplySite AI,
   if (auto *Release =
           dyn_cast<StrongReleaseInst>(std::next(Continue->begin()))) {
     if (Release->getOperand() == Self) {
-      VirtBuilder.createStrongRelease(Release->getLoc(), CMI->getOperand(),
+      VirtBuilder.createStrongRelease(Release->getLoc(), Self,
+      //VirtBuilder.createStrongRelease(Release->getLoc(), CMI->getOperand(),
                                       Atomicity::Atomic);
       IdenBuilder.createStrongRelease(
           Release->getLoc(), DownCastedClassInstance, Atomicity::Atomic);
@@ -505,6 +507,7 @@ static FullApplySite speculateMonomorphicTarget(FullApplySite AI,
                         {NormalBB->getBBArg(0) });
 
     Builder.setInsertionPoint(VirtAI.getInstruction());
+    Builder.getOpenedArchetypes().addOpenedArchetypeOperands(VirtAI.getInstruction()->getTypeDependentOperands());
     SmallVector<SILValue, 4> Args;
     for (auto Arg : VirtAI.getArguments()) {
       Args.push_back(Arg);
@@ -856,11 +859,16 @@ static bool tryToSpeculateTarget(FullApplySite AI,
   ProtocolDecl *WMIProtocol = CMI->getLookupProtocol();
 
   SILType SubType;
-  if (CMI->hasOperand()) {
-    SubType = CMI->getOperand()->getType();
+#if 1
+  if (!CMI->getTypeDependentOperands().empty()) {
+    // FIXME: Is it always a first opened archetype operand?
+    SubType = CMI->getTypeDependentOperands()[0].get()->getType();
   } else {
     SubType = SILType::getPrimitiveObjectType(CMI->getLookupType());
   }
+#else
+  SubType = SILType::getPrimitiveObjectType(CMI->getLookupType());
+#endif
 
   auto &M = CMI->getModule();
   auto ClassType = SubType;
@@ -874,13 +882,13 @@ static bool tryToSpeculateTarget(FullApplySite AI,
 
   auto &Impls = CHA->getProtocolImplementations(WMIProtocol);
 
-  SmallVector<NominalTypeDecl *, 8> Subs(Impls);
+  SmallVector<NominalTypeDecl *, 8> SubTypes(Impls);
 
   if (isa<BoundGenericClassType>(ClassType.getSwiftRValueType())) {
     // Filter out any subclasses that do not inherit from this
     // specific bound class.
-    auto RemovedIt = std::remove_if(Subs.begin(),
-        Subs.end(),
+    auto RemovedIt = std::remove_if(SubTypes.begin(),
+        SubTypes.end(),
         [&ClassType, &M](NominalTypeDecl *Sub){
           auto SubCanTy = Sub->getDeclaredType()->getCanonicalType();
           // Unbound generic type can override a method from
@@ -894,16 +902,16 @@ static bool tryToSpeculateTarget(FullApplySite AI,
           return !ClassType.isBindableToSuperclassOf(
               SILType::getPrimitiveObjectType(SubCanTy));
         });
-    Subs.erase(RemovedIt, Subs.end());
+    SubTypes.erase(RemovedIt, SubTypes.end());
   }
 
   // TODO: Remove any candidates that are not profitable from the inlining
   // point of view.
 
-  if (Subs.size() > MaxNumSpeculativeTargets) {
+  if (SubTypes.size() > MaxNumSpeculativeTargets) {
     // TODO: Use PGO to handle the most probable alternatives.
     DEBUG(llvm::dbgs() << "Protocol " << WMIProtocol->getName() << " has too many (" <<
-          Subs.size() << ") implementations. Not speculating.\n");
+          SubTypes.size() << ") implementations. Not speculating.\n");
     return false;
   }
 
@@ -949,6 +957,7 @@ static bool tryToSpeculateTarget(FullApplySite AI,
   int NotHandledSubsNum = 0;
   // True if any instructions were changed or generated.
   bool Changed = false;
+  ArrayRef<NominalTypeDecl *> Subs(SubTypes);
 
   for (auto S : Subs) {
     DEBUG(llvm::dbgs() << "Inserting a speculative call for class "

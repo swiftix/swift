@@ -527,11 +527,31 @@ bool swift::canDevirtualizeClassMethod(FullApplySite AI,
       return false;
   }
 
+  // Type of the original callee.
+  CanSILFunctionType OrigGenCalleeType = AI.getOrigCalleeType();
+  CanSILFunctionType OrigSubstCalleeType = AI.getSubstCalleeType();
+
   // Type of the actual function to be called.
   CanSILFunctionType GenCalleeType = F->getLoweredFunctionType();
 
   // Type of the actual function to be called with substitutions applied.
   CanSILFunctionType SubstCalleeType = GenCalleeType;
+
+#if 0
+  // TODO: What if the original callee is generic, but actual function is not?
+  // This may happen, if you call a witness_method. It is always generic, but
+  // concrete implementations are not necessarily generic.
+  if (OrigGenCalleeType->isPolymorphic()) {
+    // The actual function is supposed to have a type that you get by substituting
+    // some generic types in the original type.
+    auto Subs = getSubstitutionsForCallee(Mod, OrigGenCalleeType,
+                                          ClassOrMetatypeType, AI);
+    OrigSubstCalleeType =
+        OrigGenCalleeType->substGenericArgs(Mod, Mod.getSwiftModule(), Subs);
+
+    assert(OrigSubstCalleeType == GenCalleeType);
+  }
+#endif
 
   // For polymorphic functions, bail if the number of substitutions is
   // not the same as the number of expected generic parameters.
@@ -561,6 +581,12 @@ bool swift::canDevirtualizeClassMethod(FullApplySite AI,
     SubstCalleeType =
         GenCalleeType->substGenericArgs(Mod, Mod.getSwiftModule(), Subs);
   }
+
+#if 0
+  assert(OrigSubstCalleeType == SubstCalleeType &&
+         "Types of the original callee and devirtualized callee should be "
+         "compatible");
+#endif
 
   // Check if the optimizer knows how to cast the return type.
   SILType ReturnType = SubstCalleeType->getSILResult();
@@ -600,7 +626,10 @@ DevirtualizationResult swift::devirtualizeClassMethod(FullApplySite AI,
   if (GenCalleeType->isPolymorphic())
     SubstCalleeType = GenCalleeType->substGenericArgs(Mod, Mod.getSwiftModule(), Subs);
 
+  SILOpenedArchetypesTracker OpenedArchetypesTracker(*AI.getFunction());
   SILBuilderWithScope B(AI.getInstruction());
+  B.setOpenedArchetypesTracker(&OpenedArchetypesTracker);
+
   FunctionRefInst *FRI = B.createFunctionRef(AI.getLoc(), F);
 
   // Create the argument list for the new apply, casting when needed
@@ -698,6 +727,11 @@ DevirtualizationResult swift::devirtualizeClassMethod(FullApplySite AI,
     ResultValue = ResultBB->getBBArg(0);
   }
 
+  if(auto ResultInst = dyn_cast<SILInstruction>(ResultValue)) {
+    if (B.getOpenedArchetypesTracker())
+      B.getOpenedArchetypesTracker()->registerUsedOpenedArchetypes(AI.getInstruction());
+    B.getOpenedArchetypes().addOpenedArchetypeOperands(ResultInst->getTypeDependentOperands());
+  }
   // Check if any casting is required for the return value.
   ResultValue = castValueToABICompatibleType(&B, NewAI.getLoc(), ResultValue,
                                              ResultTy, AI.getType()).getValue();
