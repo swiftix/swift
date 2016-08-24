@@ -975,6 +975,12 @@ void irgen::emitObjCPartialApplication(IRGenFunction &IGF,
 /// an Objective-C method for a Swift method implementation.
 static llvm::Constant *findSwiftAsObjCThunk(IRGenModule &IGM, SILDeclRef ref) {
   SILFunction *SILFn = IGM.getSILModule().lookUpFunction(ref);
+  if (!SILFn) {
+    //auto mangledFnName = ref.mangle();
+    //SILFn = IGM.getSILModule().hasFunction(mangledFnName, SILLinkage::Private);
+    if (IGM.getSILModule().linkFunction(ref, SILModule::LinkingMode::LinkAll))
+      SILFn = IGM.getSILModule().lookUpFunction(ref);
+  }
   assert(SILFn && "no IR function for swift-as-objc thunk");
   auto fn = IGM.getAddrOfSILFunction(SILFn, NotForDefinition);
   fn->setVisibility(llvm::GlobalValue::DefaultVisibility);

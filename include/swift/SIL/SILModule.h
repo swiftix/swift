@@ -85,6 +85,7 @@ public:
   using DefaultWitnessTableListType = llvm::ilist<SILDefaultWitnessTable>;
   using CoverageMapListType = llvm::ilist<SILCoverageMap>;
   using LinkingMode = SILOptions::LinkingMode;
+  using NominalTypesSet = llvm::DenseSet<NominalTypeDecl *>;
 
 private:
   friend class SILBasicBlock;
@@ -169,6 +170,9 @@ private:
 
   /// This is the set of undef values we've created, for uniquing purposes.
   llvm::DenseMap<SILType, SILUndef *> UndefValues;
+
+  /// This is a set of deserialized nominal types used by the module.
+  NominalTypesSet DeserializedNominalTypes;
 
   /// The stage of processing this module is at.
   SILStage Stage;
@@ -395,7 +399,22 @@ public:
   }
   iterator_range<coverage_map_const_iterator> getCoverageMaps() const {
     return {coverageMaps.begin(), coverageMaps.end()};
- }
+  }
+
+  using nominal_type_set_iterator = NominalTypesSet::iterator;
+  using nominal_type_set_const_iterator = NominalTypesSet::const_iterator;
+  NominalTypesSet &getDeserializedNominalTypesSet() { return DeserializedNominalTypes; }
+  const NominalTypesSet &getDeserializedNominalTypesSet() const { return DeserializedNominalTypes; }
+  nominal_type_set_iterator deserialized_nominal_types_begin() { return DeserializedNominalTypes.begin(); }
+  nominal_type_set_iterator deserialized_nominal_types_end() { return DeserializedNominalTypes.end(); }
+  nominal_type_set_const_iterator deserialized_nominal_types_begin() const { return DeserializedNominalTypes.begin(); }
+  nominal_type_set_const_iterator deserialized_nominal_types_end() const { return DeserializedNominalTypes.end(); }
+  iterator_range<nominal_type_set_iterator> getDeserializedNominalTypes() {
+    return {DeserializedNominalTypes.begin(), DeserializedNominalTypes.end()};
+  }
+  iterator_range<nominal_type_set_const_iterator> getDeserializedNominalTypes() const {
+    return {DeserializedNominalTypes.begin(), DeserializedNominalTypes.end()};
+  }
 
   /// Look for a global variable by name.
   ///

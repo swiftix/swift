@@ -749,6 +749,28 @@ namespace {
   }
 #include "swift/SIL/SILNodes.def"
   };
+
+  class CollectTypeOperandsAccessor
+      : public SILVisitor<CollectTypeOperandsAccessor, bool> {
+    SmallVectorImpl<CanType> &Types;
+  public:
+    CollectTypeOperandsAccessor(SmallVectorImpl<CanType> &Types)
+        : Types(Types) {}
+#define VALUE(CLASS, PARENT)                                                   \
+  bool visit##CLASS(const CLASS *I) {                                          \
+    llvm_unreachable("accessing non-instruction " #CLASS);                     \
+    return false;                                                              \
+  }
+#define INST(CLASS, PARENT, MEMBEHAVIOR, RELEASINGBEHAVIOR)                    \
+  bool visit##CLASS(const CLASS *I) {                                          \
+    if (!IMPLEMENTS_METHOD(CLASS, SILInstruction, collectTypeOperands,         \
+                           bool(SmallVectorImpl<CanType> &) const))            \
+      return false;                                                            \
+    return I->collectTypeOperands(Types);                                      \
+  }
+#include "swift/SIL/SILNodes.def"
+  };
+
 } // end anonymous namespace
 
 ArrayRef<Operand> SILInstruction::getAllOperands() const {
@@ -766,6 +788,12 @@ ArrayRef<Operand> SILInstruction::getTypeDependentOperands() const {
 
 MutableArrayRef<Operand> SILInstruction::getTypeDependentOperands() {
   return TypeDependentOperandsMutableAccessor().visit(this);
+}
+
+bool SILInstruction::collectTypeOperands(
+    SmallVectorImpl<CanType> &Types) const {
+  return CollectTypeOperandsAccessor(Types).visit(
+      const_cast<SILInstruction *>(this));
 }
 
 /// getOperandNumber - Return which operand this is in the operand list of the

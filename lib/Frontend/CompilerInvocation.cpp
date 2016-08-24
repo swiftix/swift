@@ -1143,6 +1143,11 @@ static bool ParseSILArgs(SILOptions &Opts, ArgList &Args,
       // For now -Oplayground is equivalent to -Onone.
       IRGenOpts.Optimize = false;
       Opts.Optimization = SILOptions::SILOptMode::None;
+    } else if (A->getOption().matches(OPT_Owholeprogram)) {
+      IRGenOpts.Optimize = true;
+      Opts.Optimization = SILOptions::SILOptMode::OptimizeWholeProgram;
+      //if (Opts.LinkMode == SILOptions::LinkNormal)
+      //  Opts.LinkMode = SILOptions::LinkAll;
     } else {
       assert(A->getOption().matches(OPT_O));
       IRGenOpts.Optimize = true;

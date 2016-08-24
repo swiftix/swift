@@ -35,7 +35,9 @@ STATISTIC(NumFuncLinked, "Number of SIL functions linked");
 static bool shouldImportFunction(SILFunction *F) {
   // Skip functions that are marked with the 'no import' tag. These
   // are functions that we don't want to copy from the module.
-  if (F->hasSemanticsAttr("stdlib_binary_only")) {
+  if (F->hasSemanticsAttr("stdlib_binary_only") &&
+      !(F->getModule().getOptions().Optimization >=
+        SILOptions::SILOptMode::OptimizeWholeProgram)) {
     // If we are importing a function declaration mark it as external since we
     // are not importing the body.
     if (F->isExternalDeclaration())
@@ -49,6 +51,65 @@ static bool shouldImportFunction(SILFunction *F) {
 //===----------------------------------------------------------------------===//
 //                               Linker Helpers
 //===----------------------------------------------------------------------===//
+
+SILLinkerVisitor::~SILLinkerVisitor() {
+#if 0
+  static void *DeserializedNominalTypesAddr = nullptr;
+
+  if (DeserializedNominalTypesAddr)
+    return;
+  DeserializedNominalTypesAddr = &Mod.getDeserializedNominalTypesSet();
+
+  // FIXME: lookup may modify the set?
+  // FIXME: Do not reprocess the whole set every time?
+  for (auto DNT : Mod.getDeserializedNominalTypes()) {
+    if (auto CD = dyn_cast<ClassDecl>(DNT)) {
+      llvm::dbgs() << "Processing used class: " << CD->getNameStr() << "\n";
+      // Load a vtable for each deserialized class.
+      Mod.lookUpVTable(CD);
+      // Load some special members which are not loaded
+      // by default if they are not referenced.
+      for (auto Member : CD->getMembers()) {
+        auto FD = dyn_cast<AbstractFunctionDecl>(Member);
+        if (!FD)
+          continue;
+        // if (!FD->isObjC())
+        //  continue;
+        // Force loading of the SIL function for this ObjC member.
+        SILDeclRef::Loc MemberLoc = FD;
+        auto Kind = SILDeclRef::Kind::Func;
+        if (isa<ConstructorDecl>(FD)) {
+          Kind = SILDeclRef::Kind::Initializer;
+        } else if (isa<DestructorDecl>(FD)) {
+          Kind = SILDeclRef::Kind::Deallocator;
+        }
+
+        if (Kind != SILDeclRef::Kind::Deallocator && !FD->isObjC())
+          continue;
+        if (Kind != SILDeclRef::Kind::Func) {
+          SILDeclRef MemberRef(FD, Kind, ResilienceExpansion::Minimal,
+                               SILDeclRef::ConstructAtNaturalUncurryLevel,
+                               /* isForeign */ true);
+          auto MangledNameStr = MemberRef.mangle();
+          StringRef MangledName = MangledNameStr;
+          if (!Mod.hasFunction(MangledName, SILLinkage::Private))
+            Mod.linkFunction(MemberRef, SILModule::LinkingMode::LinkNormal);
+        } else {
+          SILDeclRef MemberRef(MemberLoc, ResilienceExpansion::Minimal,
+                               SILDeclRef::ConstructAtNaturalUncurryLevel,
+                               /* isForeign */ true);
+          auto MangledNameStr = MemberRef.mangle();
+          StringRef MangledName = MangledNameStr;
+          if (!Mod.hasFunction(MangledName, SILLinkage::Private))
+            Mod.linkFunction(MemberRef, SILModule::LinkingMode::LinkNormal);
+        }
+      }
+    }
+  }
+
+  DeserializedNominalTypesAddr = nullptr;
+#endif
+}
 
 /// Process F, recursively deserializing any thing F may reference.
 bool SILLinkerVisitor::processFunction(SILFunction *F) {

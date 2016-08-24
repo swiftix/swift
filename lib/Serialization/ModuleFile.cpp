@@ -1376,8 +1376,16 @@ void ModuleFile::loadObjCMethods(
 
     // If the method isn't defined in the requested class, skip it.
     Type type = getType(std::get<0>(result));
-    if (type->getClassOrBoundGenericClass() != classDecl)
+    if (type->getClassOrBoundGenericClass() != classDecl) {
+#if 0
+      auto ID = std::get<2>(result);
+      auto D = getDecl(ID);
+      if (auto func = dyn_cast_or_null<AbstractFunctionDecl>(D)) {
+        type = getType(std::get<0>(result));
+      }
+#endif
       continue;
+    }
 
     // Deserialize the method and add it to the list.
     if (auto func = dyn_cast_or_null<AbstractFunctionDecl>(

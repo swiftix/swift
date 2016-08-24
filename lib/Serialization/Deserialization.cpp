@@ -24,6 +24,7 @@
 #include "swift/Parse/Parser.h"
 #include "swift/Serialization/BCReadingExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Debug.h"
 
 using namespace swift;
 using namespace swift::serialization;
@@ -3174,6 +3175,10 @@ Decl *ModuleFile::getDecl(DeclID DID, Optional<DeclContext *> ForcedContext) {
                                        DeclTypeCursor.GetCurrentBitNo()));
 
     theClass->setCircularityCheck(CircularityCheck::Checked);
+    llvm::dbgs() << "\nDeserializeAST: Processing class: " << theClass->getNameStr() << "\n";
+    if (theClass->getNameStr() == "_ContiguousArrayStorage1") {
+      llvm::dbgs() << "Bingo!\n";
+    }
     break;
   }
 

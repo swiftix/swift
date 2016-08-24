@@ -870,8 +870,11 @@ static void emitLazyTypeMetadata(IRGenModule &IGM, CanType type) {
     emitEnumMetadata(IGM, ed);
   } else if (auto pd = dyn_cast<ProtocolDecl>(decl)) {
     IGM.emitProtocolDecl(pd);
+  } else if (auto cd = dyn_cast<ClassDecl>(decl)) {
+    IGM.emitClassDecl(cd);
+    //llvm_unreachable("should not have enqueued a class decl here!");
   } else {
-    llvm_unreachable("should not have enqueued a class decl here!");
+    llvm_unreachable("should not have enqueued an unknown decl here!");
   }
 }
 
@@ -890,17 +893,42 @@ void IRGenerator::emitTypeMetadataRecords() {
 /// Emit any lazy definitions (of globals or functions or whatever
 /// else) that we require.
 void IRGenerator::emitLazyDefinitions() {
+  llvm::DenseSet<NominalTypeDecl*> emittedTypes;
   while (!LazyTypeMetadata.empty() ||
          !LazyFunctionDefinitions.empty() ||
          !LazyFieldTypeAccessors.empty()) {
 
+    auto primaryIGMFiles = getPrimaryIGM()->getSwiftModule()->getFiles();
+    SmallVector<FileUnit *, 4> primarySourceFiles;
+    for (auto file : primaryIGMFiles) {
+      if (!isa<SourceFile>(file))
+        continue;
+      primarySourceFiles.push_back(file);
+    }
     // Emit any lazy type metadata we require.
     while (!LazyTypeMetadata.empty()) {
       CanType type = LazyTypeMetadata.pop_back_val();
-      assert(isTypeMetadataEmittedLazily(type));
+      assert(isTypeMetadataEmittedLazily(type) ||
+             SIL.getOptions().Optimization ==
+                 SILOptions::SILOptMode::OptimizeWholeProgram);
+      //if (type->getClassOrBoundGenericClass())
+      //  continue;
       auto nom = type->getAnyNominal();
+      if (!nom)
+        continue;
+      if (emittedTypes.count(nom))
+        continue;
+      // If this type is defined in one of the source files, it was
+      // processed already.
+      auto sourceFile = nom->getDeclContext()->getParentSourceFile();
+      if (std::find(primarySourceFiles.begin(), primarySourceFiles.end(),
+                    sourceFile) != primarySourceFiles.end())
+        continue;
       CurrentIGMPtr IGM = getGenModule(nom->getDeclContext());
+      //if (IGM.get() == getPrimaryIGM())
+      //  continue;
       emitLazyTypeMetadata(*IGM.get(), type);
+      emittedTypes.insert(nom);
     }
     while (!LazyFieldTypeAccessors.empty()) {
       auto accessor = LazyFieldTypeAccessors.pop_back_val();
@@ -2711,7 +2739,9 @@ ConstantReference IRGenModule::getAddrOfTypeMetadata(CanType concreteType,
 
   // If this is a use, and the type metadata is emitted lazily,
   // trigger lazy emission of the metadata.
-  if (isTypeMetadataEmittedLazily(concreteType)) {
+  if (isTypeMetadataEmittedLazily(concreteType) ||
+      getSILModule().getOptions().Optimization ==
+          SILOptions::SILOptMode::OptimizeWholeProgram) {
     IRGen.addLazyTypeMetadata(concreteType);
   }
 
@@ -3355,4 +3385,3 @@ IRGenModule::getOrCreateHelperFunction(StringRef fnName, llvm::Type *resultTy,
 
   return fn;
 }
-

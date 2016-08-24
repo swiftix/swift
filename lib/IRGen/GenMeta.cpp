@@ -401,6 +401,10 @@ static llvm::Value *emitNominalMetadataRef(IRGenFunction &IGF,
       IGF.IGM.getAddrOfGenericTypeMetadataAccessFunction(theDecl,
                                                          genericArgs.Types,
                                                          NotForDefinition);
+  if (IGF.IGM.getSILModule().getOptions().Optimization ==
+          SILOptions::SILOptMode::OptimizeWholeProgram)
+    // Add for lazy processing.
+    IGF.IGM.IRGen.addLazyTypeMetadata(theType);
 
   auto result = IGF.Builder.CreateCall(accessor, genericArgs.Values);
   result->setDoesNotThrow();

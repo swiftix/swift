@@ -429,7 +429,20 @@ SILFunction *SILDeserializer::readSILFunction(DeclID FID,
 
   // TODO: use the correct SILLocation from module.
   SILLocation loc = RegularLocation(SourceLoc());
+#if 0
+  if (SILMod.getOptions().Optimization ==
+      SILOptions::SILOptMode::OptimizeWholeProgram) {
+    isFragile = false;
+    fn->setFragile(IsNotFragile);
 
+    // All imported functions become non-fragile in the whole-program mode.
+    if (fn->isDefinition() || !declarationOnly) {
+      if (fn->isAvailableExternally()) {
+        fn->setLinkage(stripExternalFromLinkage(fn->getLinkage()));
+      }
+    }
+  }
+#endif
   // If we have an existing function, verify that the types match up.
   if (fn) {
     if (fn->getLoweredType() != ty) {
@@ -557,8 +570,63 @@ SILFunction *SILDeserializer::readSILFunction(DeclID FID,
     MF->DeserializedTypeCallback = OldDeserializedTypeCallback;
   };
 
-  MF->DeserializedTypeCallback = [&OpenedArchetypesTracker] (Type ty) {
+  MF->DeserializedTypeCallback = [this, &OpenedArchetypesTracker] (Type ty) {
     OpenedArchetypesTracker.registerUsedOpenedArchetypes(ty);
+    if (SILMod.getOptions().Optimization ==
+        SILOptions::SILOptMode::OptimizeWholeProgram) {
+
+#if 0
+    llvm::dbgs() << "\nDeserializeSIL: Processing used type: ";
+    ty.dump();
+
+    // Register all deserialized nominal types.
+    auto Nom = ty->getNominalOrBoundGenericNominal();
+    if (Nom && !SILMod.getDeserializedNominalTypesSet().count(Nom))
+      SILMod.getDeserializedNominalTypesSet().insert(Nom);
+#endif
+#if 0
+    if (auto CD = ty->getClassOrBoundGenericClass()) {
+      llvm::dbgs() << "DeserializeSIL: Processing used class: " << CD->getNameStr() << "\n";
+      for (auto Member : CD->getMembers()) {
+        auto FD = dyn_cast<AbstractFunctionDecl>(Member);
+        if (!FD)
+          continue;
+        //if (!FD->isObjC())
+        //  continue;
+        // Force loading of the SIL function for this ObjC member.
+        SILDeclRef::Loc MemberLoc = FD;
+        auto Kind = SILDeclRef::Kind::Func;
+        if (isa<ConstructorDecl>(FD)) {
+          Kind = SILDeclRef::Kind::Initializer;
+        } else if (isa<DestructorDecl>(FD)) {
+          Kind = SILDeclRef::Kind::Deallocator;
+        }
+
+        if (Kind != SILDeclRef::Kind::Deallocator &&
+            !FD->isObjC())
+          continue;
+        if (Kind != SILDeclRef::Kind::Func) {
+          SILDeclRef MemberRef(FD, Kind,
+                               ResilienceExpansion::Minimal,
+                               SILDeclRef::ConstructAtNaturalUncurryLevel,
+                               /* isForeign */ true);
+          auto MangledNameStr = MemberRef.mangle();
+          StringRef MangledName = MangledNameStr;
+          if (!SILMod.hasFunction(MangledName, SILLinkage::Private))
+            SILMod.linkFunction(MemberRef, SILModule::LinkingMode::LinkNormal);
+        } else {
+          SILDeclRef MemberRef(MemberLoc, ResilienceExpansion::Minimal,
+                               SILDeclRef::ConstructAtNaturalUncurryLevel,
+                               /* isForeign */ true);
+          auto MangledNameStr = MemberRef.mangle();
+          StringRef MangledName = MangledNameStr;
+          if (!SILMod.hasFunction(MangledName, SILLinkage::Private))
+            SILMod.linkFunction(MemberRef, SILModule::LinkingMode::LinkNormal);
+        }
+      }
+    }
+#endif
+    }
   };
 
   // Another SIL_FUNCTION record means the end of this SILFunction.
@@ -2121,6 +2189,14 @@ SILGlobalVariable *SILDeserializer::readGlobalVar(StringRef Name) {
                            dID ? cast<VarDecl>(MF->getDecl(dID)): nullptr);
   v->setLet(IsLet);
   globalVarOrOffset = v;
+
+#if 0
+  // All imported globals become definitions in the whole-program mode.
+  if (SILMod.getOptions().Optimization ==
+      SILOptions::SILOptMode::OptimizeWholeProgram)
+    IsDeclaration = false;
+#endif
+
   v->setDeclaration(IsDeclaration);
 
   if (Callback) Callback->didDeserialize(MF->getAssociatedModule(), v);

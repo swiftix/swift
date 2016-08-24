@@ -317,6 +317,9 @@ def O : Flag<["-"], "O">, Group<O_Group>, Flags<[FrontendOption]>,
 def Ounchecked : Flag<["-"], "Ounchecked">, Group<O_Group>,
   Flags<[FrontendOption]>,
   HelpText<"Compile with optimizations and remove runtime safety checks">;
+def Owholeprogram : Flag<["-"], "Owholeprogram">, Group<O_Group>,
+  Flags<[FrontendOption]>,
+  HelpText<"Compile with whole program optimizations">;
 def Oplayground : Flag<["-"], "Oplayground">, Group<O_Group>,
   Flags<[HelpHidden, FrontendOption]>,
   HelpText<"Compile with optimizations appropriate for a playground">;
