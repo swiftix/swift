@@ -281,14 +281,24 @@ static void addPerfDebugSerializationPipeline(SILPassPipelinePlan &P) {
   P.addSILLinker();
 }
 
-static void addPerfEarlyModulePassPipeline(SILPassPipelinePlan &P) {
+static void addPerfEarlyModulePassPipeline(SILPassPipelinePlan &P,
+                                           SILOptions Options) {
   P.startPipeline("EarlyModulePasses");
 
-  // Get rid of apparently dead functions as soon as possible so that
-  // we do not spend time optimizing them.
-  P.addDeadFunctionElimination();
+  if (Options.isWholeProgram()) {
+    // Get rid of apparently dead functions as soon as possible so that
+    // we do not spend time optimizing them.
+    P.addDeadFunctionElimination();
+  }
   // Start by cloning functions from stdlib.
   P.addSILLinker();
+#if 0
+  if (Options.isWholeProgram()) {
+    // Get rid of apparently dead functions as soon as possible so that
+    // we do not spend time optimizing them.
+    P.addDeadFunctionElimination();
+  }
+#endif
 }
 
 static void addHighLevelEarlyLoopOptPipeline(SILPassPipelinePlan &P) {
@@ -299,10 +309,17 @@ static void addHighLevelEarlyLoopOptPipeline(SILPassPipelinePlan &P) {
   addHighLevelLoopOptPasses(P);
 }
 
-static void addMidModulePassesStackPromotePassPipeline(SILPassPipelinePlan &P) {
+static void addMidModulePassesStackPromotePassPipeline(SILPassPipelinePlan &P,
+                                                       SILOptions Options) {
   P.startPipeline("MidModulePasses+StackPromote");
-  P.addDeadFunctionElimination();
-  P.addSILLinker();
+  if (!Options.isWholeProgram())
+    P.addDeadFunctionElimination();
+  P.addStaticSILLinker();
+  if (Options.isWholeProgram())
+    P.addDeadFunctionElimination();
+
+  //P.addDeadFunctionElimination();
+  //P.addSILLinker();
   P.addDeadObjectElimination();
   P.addGlobalPropertyOpt();
 
@@ -369,12 +386,16 @@ static void addLowLevelPassPipeline(SILPassPipelinePlan &P) {
   P.addFunctionSignatureOpts();
 }
 
-static void addLateLoopOptPassPipeline(SILPassPipelinePlan &P) {
+static void addLateLoopOptPassPipeline(SILPassPipelinePlan &P,
+                                       SILOptions Options) {
   P.startPipeline("LateLoopOpt");
 
   // Delete dead code and drop the bodies of shared functions.
   P.addExternalFunctionDefinitionsElimination();
-  P.addDeadFunctionElimination();
+  if (!Options.isWholeProgram())
+    P.addDeadFunctionElimination();
+  else
+    P.addStaticDeadFunctionElimination();
 
   // Perform the final lowering transformations.
   P.addCodeSinking();
@@ -439,11 +460,11 @@ SILPassPipelinePlan::getPerformancePassPipeline(const SILOptions &Options) {
 
   // Eliminate immediately dead functions and then clone functions from the
   // stdlib.
-  addPerfEarlyModulePassPipeline(P);
+  addPerfEarlyModulePassPipeline(P, Options);
 
   // Then run an iteration of the high-level SSA passes.
   addHighLevelEarlyLoopOptPipeline(P);
-  addMidModulePassesStackPromotePassPipeline(P);
+  addMidModulePassesStackPromotePassPipeline(P, Options);
 
   // Run an iteration of the mid-level SSA passes.
   addMidLevelPassPipeline(P);
@@ -456,7 +477,7 @@ SILPassPipelinePlan::getPerformancePassPipeline(const SILOptions &Options) {
   // (CapturePropagation).
   addLowLevelPassPipeline(P);
 
-  addLateLoopOptPassPipeline(P);
+  addLateLoopOptPassPipeline(P, Options);
 
   // Has only an effect if the -gsil option is specified.
   addSILDebugInfoGeneratorPipeline(P);
@@ -473,12 +494,21 @@ SILPassPipelinePlan::getPerformancePassPipeline(const SILOptions &Options) {
 //                            Onone Pass Pipeline
 //===----------------------------------------------------------------------===//
 
-SILPassPipelinePlan SILPassPipelinePlan::getOnonePassPipeline() {
+SILPassPipelinePlan
+SILPassPipelinePlan::getOnonePassPipeline(const SILOptions &Options) {
   SILPassPipelinePlan P;
 
   // First specialize user-code.
   P.startPipeline("Prespecialization");
   P.addUsePrespecialized();
+
+  if (Options.isWholeProgram()) {
+    // Link all functions, vtables, witness tables that
+    // are required.
+    P.addStaticSILLinker();
+    // Remove everything that is not used.
+    P.addDeadFunctionElimination();
+  }
 
   P.startPipeline("Rest of Onone");
   // Don't keep external functions from stdlib and other modules.
@@ -486,7 +516,8 @@ SILPassPipelinePlan SILPassPipelinePlan::getOnonePassPipeline() {
   // of the optimized version from the stdlib.
   // Here we just convert external definitions to declarations. LLVM will
   // eventually remove unused declarations.
-  P.addExternalDefsToDecls();
+  if (!Options.isWholeProgram())
+    P.addExternalDefsToDecls();
 
   // Has only an effect if the -assume-single-thread option is specified.
   P.addAssumeSingleThreaded();

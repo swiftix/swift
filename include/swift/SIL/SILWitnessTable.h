@@ -207,6 +207,7 @@ private:
   void addWitnessTable();
 
 public:
+  void removeWitnessTable();
   /// Create a new SILWitnessTable definition with the given entries.
   static SILWitnessTable *create(SILModule &M, SILLinkage Linkage,
                                  bool IsFragile,
@@ -241,6 +242,9 @@ public:
 
   /// Return all of the witness table entries.
   ArrayRef<Entry> getEntries() const { return Entries; }
+
+  /// Return the SILModule where this witness table is defined.
+  SILModule &getModule() { return Mod; }
 
   /// Clears methods in MethodWitness entries.
   /// \p predicate Returns true if the passed entry should be set to null.

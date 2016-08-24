@@ -56,14 +56,19 @@ public:
     Entry(SILDeclRef Requirement, SILFunction *Witness)
       : Requirement(Requirement), Witness(Witness) {}
 
+    bool isValidRequirement() const {
+      return !Requirement.isNull();
+    }
+
     bool isValid() const {
-      return !Requirement.isNull() && Witness;
+      return isValidRequirement() && Witness;
     }
 
     const SILDeclRef &getRequirement() const {
-      assert(isValid());
+      assert(isValidRequirement());
       return Requirement;
     }
+
     SILFunction *getWitness() const {
       assert(Witness != nullptr);
       return Witness;
@@ -137,7 +142,10 @@ public:
   /// Return the AST ProtocolDecl this default witness table is associated with.
   const ProtocolDecl *getProtocol() const { return Protocol; }
 
-  /// Clears methods in witness entries.
+  /// Return the SILModule where this default witness table is defined.
+  SILModule &getModule() { return Mod; }
+
+  /// Clears methods in MethodWitness entries.
   /// \p predicate Returns true if the passed entry should be set to null.
   template <typename Predicate> void clearMethods_if(Predicate predicate) {
     for (Entry &entry : Entries) {

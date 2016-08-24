@@ -26,6 +26,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "Serialization"
 

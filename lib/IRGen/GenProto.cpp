@@ -1690,15 +1690,32 @@ ProtocolInfo::getConformance(IRGenModule &IGM, ProtocolDecl *protocol,
 
 void IRGenModule::emitSILWitnessTable(SILWitnessTable *wt) {
   // Don't emit a witness table if it is a declaration.
-  if (wt->isDeclaration())
+  if (wt->isDeclaration()) {
+    llvm::dbgs() << "Do not emit witness table for declaration: "
+                 << wt->getName() << "\n";
     return;
+  }
+
+  if (!Lowering::TypeConverter::protocolRequiresWitnessTable(
+          wt->getConformance()->getProtocol())) {
+    llvm::dbgs() << "Do not emit witness table for protocol "
+                 << wt->getConformance()->getProtocol()->getName() << ": "
+                 << wt->getName() << "\n";
+    return;
+  }
 
   // Don't emit a witness table that is available externally.
   // It can end up in having duplicate symbols for generated associated type
   // metadata access functions.
   // Also, it is not a big benefit for LLVM to emit such witness tables.
-  if (isAvailableExternally(wt->getLinkage()))
+  if (isAvailableExternally(wt->getLinkage())) {
+    llvm::dbgs() << "Do not emit witness table for external definition: "
+                 << wt->getName() << "\n";
     return;
+  }
+
+  llvm::dbgs() << "Do emit witness table for declaration: " << wt->getName()
+               << "\n";
 
   // Build the witnesses.
   ConstantInitBuilder builder(*this);
@@ -2248,6 +2265,22 @@ llvm::Value *irgen::emitWitnessTableRef(IRGenFunction &IGF,
   auto proto = conformance.getRequirement();
   assert(Lowering::TypeConverter::protocolRequiresWitnessTable(proto)
          && "protocol does not have witness tables?!");
+
+  if (IGF.IGM.getSILModule().isWholeProgram()) {
+    // Try to load the witness table if it is not loaded yet.
+    // FIXME: Is it a problem to do it so late in IRGen?
+    if (conformance.isConcrete()) {
+      auto Concrete = conformance.getConcrete();
+      auto WT = IGF.IGM.getSILModule().lookUpWitnessTable(Concrete);
+      if (!WT) {
+        // Declare it.
+        IGF.IGM.getSILModule().createWitnessTableDeclaration(
+            Concrete, SILLinkage::Public);
+        // Try to load again.
+        IGF.IGM.getSILModule().lookUpWitnessTable(Concrete);
+      }
+    }
+  }
 
   // If we don't have concrete conformance information, the type must be
   // an archetype and the conformance must be via one of the protocol

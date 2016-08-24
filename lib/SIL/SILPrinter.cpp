@@ -2378,6 +2378,12 @@ void SILDefaultWitnessTable::print(llvm::raw_ostream &OS, bool Verbose) const {
   
   for (auto &witness : getEntries()) {
     if (!witness.isValid()) {
+      // method #declref: no_default
+      if (witness.isValidRequirement()) {
+        OS << "  method ";
+        witness.getRequirement().print(OS);
+        OS << ":";
+      }
       OS << "  no_default\n";
       continue;
     }

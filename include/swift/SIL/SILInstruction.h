@@ -209,6 +209,10 @@ public:
   /// Return the array of mutable operands for this instruction.
   MutableArrayRef<Operand> getAllOperands();
 
+  /// Collect any AST type operands of the instruction.
+  /// Returns true if any such operands were found, false otherwise.
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const;
+
   /// Return the array of mutable type dependent operands for this instruction.
   MutableArrayRef<Operand> getTypeDependentOperands();
 
@@ -982,6 +986,11 @@ public:
     return getAllOperands();
   }
 
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(ConcreteType);
+    return true;
+  }
+
   static bool classof(const ValueBase *V) {
     return V->getKind() == ValueKind::AllocExistentialBoxInst;
   }
@@ -1119,6 +1128,27 @@ public:
 
   SubstitutionList getSubstitutions() const {
     return {getSubstitutionsStorage(), NumSubstitutions};
+  }
+
+  ArrayRef<Substitution> getSubstitutionsWithoutSelfSubstitution() const {
+    assert(getNumArguments() && "Should only be called when Callee has "
+           "at least a self parameter.");
+    assert(hasSubstitutions() && "Should only be called when Callee has "
+           "substitutions.");
+    if (getSubstCalleeType()->hasSelfParam())
+      return getSubstitutions().slice(1);
+    return getSubstitutions();
+  }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    if (hasSubstitutions()) {
+      ArrayRef<Substitution> Subs = getSubstitutions();
+      for (auto Sub : Subs) {
+        Types.push_back(Sub.getReplacement()->getCanonicalType());
+      }
+      return true;
+    }
+    return false;
   }
 
   /// The arguments passed to this instruction.
@@ -2492,6 +2522,12 @@ public:
   ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
   MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
 
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(SourceType);
+    Types.push_back(TargetType);
+    return true;
+  }
+
   static bool classof(const ValueBase *V) {
     return V->getKind() == ValueKind::UncheckedRefCastAddrInst;
   }
@@ -2849,6 +2885,12 @@ public:
 
   ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
   MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(SourceType);
+    Types.push_back(TargetType);
+    return true;
+  }
 
   static bool classof(const ValueBase *V) {
     return V->getKind() == ValueKind::UnconditionalCheckedCastAddrInst;
@@ -3919,6 +3961,11 @@ public:
     return { getTrailingObjects<Operand>(), NumOperands };
   }
 
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(LookupType);
+    return true;
+  }
+
   static bool classof(const ValueBase *V) {
     return V->getKind() == ValueKind::WitnessMethodInst;
   }
@@ -4063,6 +4110,11 @@ public:
   SILType getLoweredConcreteType() const {
     return getType();
   }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(ConcreteType);
+    return true;
+  }
 };
 
 /// Given an uninitialized buffer of a protocol type,
@@ -4139,6 +4191,11 @@ public:
 
   ArrayRef<ProtocolConformanceRef> getConformances() const {
     return Conformances;
+  }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(ConcreteType);
+    return true;
   }
 };
 
@@ -4623,6 +4680,11 @@ class DeallocExistentialBoxInst :
 
 public:
   CanType getConcreteType() const { return ConcreteType; }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(ConcreteType);
+    return true;
+  }
 };
 
 /// Destroy the value at a memory location according to
@@ -5391,6 +5453,11 @@ public:
 
   SILType getCastType() const { return DestTy; }
 
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(DestTy.getSwiftRValueType());
+    return true;
+  }
+
   SILBasicBlock *getSuccessBB() { return DestBBs[0]; }
   const SILBasicBlock *getSuccessBB() const { return DestBBs[0]; }
   SILBasicBlock *getFailureBB() { return DestBBs[1]; }
@@ -5496,6 +5563,12 @@ public:
 
   ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
   MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(SourceType);
+    Types.push_back(TargetType);
+    return true;
+  }
 
   SuccessorListTy getSuccessors() {
     return DestBBs;

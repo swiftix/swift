@@ -30,14 +30,52 @@
 using namespace swift;
 using namespace Lowering;
 
+static bool shouldOptimize(const SILModule &Module) {
+   //return Module.getOptions().Optimization >= SILOptions::SILOptMode::Optimize;
+  if (Module.isWholeProgram())
+    return true;
+  return Module.getOptions().Optimization >= SILOptions::SILOptMode::Optimize;
+}
+
 class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   void didDeserialize(ModuleDecl *M, SILFunction *fn) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILFunction: " << fn->getName() << "\n");
     updateLinkage(fn);
   }
 
+  void didDeserializeFunctionBody(ModuleDecl *M, SILFunction *fn) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILFunction body: " << fn->getName()
+                       << "\n");
+    if (fn->getModule().isWholeProgram()) {
+      // For non-optimized builds, do not make functions non-external.
+      if (shouldOptimize(fn->getModule())) {
+        fn->setFragile(IsNotFragile);
+
+        // All imported functions become non-fragile in the whole-program mode.
+        if (fn->isDefinition()) {
+          if (fn->isAvailableExternally()) {
+            //fn->setLinkage(stripExternalFromLinkage(fn->getLinkage()));
+            fn->setLinkage(SILLinkage::Private);
+          }
+        }
+      }
+    }
+  }
+
   void didDeserialize(ModuleDecl *M, SILGlobalVariable *var) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILGlobalVariable: "
+                       << var->getName() << "\n");
     updateLinkage(var);
-    
+    // All imported Swift globals become definitions in the whole-program mode.
+    // Clang imported globals are not affected.
+    if (var->getModule().isWholeProgram() &&
+        shouldOptimize(var->getModule()) &&
+        !var->getClangDecl()) {
+      var->setDeclaration(false);
+      var->setLinkage(SILLinkage::Private);
+      var->setFragile(false);
+      return;
+    }
     // For globals we currently do not support available_externally.
     // In the interpreter it would result in two instances for a single global:
     // one in the imported module and one in the main module.
@@ -45,13 +83,100 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   }
 
   void didDeserialize(ModuleDecl *M, SILVTable *vtable) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILVTable: "
+                       << vtable->getClass()->getName() << "\n");
     // TODO: should vtables get linkage?
-    //updateLinkage(vtable);
+    // updateLinkage(vtable);
+
+    SILModule *SILMod = nullptr;
+    // Read bodies of all functions referenced from the table.
+    for (auto entry : vtable->getEntries()) {
+      auto fn = entry.Implementation;
+      if (!SILMod)
+        SILMod = &fn->getModule();
+      if (SILMod->isWholeProgram() && !fn->isDefinition()) {
+        fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
+      }
+    }
+
+    if (SILMod && SILMod->getOptions().isWholeProgram()) {
+      // vtable->setLinkage(SILLinkage::Hidden);
+    }
   }
 
   void didDeserialize(ModuleDecl *M, SILWitnessTable *wt) override {
-    updateLinkage(wt);
+    //updateLinkage(wt);
+    DEBUG(llvm::dbgs() << "didDeserialize: SILWitnessTable: " << wt->getName()
+                       << "\n");
+    if (!wt->getModule().isWholeProgram()) {
+      updateLinkage(wt);
+      return;
+    } else {
+      wt->setLinkage(SILLinkage::Hidden);
+    }
+    // TODO: Make it public so that other object files can refer to this witness table?
+    wt->setLinkage(SILLinkage::Private);
+
+    // Read bodies of all functions referenced from the table.
+    for (auto entry : wt->getEntries()) {
+      if (entry.getKind() != SILWitnessTable::WitnessKind::Method)
+        continue;
+      auto fn = entry.getMethodWitness().Witness;
+      if (!fn->isDefinition()) {
+        fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
+        // witness methods should have the same linkage as the witness table.
+      }
+      fn->setLinkage(wt->getLinkage());
+    }
   }
+
+  void didDeserializeWitnessTableEntries(ModuleDecl *M,
+                                         SILWitnessTable *wt) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILWitnessTable entries: "
+                       << wt->getName() << "\n");
+    if (!wt->getModule().isWholeProgram()) {
+      updateLinkage(wt);
+      return;
+    }
+    // TODO: Make it public?
+    wt->setLinkage(stripExternalFromLinkage(wt->getLinkage()));
+    wt->setLinkage(SILLinkage::Private);
+    // Read bodies of all functions referenced from the table.
+    for (auto entry : wt->getEntries()) {
+      if (entry.getKind() != SILWitnessTable::WitnessKind::Method)
+        continue;
+      auto fn = entry.getMethodWitness().Witness;
+      // When does this happen?
+      if (!fn)
+        continue;
+      if (!fn->isDefinition()) {
+        fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
+      }
+      fn->setLinkage(wt->getLinkage());
+    }
+  }
+
+  void didDeserializeDefaultWitnessTableEntries(
+      ModuleDecl *M, SILDefaultWitnessTable *wt) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: default SILWitnessTable entries: "
+                       << wt->getIdentifier() << "\n");
+    if (!wt->getModule().isWholeProgram()) {
+      updateLinkage(wt);
+      return;
+    }
+    // TODO: Make it public?
+    wt->setLinkage(stripExternalFromLinkage(wt->getLinkage()));
+    wt->setLinkage(SILLinkage::Private);
+    // Read bodies of all functions referenced from the table.
+    for (auto entry : wt->getEntries()) {
+      auto fn = entry.getWitness();
+      if (!fn->isDefinition()) {
+        fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
+      }
+      fn->setLinkage(wt->getLinkage());
+    }
+  }
+
 
   template <class T> void updateLinkage(T *decl) {
     switch (decl->getLinkage()) {
@@ -126,6 +251,8 @@ SILModule::createWitnessTableDeclaration(ProtocolConformance *C,
   // Extract the base NormalProtocolConformance.
   NormalProtocolConformance *NormalC = C->getRootNormalConformance();
 
+  if (getOptions().isWholeProgram())
+    linkage = SILLinkage::Hidden;
   return SILWitnessTable::create(*this, linkage, NormalC);
 }
 
@@ -490,12 +617,29 @@ SILFunction *SILModule::lookUpFunction(SILDeclRef fnRef) {
   return lookUpFunction(name);
 }
 
+static SILModule::LinkingMode
+effectiveLinkingMode(const SILModule &Mod, SILModule::LinkingMode Mode) {
+  if (Mod.isWholeProgram())
+    return SILModule::LinkingMode::LinkAll;
+  return Mode;
+}
+
 bool SILModule::linkFunction(SILFunction *Fun, SILModule::LinkingMode Mode) {
-  return SILLinkerVisitor(*this, getSILLoader(), Mode).processFunction(Fun);
+  return SILLinkerVisitor(*this, getSILLoader(),
+                          effectiveLinkingMode(*this, Mode))
+      .processFunction(Fun);
+}
+
+bool SILModule::linkFunction(SILDeclRef Decl, SILModule::LinkingMode Mode) {
+  return SILLinkerVisitor(*this, getSILLoader(),
+                          effectiveLinkingMode(*this, Mode))
+      .processDeclRef(Decl);
 }
 
 bool SILModule::linkFunction(StringRef Name, SILModule::LinkingMode Mode) {
-  return SILLinkerVisitor(*this, getSILLoader(), Mode).processFunction(Name);
+  return SILLinkerVisitor(*this, getSILLoader(),
+                          effectiveLinkingMode(*this, Mode))
+      .processFunction(Name);
 }
 
 SILFunction *SILModule::findFunction(StringRef Name, SILLinkage Linkage) {
@@ -520,8 +664,9 @@ SILFunction *SILModule::findFunction(StringRef Name, SILLinkage Linkage) {
   }
 
   if (!F) {
-    SILLinkerVisitor Visitor(*this, getSILLoader(),
-                             SILModule::LinkingMode::LinkNormal);
+    SILLinkerVisitor Visitor(
+        *this, getSILLoader(),
+        effectiveLinkingMode(*this, SILModule::LinkingMode::LinkNormal));
     if (CurF) {
       // Perform this lookup only if a function with a given
       // name is present in the current module.
@@ -543,7 +688,7 @@ SILFunction *SILModule::findFunction(StringRef Name, SILLinkage Linkage) {
       if (!F)
         return nullptr;
       assert(F && "SILFunction should be present in one of the modules");
-      assert(F->getLinkage() == Linkage && "SILFunction has a wrong linkage");
+      assert((F->getLinkage() == Linkage || Linkage == SILLinkage::Private) && "SILFunction has a wrong linkage");
     }
   }
 
@@ -551,13 +696,13 @@ SILFunction *SILModule::findFunction(StringRef Name, SILLinkage Linkage) {
   // compilation, simply convert it into an external declaration,
   // so that a compiled version from the shared library is used.
   if (F->isDefinition() &&
-      F->getModule().getOptions().Optimization <
-          SILOptions::SILOptMode::Optimize) {
+      !shouldOptimize(F->getModule())) {
     F->convertToDeclaration();
   }
   if (F->isExternalDeclaration())
     F->setFragile(IsFragile_t::IsNotFragile);
-  F->setLinkage(Linkage);
+  if (Linkage != SILLinkage::Private)
+    F->setLinkage(Linkage);
   return F;
 }
 
@@ -590,6 +735,11 @@ void SILModule::removeFromZombieList(StringRef Name) {
 
 /// Erase a function from the module.
 void SILModule::eraseFunction(SILFunction *F) {
+  if (F->getName().find("globalinit_33_FD9A49A256BEB6AF7C48013347ADC3BA_func4",
+                       0) < 1000) {
+    llvm::dbgs() << "About to remove the function "
+                    "globalinit_33_FD9A49A256BEB6AF7C48013347ADC3BA_func4\n";
+  }
 
   assert(! F->isZombie() && "zombie function is in list of alive functions");
   if (F->isInlined() || F->isExternallyUsedSymbol()) {
@@ -638,7 +788,9 @@ SILVTable *SILModule::lookUpVTable(const ClassDecl *C) {
 
   // If that fails, try to deserialize it. If that fails, return nullptr.
   SILVTable *Vtbl =
-      SILLinkerVisitor(*this, getSILLoader(), SILModule::LinkingMode::LinkAll)
+      SILLinkerVisitor(
+          *this, getSILLoader(),
+          effectiveLinkingMode(*this, SILModule::LinkingMode::LinkAll))
           .processClassDecl(C);
   if (!Vtbl)
     return nullptr;

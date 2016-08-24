@@ -894,7 +894,7 @@ static void emitLazyTypeMetadata(IRGenModule &IGM, NominalTypeDecl *Nominal) {
   } else if (auto pd = dyn_cast<ProtocolDecl>(Nominal)) {
     IGM.emitProtocolDecl(pd);
   } else {
-    llvm_unreachable("should not have enqueued a class decl here!");
+    llvm_unreachable("should not have enqueued an unknown decl here!");
   }
 }
 
@@ -918,6 +918,13 @@ void IRGenerator::emitLazyDefinitions() {
          !LazyFieldTypeAccessors.empty() ||
          !LazyWitnessTables.empty()) {
 
+    auto primaryIGMFiles = getPrimaryIGM()->getSwiftModule()->getFiles();
+    SmallVector<FileUnit *, 4> primarySourceFiles;
+    for (auto file : primaryIGMFiles) {
+      if (!isa<SourceFile>(file))
+        continue;
+      primarySourceFiles.push_back(file);
+    }
     // Emit any lazy type metadata we require.
     while (!LazyMetadata.empty()) {
       NominalTypeDecl *Nominal = LazyMetadata.pop_back_val();
@@ -3408,4 +3415,3 @@ IRGenModule::getOrCreateHelperFunction(StringRef fnName, llvm::Type *resultTy,
 
   return fn;
 }
-

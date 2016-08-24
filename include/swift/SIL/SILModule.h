@@ -97,6 +97,7 @@ public:
   using DefaultWitnessTableListType = llvm::ilist<SILDefaultWitnessTable>;
   using CoverageMapListType = llvm::ilist<SILCoverageMap>;
   using LinkingMode = SILOptions::LinkingMode;
+  using NominalTypesSet = llvm::DenseSet<NominalTypeDecl *>;
 
 private:
   friend class SILBasicBlock;
@@ -181,6 +182,9 @@ private:
 
   /// This is the set of undef values we've created, for uniquing purposes.
   llvm::DenseMap<SILType, SILUndef *> UndefValues;
+
+  /// This is a set of deserialized nominal types used by the module.
+  NominalTypesSet DeserializedNominalTypes;
 
   /// The stage of processing this module is at.
   SILStage Stage;
@@ -306,6 +310,12 @@ public:
     return wholeModule;
   }
 
+  /// Returns true if this SILModule really contains the whole program, i.e.
+  /// optimizations can assume that they see the whole program.
+  bool isWholeProgram() const {
+    return getOptions().WholeProgram;
+  }
+
   SILOptions &getOptions() const { return Options; }
 
   using iterator = FunctionListType::iterator;
@@ -407,7 +417,22 @@ public:
   }
   iterator_range<coverage_map_const_iterator> getCoverageMaps() const {
     return {coverageMaps.begin(), coverageMaps.end()};
- }
+  }
+
+  using nominal_type_set_iterator = NominalTypesSet::iterator;
+  using nominal_type_set_const_iterator = NominalTypesSet::const_iterator;
+  NominalTypesSet &getDeserializedNominalTypesSet() { return DeserializedNominalTypes; }
+  const NominalTypesSet &getDeserializedNominalTypesSet() const { return DeserializedNominalTypes; }
+  nominal_type_set_iterator deserialized_nominal_types_begin() { return DeserializedNominalTypes.begin(); }
+  nominal_type_set_iterator deserialized_nominal_types_end() { return DeserializedNominalTypes.end(); }
+  nominal_type_set_const_iterator deserialized_nominal_types_begin() const { return DeserializedNominalTypes.begin(); }
+  nominal_type_set_const_iterator deserialized_nominal_types_end() const { return DeserializedNominalTypes.end(); }
+  iterator_range<nominal_type_set_iterator> getDeserializedNominalTypes() {
+    return {DeserializedNominalTypes.begin(), DeserializedNominalTypes.end()};
+  }
+  iterator_range<nominal_type_set_const_iterator> getDeserializedNominalTypes() const {
+    return {DeserializedNominalTypes.begin(), DeserializedNominalTypes.end()};
+  }
 
   /// Look for a global variable by name.
   ///
@@ -440,6 +465,13 @@ public:
   ///
   /// \return false if the linking failed.
   bool linkFunction(StringRef Name,
+                    LinkingMode LinkAll = LinkingMode::LinkNormal);
+
+  /// Attempt to link a function by its SILDeclRef. Returns true if linking
+  /// succeeded, false otherwise.
+  ///
+  /// \return false if the linking failed.
+  bool linkFunction(SILDeclRef Decl,
                     LinkingMode LinkAll = LinkingMode::LinkNormal);
 
   /// Check if a given function exists in any of the modules with a

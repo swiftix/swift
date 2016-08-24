@@ -1565,6 +1565,12 @@ public:
     SILDeclRef requirementRef(cd, SILDeclRef::Kind::Allocator,
                               ResilienceExpansion::Minimal);
 
+    if (!witness) {
+      asDerived().addMethod(requirementRef, SILDeclRef(),
+                            IsNotFreeFunctionWitness, witness);
+      return;
+    }
+
     SILDeclRef witnessRef(witness.getDecl(), SILDeclRef::Kind::Allocator,
                           SILDeclRef::ConstructAtBestResilienceExpansion,
                           requirementRef.uncurryLevel);
@@ -1595,11 +1601,19 @@ private:
     // TODO: multiple uncurry levels?
     SILDeclRef requirementRef(fd, SILDeclRef::Kind::Func,
                               ResilienceExpansion::Minimal);
+
+    if (!witness) {
+      asDerived().addMethod(requirementRef, SILDeclRef(),
+                            IsFreeFunctionWitness_t::IsNotFreeFunctionWitness,
+                            witness);
+      return;
+    }
+
     // Free function witnesses have an implicit uncurry layer imposed on them by
     // the inserted metatype argument.
     auto isFree = isFreeFunctionWitness(fd, witnessDecl);
     unsigned witnessUncurryLevel = isFree ? requirementRef.uncurryLevel - 1
-                                          : requirementRef.uncurryLevel;
+      : requirementRef.uncurryLevel;
 
     SILDeclRef witnessRef(witnessDecl, SILDeclRef::Kind::Func,
                           SILDeclRef::ConstructAtBestResilienceExpansion,
@@ -2054,21 +2068,23 @@ public:
 
   void addMethod(FuncDecl *fd) {
     auto witness = Proto->getDefaultWitness(fd);
+/*
     if (!witness) {
       addMissingDefault();
       return;
     }
-
+*/
     super::addMethod(fd, witness);
   }
 
   void addConstructor(ConstructorDecl *cd) {
     auto witness = Proto->getDefaultWitness(cd);
+/*
     if (!witness) {
       addMissingDefault();
       return;
     }
-
+*/
     super::addConstructor(cd, witness);
   }
 
@@ -2076,9 +2092,11 @@ public:
                  SILDeclRef witnessRef,
                  IsFreeFunctionWitness_t isFree,
                  Witness witness) {
-    SILFunction *witnessFn = SGM.emitProtocolWitness(nullptr, Linkage,
-                                                     requirementRef, witnessRef,
-                                                     isFree, witness);
+    SILFunction *witnessFn =
+        witness
+            ? SGM.emitProtocolWitness(nullptr, Linkage, requirementRef,
+                                      witnessRef, isFree, witness)
+            : nullptr;
     auto entry = SILDefaultWitnessTable::Entry(requirementRef, witnessFn);
     DefaultWitnesses.push_back(entry);
   }

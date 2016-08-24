@@ -53,6 +53,17 @@ void SILWitnessTable::addWitnessTable() {
   Mod.witnessTables.push_back(this);
 }
 
+void SILWitnessTable::removeWitnessTable() {
+  // Make sure we have not seen this witness table yet.
+  assert(Mod.WitnessTableMap.find(Conformance) !=
+         Mod.WitnessTableMap.end() && "Attempting to remove non-registered "
+         "witness table.");
+  Mod.WitnessTableMap.erase(Conformance);
+  // Remove from the list
+  Mod.witnessTables.remove(this);
+}
+
+
 SILWitnessTable *
 SILWitnessTable::create(SILModule &M, SILLinkage Linkage, bool IsFragile,
                         NormalProtocolConformance *Conformance,

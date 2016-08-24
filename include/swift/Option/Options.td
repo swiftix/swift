@@ -323,6 +323,9 @@ def O : Flag<["-"], "O">, Group<O_Group>, Flags<[FrontendOption]>,
 def Ounchecked : Flag<["-"], "Ounchecked">, Group<O_Group>,
   Flags<[FrontendOption]>,
   HelpText<"Compile with optimizations and remove runtime safety checks">;
+def Owholeprogram : Flag<["-"], "Owholeprogram">, Group<O_Group>,
+  Flags<[FrontendOption]>,
+  HelpText<"Compile with whole program optimizations">;
 def Oplayground : Flag<["-"], "Oplayground">, Group<O_Group>,
   Flags<[HelpHidden, FrontendOption]>,
   HelpText<"Compile with optimizations appropriate for a playground">;
@@ -491,6 +494,13 @@ def whole_module_optimization : Flag<["-"], "whole-module-optimization">,
   Flags<[FrontendOption, NoInteractiveOption]>;
 
 def wmo : Flag<["-"], "wmo">, Alias<whole_module_optimization>,
+  Flags<[FrontendOption, NoInteractiveOption, HelpHidden]>;
+
+def whole_program_optimization : Flag<["-"], "whole-program-optimization">,
+  HelpText<"Optimize the whole program">,
+  Flags<[FrontendOption, NoInteractiveOption]>;
+
+def wpo : Flag<["-"], "wpo">, Alias<whole_program_optimization>,
   Flags<[FrontendOption, NoInteractiveOption, HelpHidden]>;
 
 def force_single_frontend_invocation :

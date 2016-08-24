@@ -47,12 +47,16 @@ public:
       : Mod(M), Loader(L), Worklist(), FunctionDeserializationWorklist(),
         Mode(LinkingMode) {}
 
+  ~SILLinkerVisitor();
+
   /// Process F, recursively deserializing any thing F may reference.
   bool processFunction(SILFunction *F);
 
   /// Process Name, recursively deserializing any thing function with name Name
   /// may reference.
   bool processFunction(StringRef Name);
+
+  bool processDeclRef(SILDeclRef Decl);
 
   /// Process Name, try to deserialize a declaration of a function with
   /// this Name.

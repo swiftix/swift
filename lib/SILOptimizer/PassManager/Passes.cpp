@@ -113,7 +113,8 @@ void swift::runSILPassesForOnone(SILModule &Module) {
     Module.verify();
 
   SILPassManager PM(&Module, "Onone");
-  PM.executePassPipelinePlan(SILPassPipelinePlan::getOnonePassPipeline());
+  PM.executePassPipelinePlan(
+      SILPassPipelinePlan::getOnonePassPipeline(Module.getOptions()));
 
   // Verify the module, if required.
   if (Module.getOptions().VerifyAll)

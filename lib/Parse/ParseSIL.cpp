@@ -5103,10 +5103,16 @@ bool Parser::parseSILDefaultWitnessTable() {
       if (WitnessState.parseSILDeclRef(Ref, true) ||
           parseToken(tok::colon, diag::expected_sil_witness_colon))
         return true;
-      
+
+      if (Tok.is(tok::identifier) && Tok.getText() == "no_default") {
+        consumeToken();
+        witnessEntries.push_back(SILDefaultWitnessTable::Entry{Ref, nullptr});
+        continue;
+      }
+
       if (parseToken(tok::at_sign, diag::expected_sil_function_name) ||
           WitnessState.parseSILIdentifier(FuncName, FuncLoc,
-                                      diag::expected_sil_value_name))
+                                          diag::expected_sil_value_name))
         return true;
 
       SILFunction *Func = SIL->M->lookUpFunction(FuncName.str());

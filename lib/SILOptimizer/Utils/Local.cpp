@@ -419,8 +419,10 @@ SILLinkage swift::getSpecializedLinkage(SILFunction *F, SILLinkage L) {
     // Treat stdlib_binary_only specially. We don't serialize the body of
     // stdlib_binary_only functions so we can't mark them as Shared (making
     // their visibility in the dylib hidden).
-    return F->hasSemanticsAttr("stdlib_binary_only") ? SILLinkage::Public
-                                                     : SILLinkage::Shared;
+    return F->hasSemanticsAttr("stdlib_binary_only") &&
+                   !(F->getModule().isWholeProgram())
+               ? SILLinkage::Public
+               : SILLinkage::Shared;
 
   case SILLinkage::Private:
   case SILLinkage::PrivateExternal:
@@ -2752,4 +2754,3 @@ void swift::hoistAddressProjections(Operand &Op, SILInstruction *InsertBefore,
     }
   }
 }
-

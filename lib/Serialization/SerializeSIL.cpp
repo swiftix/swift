@@ -1926,8 +1926,21 @@ writeSILDefaultWitnessTable(const SILDefaultWitnessTable &wt) {
 
   for (auto &entry : wt.getEntries()) {
     if (!entry.isValid()) {
-      DefaultWitnessTableNoEntryLayout::emitRecord(Out, ScratchRecord,
-          SILAbbrCodes[DefaultWitnessTableNoEntryLayout::Code]);
+      if (!entry.isValidRequirement()) {
+        DefaultWitnessTableNoEntryLayout::emitRecord(
+            Out, ScratchRecord,
+            SILAbbrCodes[DefaultWitnessTableNoEntryLayout::Code]);
+        continue;
+      }
+      SmallVector<ValueID, 4> ListOfValues;
+      handleSILDeclRef(S, entry.getRequirement(), ListOfValues);
+      // No name, because it is a no_default.
+      IdentifierID witnessID = 0;
+      DefaultWitnessTableEntryLayout::emitRecord(
+          Out, ScratchRecord,
+          SILAbbrCodes[DefaultWitnessTableEntryLayout::Code],
+          // SILFunction name
+          witnessID, ListOfValues);
       continue;
     }
 

@@ -50,7 +50,7 @@ public:
     None,
     Debug,
     Optimize,
-    OptimizeUnchecked
+    OptimizeUnchecked,
   };
 
   /// Controls how to perform SIL linking.
@@ -75,6 +75,9 @@ public:
 
   /// Whether to dump verbose SIL with scope and location information.
   bool EmitVerboseSIL = false;
+
+  /// Is it a whole program compilation?
+  bool WholeProgram = false;
 
   /// Optimization mode being used.
   SILOptMode Optimization = SILOptMode::NotSet;
@@ -132,6 +135,9 @@ public:
 
   SILOptions() : Sanitize(SanitizerKind::None) {}
 
+  bool isWholeProgram() const {
+    return WholeProgram;
+  }
 };
 
 } // end namespace swift
