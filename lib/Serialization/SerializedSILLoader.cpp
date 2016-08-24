@@ -58,8 +58,8 @@ SILFunction *SerializedSILLoader::lookupSILFunction(SILFunction *Callee) {
 }
 
 SILFunction *SerializedSILLoader::lookupSILFunction(SILDeclRef Decl) {
-  llvm::SmallString<32> Name;
-  Decl.mangle(Name);
+  auto NameStr = Decl.mangle();
+  StringRef Name(NameStr);
   // It is possible that one module has a declaration of a SILFunction, while
   // another has the full definition.
   SILFunction *retVal = nullptr;

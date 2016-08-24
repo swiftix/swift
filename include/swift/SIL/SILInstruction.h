@@ -198,6 +198,10 @@ public:
   /// Return the array of mutable operands for this instruction.
   MutableArrayRef<Operand> getAllOperands();
 
+  /// Collect any AST type operands of the instruction.
+  /// Returns true if any such operands were found, false otherwise.
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const;
+
   /// Return the array of mutable type depedent operands for this instruction.
   MutableArrayRef<Operand> getTypeDependentOperands();
 
@@ -899,6 +903,11 @@ public:
 
   MutableArrayRef<Operand> getTypeDependentOperands() {
     return getAllOperands();
+  }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(ConcreteType);
+    return true;
   }
 
   static bool classof(const ValueBase *V) {
@@ -2292,6 +2301,12 @@ public:
   ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
   MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
 
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(SourceType);
+    Types.push_back(TargetType);
+    return true;
+  }
+
   static bool classof(const ValueBase *V) {
     return V->getKind() == ValueKind::UncheckedRefCastAddrInst;
   }
@@ -2636,6 +2651,12 @@ public:
 
   ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
   MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(SourceType);
+    Types.push_back(TargetType);
+    return true;
+  }
 
   static bool classof(const ValueBase *V) {
     return V->getKind() == ValueKind::UnconditionalCheckedCastAddrInst;
@@ -3611,6 +3632,11 @@ public:
     return { getTrailingObjects<Operand>(), NumOperands };
   }
 
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(LookupType);
+    return true;
+  }
+
   static bool classof(const ValueBase *V) {
     return V->getKind() == ValueKind::WitnessMethodInst;
   }
@@ -3733,6 +3759,11 @@ public:
   SILType getLoweredConcreteType() const {
     return getType();
   }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(ConcreteType);
+    return true;
+  }
 };
 
 /// InitExistentialRefInst - Given a class instance reference and a set of
@@ -3774,6 +3805,11 @@ public:
 
   ArrayRef<ProtocolConformanceRef> getConformances() const {
     return Conformances;
+  }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(ConcreteType);
+    return true;
   }
 };
 
@@ -4189,6 +4225,11 @@ class DeallocExistentialBoxInst :
 
 public:
   CanType getConcreteType() const { return ConcreteType; }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(ConcreteType);
+    return true;
+  }
 };
 
 /// Destroy the value at a memory location according to
@@ -4941,6 +4982,12 @@ public:
 
   ArrayRef<Operand> getAllOperands() const { return Operands.asArray(); }
   MutableArrayRef<Operand> getAllOperands() { return Operands.asArray(); }
+
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(SourceType);
+    Types.push_back(TargetType);
+    return true;
+  }
 
   SuccessorListTy getSuccessors() {
     return DestBBs;

@@ -49,7 +49,8 @@ public:
     None,
     Debug,
     Optimize,
-    OptimizeUnchecked
+    OptimizeUnchecked,
+    OptimizeWholeProgram
   };
 
   /// Controls how to perform SIL linking.

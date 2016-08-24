@@ -405,8 +405,9 @@ public:
     // First drop all references so that we don't get problems with non-zero
     // reference counts of dead functions.
     for (SILFunction &F : *Module)
-      if (!isAlive(&F))
+      if (!isAlive(&F)) {
         F.dropAllReferences();
+      }
 
     // Next step: delete all dead functions.
     for (auto FI = Module->begin(), EI = Module->end(); FI != EI;) {
@@ -538,6 +539,16 @@ class SILDeadFuncElimination : public SILModuleTransform {
   void run() override {
     DEBUG(llvm::dbgs() << "Running DeadFuncElimination\n");
 
+    //llvm::dbgs() << "*** MODULE BEFORE DFE ***\n";
+    //getModule()->dump(false);
+#if 0
+    // Do not use external defs in the whole-program optimization
+    // mode.
+    if (getModule()->getOptions().Optimization ==
+        SILOptions::SILOptMode::OptimizeWholeProgram)
+      return;
+#endif
+
     // The deserializer caches functions that it deserializes so that if it is
     // asked to deserialize that function again, it does not do extra work. This
     // causes the function's reference count to be incremented causing it to be
@@ -547,6 +558,8 @@ class SILDeadFuncElimination : public SILModuleTransform {
 
     DeadFunctionElimination deadFunctionElimination(getModule());
     deadFunctionElimination.eliminateFunctions(this);
+    //llvm::dbgs() << "*** MODULE AFTER DFE ***\n";
+    //getModule()->dump(false);
   }
   
   StringRef getName() override { return "Dead Function Elimination"; }
@@ -555,6 +568,11 @@ class SILDeadFuncElimination : public SILModuleTransform {
 class SILExternalFuncDefinitionsElimination : public SILModuleTransform {
   void run() override {
     DEBUG(llvm::dbgs() << "Running ExternalFunctionDefinitionsElimination\n");
+    // Do not use external defs in the whole-program optimization
+    // mode.
+    if (getModule()->getOptions().Optimization ==
+        SILOptions::SILOptMode::OptimizeWholeProgram)
+      return;
 
     // The deserializer caches functions that it deserializes so that if it is
     // asked to deserialize that function again, it does not do extra work. This

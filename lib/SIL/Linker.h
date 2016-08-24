@@ -47,6 +47,8 @@ public:
       : Mod(M), Loader(L), Worklist(), FunctionDeserializationWorklist(),
         Mode(LinkingMode) {}
 
+  ~SILLinkerVisitor();
+
   /// Process F, recursively deserializing any thing F may reference.
   bool processFunction(SILFunction *F);
 
