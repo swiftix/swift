@@ -25,8 +25,7 @@ class ExternalDefsToDecls : public SILModuleTransform {
   void run() override {
     // Do not use external defs in the whole-program optimization
     // mode.
-    if (getModule()->getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram)
+    if (getModule()->isWholeProgram())
       return;
     for (auto &F : *getModule()) {
       SILLinkage linkage = F.getLinkage();

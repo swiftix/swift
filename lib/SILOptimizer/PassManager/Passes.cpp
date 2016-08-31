@@ -280,13 +280,11 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
   // Don't do it before the SILLinker pass in the whole program optimization
   // mode, because SILLinker needs to know all the functions to recursively
   // fetch all their dependencies.
-  if (Module.getOptions().Optimization !=
-      SILOptions::SILOptMode::OptimizeWholeProgram)
+  if (!Module.isWholeProgram())
     PM.addDeadFunctionElimination();
   // Start by cloning functions from stdlib.
   PM.addSILLinker();
-  if (Module.getOptions().Optimization ==
-      SILOptions::SILOptMode::OptimizeWholeProgram)
+  if (Module.isWholeProgram())
     PM.addDeadFunctionElimination();
   PM.run();
   PM.resetAndRemoveTransformations();

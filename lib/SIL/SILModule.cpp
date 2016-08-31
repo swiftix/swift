@@ -38,8 +38,7 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   void didDeserializeFunctionBody(ModuleDecl *M, SILFunction *fn) override {
     DEBUG(llvm::dbgs() << "didDeserialize: SILFunction body: " << fn->getName()
                        << "\n");
-    if (fn->getModule().getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram) {
+    if (fn->getModule().isWholeProgram()) {
       fn->setFragile(IsNotFragile);
 
       // All imported functions become non-fragile in the whole-program mode.
@@ -57,8 +56,7 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
     updateLinkage(var);
     // All imported Swift globals become definitions in the whole-program mode.
     // Clang imported globals are not affected.
-    if (var->getModule().getOptions().Optimization ==
-            SILOptions::SILOptMode::OptimizeWholeProgram &&
+    if (var->getModule().isWholeProgram() &&
         !var->getClangDecl()) {
       var->setDeclaration(false);
       var->setLinkage(SILLinkage::Hidden);
@@ -81,8 +79,7 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
     // Read bodies of all functions referenced from the table.
     for (auto entry : vtable->getEntries()) {
       auto fn = entry.second;
-      if (fn->getModule().getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram &&
+      if (fn->getModule().isWholeProgram() &&
         !fn->isDefinition()) {
         fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
       }
@@ -92,11 +89,12 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   void didDeserialize(Module *M, SILWitnessTable *wt) override {
     DEBUG(llvm::dbgs() << "didDeserialize: SILWitnessTable: " << wt->getName()
                        << "\n");
-    if (wt->getModule().getOptions().Optimization !=
-        SILOptions::SILOptMode::OptimizeWholeProgram) {
+    if (!wt->getModule().isWholeProgram()) {
       updateLinkage(wt);
       return;
     }
+    // TODO: Make it public?
+
     // Read bodies of all functions referenced from the table.
     for (auto entry : wt->getEntries()) {
       if (entry.getKind() != SILWitnessTable::WitnessKind::Method)
@@ -111,11 +109,11 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   void didDeserializeWitnessTableEntries(Module *M, SILWitnessTable *wt) override {
     DEBUG(llvm::dbgs() << "didDeserialize: SILWitnessTable entries: "
                        << wt->getName() << "\n");
-    if (wt->getModule().getOptions().Optimization !=
-        SILOptions::SILOptMode::OptimizeWholeProgram) {
+    if (!wt->getModule().isWholeProgram()) {
       updateLinkage(wt);
       return;
     }
+    // TODO: Make it public?
     wt->setLinkage(stripExternalFromLinkage(wt->getLinkage()));
     // Read bodies of all functions referenced from the table.
     for (auto entry : wt->getEntries()) {
@@ -131,11 +129,11 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   void didDeserializeDefaultWitnessTableEntries(Module *M, SILDefaultWitnessTable *wt) override {
     DEBUG(llvm::dbgs() << "didDeserialize: default SILWitnessTable entries: "
                        << wt->getIdentifier() << "\n");
-    if (wt->getModule().getOptions().Optimization !=
-        SILOptions::SILOptMode::OptimizeWholeProgram) {
+    if (!wt->getModule().isWholeProgram()) {
       updateLinkage(wt);
       return;
     }
+    // TODO: Make it public?
     wt->setLinkage(stripExternalFromLinkage(wt->getLinkage()));
     // Read bodies of all functions referenced from the table.
     for (auto entry : wt->getEntries()) {
@@ -577,8 +575,7 @@ SILFunction *SILModule::lookUpFunction(SILDeclRef fnRef) {
 
 static SILModule::LinkingMode
 effectiveLinkingMode(const SILModule &Mod, SILModule::LinkingMode Mode) {
-  if (Mod.getOptions().Optimization ==
-      SILOptions::SILOptMode::OptimizeWholeProgram)
+  if (Mod.isWholeProgram())
     return SILModule::LinkingMode::LinkAll;
   return Mode;
 }

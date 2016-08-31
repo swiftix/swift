@@ -435,8 +435,7 @@ class SILLinker : public SILModuleTransform {
   void run() override {
     SILModule &M = *getModule();
 
-    if (M.getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram) {
+    if (M.isWholeProgram()) {
       //M.linkAllWitnessTables();
       //M.linkAllVTables();
       // Link all methods used by runtime.
