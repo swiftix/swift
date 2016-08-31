@@ -31,10 +31,13 @@ using namespace Lowering;
 
 class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   void didDeserialize(Module *M, SILFunction *fn) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILFunction: " << fn->getName() << "\n");
     updateLinkage(fn);
   }
 
   void didDeserializeFunctionBody(ModuleDecl *M, SILFunction *fn) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILFunction body: " << fn->getName()
+                       << "\n");
     if (fn->getModule().getOptions().Optimization ==
         SILOptions::SILOptMode::OptimizeWholeProgram) {
       fn->setFragile(IsNotFragile);
@@ -49,10 +52,14 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   }
 
   void didDeserialize(Module *M, SILGlobalVariable *var) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILGlobalVariable: "
+                       << var->getName() << "\n");
     updateLinkage(var);
-    // All imported globals become definitions in the whole-program mode.
+    // All imported Swift globals become definitions in the whole-program mode.
+    // Clang imported globals are not affected.
     if (var->getModule().getOptions().Optimization ==
-      SILOptions::SILOptMode::OptimizeWholeProgram) {
+            SILOptions::SILOptMode::OptimizeWholeProgram &&
+        !var->getClangDecl()) {
       var->setDeclaration(false);
       var->setLinkage(SILLinkage::Hidden);
       var->setFragile(false);
@@ -66,8 +73,10 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   }
 
   void didDeserialize(Module *M, SILVTable *vtable) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILVTable: "
+                       << vtable->getClass()->getName() << "\n");
     // TODO: should vtables get linkage?
-    //updateLinkage(vtable);
+    // updateLinkage(vtable);
 
     // Read bodies of all functions referenced from the table.
     for (auto entry : vtable->getEntries()) {
@@ -81,19 +90,62 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   }
 
   void didDeserialize(Module *M, SILWitnessTable *wt) override {
-    updateLinkage(wt);
+    DEBUG(llvm::dbgs() << "didDeserialize: SILWitnessTable: " << wt->getName()
+                       << "\n");
+    if (wt->getModule().getOptions().Optimization !=
+        SILOptions::SILOptMode::OptimizeWholeProgram) {
+      updateLinkage(wt);
+      return;
+    }
     // Read bodies of all functions referenced from the table.
     for (auto entry : wt->getEntries()) {
       if (entry.getKind() != SILWitnessTable::WitnessKind::Method)
         continue;
       auto fn = entry.getMethodWitness().Witness;
-      if (fn->getModule().getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram &&
-        !fn->isDefinition()) {
+      if (!fn->isDefinition()) {
         fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
       }
     }
   }
+
+  void didDeserializeWitnessTableEntries(Module *M, SILWitnessTable *wt) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: SILWitnessTable entries: "
+                       << wt->getName() << "\n");
+    if (wt->getModule().getOptions().Optimization !=
+        SILOptions::SILOptMode::OptimizeWholeProgram) {
+      updateLinkage(wt);
+      return;
+    }
+    wt->setLinkage(stripExternalFromLinkage(wt->getLinkage()));
+    // Read bodies of all functions referenced from the table.
+    for (auto entry : wt->getEntries()) {
+      if (entry.getKind() != SILWitnessTable::WitnessKind::Method)
+        continue;
+      auto fn = entry.getMethodWitness().Witness;
+      if (!fn->isDefinition()) {
+        fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
+      }
+    }
+  }
+
+  void didDeserializeDefaultWitnessTableEntries(Module *M, SILDefaultWitnessTable *wt) override {
+    DEBUG(llvm::dbgs() << "didDeserialize: default SILWitnessTable entries: "
+                       << wt->getIdentifier() << "\n");
+    if (wt->getModule().getOptions().Optimization !=
+        SILOptions::SILOptMode::OptimizeWholeProgram) {
+      updateLinkage(wt);
+      return;
+    }
+    wt->setLinkage(stripExternalFromLinkage(wt->getLinkage()));
+    // Read bodies of all functions referenced from the table.
+    for (auto entry : wt->getEntries()) {
+      auto fn = entry.getWitness();
+      if (!fn->isDefinition()) {
+        fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
+      }
+    }
+  }
+
 
   template <class T> void updateLinkage(T *decl) {
     switch (decl->getLinkage()) {

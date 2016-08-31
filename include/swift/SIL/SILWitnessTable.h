@@ -241,6 +241,9 @@ public:
   /// Return all of the witness table entries.
   ArrayRef<Entry> getEntries() const { return Entries; }
 
+  /// Return the SILModule where this witness table is defined.
+  SILModule &getModule() { return Mod; }
+
   /// Clears methods in MethodWitness entries.
   /// \p predicate Returns true if the passed entry should be set to null.
   template <typename Predicate> void clearMethods_if(Predicate predicate) {

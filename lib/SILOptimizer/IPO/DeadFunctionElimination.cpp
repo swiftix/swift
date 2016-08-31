@@ -28,13 +28,25 @@ STATISTIC(NumEliminatedExternalDefs, "Number of external function definitions el
 
 namespace {
 
+/// Return whether the given linkage indicates that an object's
+/// definition might be required outside the current SILModule.
+/// If \p is true then we are in whole-module compilation.
+static bool isPossiblyUsedExternally(SILLinkage linkage,
+                                     const SILModule &Module) {
+  if (Module.getOptions().Optimization ==
+      SILOptions::SILOptMode::OptimizeWholeProgram)
+    return false;
+
+  return isPossiblyUsedExternally(linkage, Module.isWholeModule());
+}
+
 /// This is a base class for passes that are based on function liveness
 /// computations like e.g. dead function elimination.
 /// It provides a common logic for computing live (i.e. reachable) functions.
 class FunctionLivenessComputation {
 protected:
-  /// Stores which functions implement a vtable or witness table method.
-  struct MethodInfo {
+/// Stores which functions implement a vtable or witness table method.
+struct MethodInfo {
 
     MethodInfo() : isAnchor(false) {}
 
@@ -61,25 +73,43 @@ protected:
   bool isAnchorFunction(SILFunction *F) {
 
     // Remove internal functions that are not referenced by anything.
-    if (isPossiblyUsedExternally(F->getLinkage(), Module->isWholeModule()))
+    if (isPossiblyUsedExternally(F->getLinkage(), *Module)) {
+      DEBUG(llvm::dbgs() << "Anchor function " << F->getName()
+                         << " : possibly used externally\n");
       return true;
+    }
 
     // ObjC functions are called through the runtime and are therefore alive
     // even if not referenced inside SIL.
-    if (F->getRepresentation() == SILFunctionTypeRepresentation::ObjCMethod)
+    if (F->getRepresentation() == SILFunctionTypeRepresentation::ObjCMethod) {
+      DEBUG(llvm::dbgs() << "Anchor function " << F->getName()
+                         << " : ObjC function\n");
       return true;
+    }
+
+    if (F->getName() == "main") {
+      DEBUG(llvm::dbgs() << "Anchor function " << F->getName()
+                         << " : entry point");
+      llvm::dbgs() << "Anchor function " << F->getName()
+                         << " : entry point\n";
+      return true;
+    }
 
     // If function is marked as "keep-as-public", don't remove it.
     // Change its linkage to public, so that other applications can refer to it.
     // It is important that this transformation is done at the end of
     // a pipeline, as it may break some optimizations.
     if (F->isKeepAsPublic()) {
+      DEBUG(llvm::dbgs() << "Anchor function " << F->getName()
+                         << " : keep as public\n");
       F->setLinkage(SILLinkage::Public);
       F->setFragile(IsFragile_t::IsNotFragile);
       DEBUG(llvm::dbgs() << "DFE: Preserve the specialization "
                          << F->getName() << '\n');
       return true;
     }
+
+    llvm::dbgs() << "Not an Anchor function " << F->getName() << "\n";
 
     return false;
   }
@@ -102,6 +132,7 @@ protected:
     if (mi->isAnchor)
       ensureAlive(F);
     mi->implementingFunctions.push_back(std::make_pair(F, C));
+    llvm::dbgs() << "addImplementingFunction: " << F->getName() << "\n";
   }
 
   /// Returns true if a function is marked as alive.
@@ -112,12 +143,15 @@ protected:
     AliveFunctions.insert(F);
     assert(F && "function does not exist");
     Worklist.insert(F);
+    llvm::dbgs() << "makeAlive: " << F->getName() << "\n";
   }
   
   /// Marks a function as alive if it is not alive yet.
   void ensureAlive(SILFunction *F) {
-    if (!isAlive(F))
+    if (!isAlive(F)) {
+      llvm::dbgs() << "ensureAlive: " << F->getName() << "\n";
       makeAlive(F);
+    }
   }
 
   /// Returns true if \a Derived is the same as \p Base or derived from it.
@@ -159,6 +193,19 @@ protected:
   /// class method, \p MethodCl is the type of the class_method instruction's
   /// operand.
   void ensureAlive(MethodInfo *mi, FuncDecl *FD, ClassDecl *MethodCl) {
+    if (FD) {
+    llvm::dbgs() << "ensureAlive: ";
+    if (MethodCl)
+      llvm::dbgs() << "method of class " << MethodCl->getNameStr() << " : ";
+    if (FD->hasInterfaceType())
+      llvm::dbgs() << "Interafce type: " << FD->getInterfaceType() << " : ";
+    if (FD->hasType())
+      llvm::dbgs() << "Interafce type: " << FD->getType() << " : ";
+    if (FD->hasName())
+      llvm::dbgs() << FD->getNameStr();
+    llvm::dbgs() << "\n";
+    }
+    llvm::dbgs() << "Mark implementing function as alive: begin\n";
     for (auto &Pair : mi->implementingFunctions) {
       SILFunction *FImpl = Pair.first;
       if (!isAlive(FImpl) &&
@@ -166,6 +213,7 @@ protected:
         makeAlive(FImpl);
       }
     }
+    llvm::dbgs() << "Mark implementing function as alive: end\n";
   }
 
   /// Gets the base implementation of a method.
@@ -188,6 +236,8 @@ protected:
           ClassDecl *MethodCl = nullptr;
           if (MI->getNumOperands() == 1)
             MethodCl = MI->getOperand(0)->getType().getClassOrBoundGenericClass();
+          llvm::dbgs() << "Analyze inst: ";
+          MI->dump();
           ensureAlive(mi, dyn_cast<FuncDecl>(funcDecl), MethodCl);
         } else if (auto *FRI = dyn_cast<FunctionRefInst>(&I)) {
           ensureAlive(FRI->getReferencedFunction());
@@ -198,6 +248,12 @@ protected:
 
   /// Retrieve the visibility information from the AST.
   bool isVisibleExternally(ValueDecl *decl) {
+    if (Module->getOptions().Optimization ==
+        SILOptions::SILOptMode::OptimizeWholeProgram) {
+      // Nothing is visible externaly in this mode.
+      return false;
+    }
+
     Accessibility accessibility = decl->getEffectiveAccess();
     SILLinkage linkage;
     switch (accessibility) {
@@ -213,7 +269,7 @@ protected:
       linkage = SILLinkage::Public;
       break;
     }
-    if (isPossiblyUsedExternally(linkage, Module->isWholeModule()))
+    if (isPossiblyUsedExternally(linkage, *Module))
       return true;
 
     // If a vtable or witness table (method) is only visible in another module
@@ -300,6 +356,8 @@ class DeadFunctionElimination : FunctionLivenessComputation {
         // Destructors are alive because they are called from swift_release
         if (entry.first.kind == SILDeclRef::Kind::Deallocator ||
             entry.first.kind == SILDeclRef::Kind::IVarDestroyer) {
+          DEBUG(llvm::dbgs() << "Alive function " << entry.second->getName()
+                             << ": deallocator/destroyer\n");
           ensureAlive(entry.second);
           continue;
         }
@@ -312,7 +370,7 @@ class DeadFunctionElimination : FunctionLivenessComputation {
 
         if (// A conservative approach: if any of the overridden functions is
             // visible externally, we mark the whole method as alive.
-            isPossiblyUsedExternally(F->getLinkage(), Module->isWholeModule())
+            isPossiblyUsedExternally(F->getLinkage(), *Module)
             // We also have to check the method declaration's accessibility.
             // Needed if it's a public base method declared in another
             // compilation unit (for this we have no SILFunction).
@@ -320,13 +378,17 @@ class DeadFunctionElimination : FunctionLivenessComputation {
             // Declarations are always accessible externally, so they are alive.
             || !F->isDefinition()) {
           ensureAlive(mi, nullptr, nullptr);
+          DEBUG(llvm::dbgs() << "Alive function " << F->getName()
+                             << ": class method\n");
         }
       }
     }
 
     // Check witness methods.
     for (SILWitnessTable &WT : Module->getWitnessTableList()) {
-      bool tableIsAlive = isVisibleExternally(WT.getConformance()->getProtocol());
+      DEBUG(llvm::dbgs() << "Checking witness table: " << WT.getName() << "\n");
+      bool tableIsAlive =
+          isVisibleExternally(WT.getConformance()->getProtocol());
       for (const SILWitnessTable::Entry &entry : WT.getEntries()) {
         if (entry.getKind() != SILWitnessTable::Method)
           continue;
@@ -341,8 +403,15 @@ class DeadFunctionElimination : FunctionLivenessComputation {
 
         MethodInfo *mi = getMethodInfo(fd);
         addImplementingFunction(mi, F, nullptr);
-        if (tableIsAlive || !F->isDefinition())
+        if (tableIsAlive || !F->isDefinition()) {
+          if (Module->getOptions().Optimization ==
+              SILOptions::SILOptMode::OptimizeWholeProgram)
+            continue;
+
           ensureAlive(mi, nullptr, nullptr);
+          DEBUG(llvm::dbgs() << "Alive function " << F->getName()
+                             << ": witness method\n");
+        }
       }
     }
 
@@ -357,7 +426,14 @@ class DeadFunctionElimination : FunctionLivenessComputation {
 
         MethodInfo *mi = getMethodInfo(fd);
         addImplementingFunction(mi, F, nullptr);
+
+        if (Module->getOptions().Optimization ==
+            SILOptions::SILOptMode::OptimizeWholeProgram)
+          continue;
+
         ensureAlive(mi, nullptr, nullptr);
+        DEBUG(llvm::dbgs() << "Alive function " << F->getName()
+                           << ": default witness method\n");
       }
     }
   }
@@ -369,6 +445,8 @@ class DeadFunctionElimination : FunctionLivenessComputation {
         if (!isAlive(entry.second)) {
           DEBUG(llvm::dbgs() << "  erase dead vtable method " <<
                 entry.second->getName() << "\n");
+          llvm::dbgs() << "  erase dead vtable method " <<
+                entry.second->getName() << "\n";
           return true;
         }
         return false;
@@ -381,8 +459,12 @@ class DeadFunctionElimination : FunctionLivenessComputation {
       WI++;
       WT->clearMethods_if([this](const SILWitnessTable::MethodWitness &MW) -> bool {
         if (!isAlive(MW.Witness)) {
-          DEBUG(llvm::dbgs() << "  erase dead witness method " <<
-                MW.Witness->getName() << "\n");
+          if (MW.Witness) {
+            DEBUG(llvm::dbgs() << "  erase dead witness method "
+                               << MW.Witness->getName() << "\n");
+            llvm::dbgs() << "  erase dead witness method "
+                         << MW.Witness->getName() << "\n";
+          }
           return true;
         }
         return false;

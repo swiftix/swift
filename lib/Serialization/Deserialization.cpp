@@ -2982,10 +2982,6 @@ Decl *ModuleFile::getDecl(DeclID DID, Optional<DeclContext *> ForcedContext) {
                                        DeclTypeCursor.GetCurrentBitNo()));
 
     theClass->setCircularityCheck(CircularityCheck::Checked);
-    llvm::dbgs() << "\nDeserializeAST: Processing class: " << theClass->getNameStr() << "\n";
-    if (theClass->getNameStr() == "_ContiguousArrayStorage1") {
-      llvm::dbgs() << "Bingo!\n";
-    }
     break;
   }
 
