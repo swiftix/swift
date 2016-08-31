@@ -1132,6 +1132,17 @@ public:
     return getSubstitutions();
   }
 
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    if (hasSubstitutions()) {
+      ArrayRef<Substitution> Subs = getSubstitutions();
+      for (auto Sub : Subs) {
+        Types.push_back(Sub.getReplacement()->getCanonicalType());
+      }
+      return true;
+    }
+    return false;
+  }
+
   /// The arguments passed to this instruction.
   MutableArrayRef<Operand> getArgumentOperands() {
     return Operands.getDynamicAsArray().slice(0, getNumCallArguments());

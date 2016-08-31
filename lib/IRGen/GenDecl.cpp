@@ -35,6 +35,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/GlobalDecl.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/TypeBuilder.h"
 #include "llvm/IR/Value.h"
 #include "llvm/IR/GlobalAlias.h"
@@ -504,11 +505,18 @@ emitGlobalList(IRGenModule &IGM, ArrayRef<llvm::WeakVH> handles,
   // We have an array of value handles, but we need an array of constants.
   SmallVector<llvm::Constant*, 8> elts;
   elts.reserve(handles.size());
+  unsigned idx = 0;
   for (auto &handle : handles) {
     auto elt = cast<llvm::Constant>(&*handle);
+    auto *V = elt->stripPointerCastsNoFollowAliases();
+    //if ((Operator::getOpcode(V) == Instruction::GetElementPointer) &&
+      if(  !(isa<llvm::GlobalVariable>(V) || isa<llvm::Function>(V) ||
+                     isa<llvm::GlobalAlias>(V)))
+      continue;
     if (elt->getType() != eltTy)
       elt = llvm::ConstantExpr::getBitCast(elt, eltTy);
     elts.push_back(elt);
+    idx++;
   }
 
   auto varTy = llvm::ArrayType::get(eltTy, elts.size());
@@ -522,6 +530,19 @@ emitGlobalList(IRGenModule &IGM, ArrayRef<llvm::WeakVH> handles,
   // (Note that we'd specifically like to not put @llvm.used in itself.)
   if (llvm::GlobalValue::isLocalLinkage(linkage))
     IGM.addUsedGlobal(var);
+#if 0
+  if (name == "llvm.used") {
+    llvm::dbgs() << "emitGlobalList:\n";
+    for (unsigned j = 0, ee = init->getNumOperands(); j != ee; ++j) {
+      llvm::Value *Op = init->getOperand(j);
+      if (isa<llvm::GlobalAlias>(Op))
+        llvm::dbgs() << "GLOBAL ALIAS ";
+      llvm::dbgs() << "at index " << j << ": Kind " << Op->getValueID() << ": ";
+      Op->dump();
+    }
+    //var->dump();
+  }
+#endif
   return var;
 }
 
@@ -683,6 +704,8 @@ void IRGenModule::emitRuntimeRegistration() {
 ///
 /// This value must have a definition by the time the module is finalized.
 void IRGenModule::addUsedGlobal(llvm::GlobalValue *global) {
+  // llvm::dbgs() << "Add used global: idx = " << LLVMUsed.size() << " : " << global << " : ";
+  // global->dump();
   LLVMUsed.push_back(global);
 }
 
@@ -788,6 +811,29 @@ void IRGenModule::emitGlobalLists() {
                  false);
 }
 
+static void emitLazyTypeMetadata(IRGenModule &IGM, CanType type) {
+  auto decl = type.getAnyNominal();
+  assert(decl);
+
+  if (IGM.isEmittedDecl(decl))
+    return;
+
+  IGM.addEmittedDecl(decl);
+
+  if (auto sd = dyn_cast<StructDecl>(decl)) {
+    return emitStructMetadata(IGM, sd);
+  } else if (auto ed = dyn_cast<EnumDecl>(decl)) {
+    emitEnumMetadata(IGM, ed);
+  } else if (auto pd = dyn_cast<ProtocolDecl>(decl)) {
+    IGM.emitProtocolDecl(pd);
+  } else if (auto cd = dyn_cast<ClassDecl>(decl)) {
+    IGM.emitClassDecl(cd);
+    //llvm_unreachable("should not have enqueued a class decl here!");
+  } else {
+    llvm_unreachable("should not have enqueued an unknown decl here!");
+  }
+}
+
 void IRGenerator::emitGlobalTopLevel() {
   // Generate order numbers for the functions in the SIL module that
   // correspond to definitions in the LLVM module.
@@ -803,6 +849,19 @@ void IRGenerator::emitGlobalTopLevel() {
     CurrentIGMPtr IGM = getGenModule(decl ? decl->getDeclContext() : nullptr);
     IGM->emitSILGlobalVariable(&v);
   }
+
+  for (auto TD : PrimaryIGM->getSILModule().getDeserializedNominalTypes()) {
+    //IGF.IGM.IRGen.
+    if (PrimaryIGM->isEmittedDecl(TD)) {
+      llvm::dbgs() << "[skip] Add global metadata for " << TD->getNameStr() << "\n";
+      continue;
+    }
+    //llvm::dbgs() << "Add lazy time metadata for " << TD->getNameStr() << "\n";
+    llvm::dbgs() << "Add global metadata for " << TD->getNameStr() << "\n";
+    //addLazyTypeMetadata(TD->getDeclaredType().getCanonicalTypeOrNull());
+    emitLazyTypeMetadata(*PrimaryIGM, TD->getDeclaredType()->getCanonicalType());
+  }
+
   PrimaryIGM->emitCoverageMapping();
   
   // Emit SIL functions.
@@ -837,7 +896,7 @@ void IRGenerator::emitGlobalTopLevel() {
     IGM->CurrentWitnessTable = nullptr;
 #endif
   }
-  
+
   for (auto Iter : *this) {
     IRGenModule *IGM = Iter.second;
     IGM->finishEmitAfterTopLevel();
@@ -857,24 +916,6 @@ void IRGenModule::finishEmitAfterTopLevel() {
                                   ImportKind::Module, SourceLoc(),
                                   AccessPath);
     DebugInfo->emitImport(Imp);
-  }
-}
-
-static void emitLazyTypeMetadata(IRGenModule &IGM, CanType type) {
-  auto decl = type.getAnyNominal();
-  assert(decl);
-
-  if (auto sd = dyn_cast<StructDecl>(decl)) {
-    return emitStructMetadata(IGM, sd);
-  } else if (auto ed = dyn_cast<EnumDecl>(decl)) {
-    emitEnumMetadata(IGM, ed);
-  } else if (auto pd = dyn_cast<ProtocolDecl>(decl)) {
-    IGM.emitProtocolDecl(pd);
-  } else if (auto cd = dyn_cast<ClassDecl>(decl)) {
-    IGM.emitClassDecl(cd);
-    //llvm_unreachable("should not have enqueued a class decl here!");
-  } else {
-    llvm_unreachable("should not have enqueued an unknown decl here!");
   }
 }
 
@@ -911,11 +952,14 @@ void IRGenerator::emitLazyDefinitions() {
       assert(isTypeMetadataEmittedLazily(type) ||
              SIL.getOptions().Optimization ==
                  SILOptions::SILOptMode::OptimizeWholeProgram);
+
+      llvm::dbgs() << "Emit lazy definitions for: " << type << "\n";
       //if (type->getClassOrBoundGenericClass())
       //  continue;
       auto nom = type->getAnyNominal();
       if (!nom)
         continue;
+
       if (emittedTypes.count(nom))
         continue;
       // If this type is defined in one of the source files, it was
@@ -925,7 +969,8 @@ void IRGenerator::emitLazyDefinitions() {
                     sourceFile) != primarySourceFiles.end())
         continue;
       CurrentIGMPtr IGM = getGenModule(nom->getDeclContext());
-      //if (IGM.get() == getPrimaryIGM())
+
+     //if (IGM.get() == getPrimaryIGM())
       //  continue;
       emitLazyTypeMetadata(*IGM.get(), type);
       emittedTypes.insert(nom);
@@ -1560,11 +1605,16 @@ llvm::GlobalVariable *LinkInfo::createVariable(IRGenModule &IGM,
 
 /// Emit a global declaration.
 void IRGenModule::emitGlobalDecl(Decl *D) {
+  if (isEmittedDecl(D))
+    return;
+
   switch (D->getKind()) {
   case DeclKind::Extension:
+    addEmittedDecl(D);
     return emitExtension(cast<ExtensionDecl>(D));
 
   case DeclKind::Protocol:
+    addEmittedDecl(D);
     return emitProtocolDecl(cast<ProtocolDecl>(D));
 
   case DeclKind::PatternBinding:
@@ -1594,12 +1644,15 @@ void IRGenModule::emitGlobalDecl(Decl *D) {
     return;
 
   case DeclKind::Enum:
+    addEmittedDecl(D);
     return emitEnumDecl(cast<EnumDecl>(D));
 
   case DeclKind::Struct:
+    addEmittedDecl(D);
     return emitStructDecl(cast<StructDecl>(D));
 
   case DeclKind::Class:
+    addEmittedDecl(D);
     return emitClassDecl(cast<ClassDecl>(D));
 
   // These declarations are only included in the debug info.
@@ -1985,6 +2038,9 @@ IRGenModule::getAddrOfLLVMVariable(LinkEntity entity, Alignment alignment,
     // If we're looking to define something, we may need to replace a
     // forward declaration.
     if (definitionType) {
+      if (!existing->isDeclaration() &&
+          entry->getType()->getPointerElementType() == definitionType)
+        return entry;
       assert(existing->isDeclaration() && "already defined");
       assert(entry->getType()->getPointerElementType() == defaultType);
       updateLinkageForDefinition(*this, existing, entity);

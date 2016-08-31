@@ -131,6 +131,9 @@ public:
   /// Return the AST ProtocolDecl this default witness table is associated with.
   const ProtocolDecl *getProtocol() const { return Protocol; }
 
+  /// Return the SILModule where this default witness table is defined.
+  SILModule &getModule() { return Mod; }
+
   /// Return the minimum witness table size, in words.
   ///
   /// This will not change if requirements with default implementations are

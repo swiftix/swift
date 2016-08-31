@@ -2289,6 +2289,23 @@ llvm::Value *irgen::emitWitnessTableRef(IRGenFunction &IGF,
   assert(Lowering::TypeConverter::protocolRequiresWitnessTable(proto)
          && "protocol does not have witness tables?!");
 
+  if (IGF.IGM.getSILModule().getOptions().Optimization ==
+      SILOptions::SILOptMode::OptimizeWholeProgram) {
+    // Try to load the witness table if it is not loaded yet.
+    // FIXME: Is it a problem to do it so late in IRGen?
+    if (conformance.isConcrete()) {
+      auto Concrete = conformance.getConcrete();
+      auto WT = IGF.IGM.getSILModule().lookUpWitnessTable(Concrete);
+      if (!WT) {
+        // Declare it.
+        IGF.IGM.getSILModule().createWitnessTableDeclaration(
+            Concrete, SILLinkage::Public);
+        // Try to load again.
+        IGF.IGM.getSILModule().lookUpWitnessTable(Concrete);
+      }
+    }
+  }
+
   // If we don't have concrete conformance information, the type must be
   // an archetype and the conformance must be via one of the protocol
   // requirements of the archetype. Look at what's locally bound.

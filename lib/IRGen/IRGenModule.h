@@ -667,6 +667,9 @@ private:
   llvm::StringMap<llvm::Constant*> ObjCSelectorRefs;
   llvm::StringMap<llvm::Constant*> ObjCMethodNames;
 
+  /// Set of declarations that were emitted already.
+  llvm::DenseSet<swift::Decl *> EmittedDecls;
+
   /// LLVMUsed - List of global values which are required to be
   /// present in the object file; bitcast to i8*. This is used for
   /// forcing visibility of symbols which may otherwise be optimized
@@ -877,6 +880,10 @@ public:
   void emitClangDecl(const clang::Decl *decl);
   void finalizeClangCodeGen();
   void finishEmitAfterTopLevel();
+
+  bool isEmittedDecl(Decl *D);
+
+  void addEmittedDecl(Decl *D);
 
   llvm::FunctionType *getFunctionType(CanSILFunctionType type,
                                       llvm::AttributeSet &attrs,

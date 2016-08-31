@@ -1124,3 +1124,11 @@ IRGenModule *IRGenerator::getGenModule(SILFunction *f) {
 
   return getPrimaryIGM();
 }
+
+bool IRGenModule::isEmittedDecl(Decl *D) { return EmittedDecls.count(D) > 0; }
+
+void IRGenModule::addEmittedDecl(Decl *D) {
+  auto result = EmittedDecls.insert(D);
+  assert(result.second && "Declaration was emitted already");
+}
+

@@ -5015,6 +5015,9 @@ void irgen::emitStructMetadata(IRGenModule &IGM, StructDecl *structDecl) {
     builder.layout();
     init = builder.getInit();
     isPattern = false;
+    if (structDecl->getNameStr().find("Header", 0) < 200) {
+      llvm::dbgs() << "Bingo!\n";
+    }
     canBeConstant = builder.canBeConstant();
 
     maybeEmitNominalTypeMetadataAccessFunction(IGM, structDecl, builder);

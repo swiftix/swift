@@ -56,6 +56,8 @@ public:
   /// may reference.
   bool processFunction(StringRef Name);
 
+  bool processDeclRef(SILDeclRef Decl);
+
   /// Process Name, try to deserialize a declaration of a function with
   /// this Name.
   SILFunction *lookupFunction(StringRef Name, SILLinkage Linkage);

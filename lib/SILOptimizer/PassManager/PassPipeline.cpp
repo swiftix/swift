@@ -281,14 +281,24 @@ static void addPerfDebugSerializationPipeline(SILPassPipelinePlan &P) {
   P.addSILLinker();
 }
 
-static void addPerfEarlyModulePassPipeline(SILPassPipelinePlan &P) {
+static void addPerfEarlyModulePassPipeline(SILPassPipelinePlan &P,
+                                           SILOptions Options) {
   P.startPipeline("EarlyModulePasses");
 
-  // Get rid of apparently dead functions as soon as possible so that
-  // we do not spend time optimizing them.
-  P.addDeadFunctionElimination();
+  if (Options.Optimization !=
+      SILOptions::SILOptMode::OptimizeWholeProgram) {
+    // Get rid of apparently dead functions as soon as possible so that
+    // we do not spend time optimizing them.
+    P.addDeadFunctionElimination();
+  }
   // Start by cloning functions from stdlib.
   P.addSILLinker();
+  if (Options.Optimization ==
+      SILOptions::SILOptMode::OptimizeWholeProgram) {
+    // Get rid of apparently dead functions as soon as possible so that
+    // we do not spend time optimizing them.
+    P.addDeadFunctionElimination();
+  }
 }
 
 static void addHighLevelEarlyLoopOptPipeline(SILPassPipelinePlan &P) {
@@ -427,7 +437,7 @@ SILPassPipelinePlan::getPerformancePassPipeline(SILOptions Options) {
 
   // Eliminate immediately dead functions and then clone functions from the
   // stdlib.
-  addPerfEarlyModulePassPipeline(P);
+  addPerfEarlyModulePassPipeline(P, Options);
 
   // Then run an iteration of the high-level SSA passes.
   addHighLevelEarlyLoopOptPipeline(P);

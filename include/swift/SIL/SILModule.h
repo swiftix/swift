@@ -449,6 +449,13 @@ public:
   bool linkFunction(StringRef Name,
                     LinkingMode LinkAll = LinkingMode::LinkNormal);
 
+  /// Attempt to link a function by its SILDeclRef. Returns true if linking
+  /// succeeded, false otherwise.
+  ///
+  /// \return false if the linking failed.
+  bool linkFunction(SILDeclRef Decl,
+                    LinkingMode LinkAll = LinkingMode::LinkNormal);
+
   /// Check if a given function exists in the module,
   /// i.e. it can be linked by linkFunction.
   ///

@@ -90,6 +90,7 @@ public:
   ~SerializedSILLoader();
 
   SILFunction *lookupSILFunction(SILFunction *Callee);
+  SILFunction *lookupSILFunction(SILDeclRef Callee);
   SILFunction *
   lookupSILFunction(StringRef Name, bool declarationOnly = false,
                     SILLinkage linkage = SILLinkage::Private);

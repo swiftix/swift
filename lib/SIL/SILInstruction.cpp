@@ -761,7 +761,7 @@ namespace {
     llvm_unreachable("accessing non-instruction " #CLASS);                     \
     return false;                                                              \
   }
-#define INST(CLASS, PARENT, MEMBEHAVIOR, RELEASINGBEHAVIOR)                    \
+#define INST(CLASS, PARENT, TEXTUAL_NAME, MEMBEHAVIOR, RELEASINGBEHAVIOR)      \
   bool visit##CLASS(const CLASS *I) {                                          \
     if (!IMPLEMENTS_METHOD(CLASS, SILInstruction, collectTypeOperands,         \
                            bool(SmallVectorImpl<CanType> &) const))            \
