@@ -950,8 +950,7 @@ void IRGenerator::emitLazyDefinitions() {
     while (!LazyTypeMetadata.empty()) {
       CanType type = LazyTypeMetadata.pop_back_val();
       assert(isTypeMetadataEmittedLazily(type) ||
-             SIL.getOptions().Optimization ==
-                 SILOptions::SILOptMode::OptimizeWholeProgram);
+             SIL.isWholeProgram());
 
       llvm::dbgs() << "Emit lazy definitions for: " << type << "\n";
       //if (type->getClassOrBoundGenericClass())
@@ -2796,8 +2795,7 @@ ConstantReference IRGenModule::getAddrOfTypeMetadata(CanType concreteType,
   // If this is a use, and the type metadata is emitted lazily,
   // trigger lazy emission of the metadata.
   if (isTypeMetadataEmittedLazily(concreteType) ||
-      getSILModule().getOptions().Optimization ==
-          SILOptions::SILOptMode::OptimizeWholeProgram) {
+      getSILModule().isWholeProgram()) {
     IRGen.addLazyTypeMetadata(concreteType);
   }
 

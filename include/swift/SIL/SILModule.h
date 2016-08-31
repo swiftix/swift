@@ -298,6 +298,12 @@ public:
     return wholeModule;
   }
 
+  /// Returns true if this SILModule really contains the whole program, i.e.
+  /// optimizations can assume that they see the whole program.
+  bool isWholeProgram() const {
+    return getOptions().WholeProgram;
+  }
+
   SILOptions &getOptions() const { return Options; }
 
   using iterator = FunctionListType::iterator;

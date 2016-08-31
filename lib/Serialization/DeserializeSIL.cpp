@@ -430,8 +430,7 @@ SILFunction *SILDeserializer::readSILFunction(DeclID FID,
   // TODO: use the correct SILLocation from module.
   SILLocation loc = RegularLocation(SourceLoc());
 #if 0
-  if (SILMod.getOptions().Optimization ==
-      SILOptions::SILOptMode::OptimizeWholeProgram) {
+  if (SILMod.isWholeProgram()) {
     isFragile = false;
     fn->setFragile(IsNotFragile);
 
@@ -572,8 +571,7 @@ SILFunction *SILDeserializer::readSILFunction(DeclID FID,
 
   MF->DeserializedTypeCallback = [this, &OpenedArchetypesTracker] (Type ty) {
     OpenedArchetypesTracker.registerUsedOpenedArchetypes(ty);
-    if (SILMod.getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram) {
+    if (SILMod.isWholeProgram()) {
 
 #if 0
     llvm::dbgs() << "\nDeserializeSIL: Processing used type: ";
@@ -2192,8 +2190,7 @@ SILGlobalVariable *SILDeserializer::readGlobalVar(StringRef Name) {
 
 #if 0
   // All imported globals become definitions in the whole-program mode.
-  if (SILMod.getOptions().Optimization ==
-      SILOptions::SILOptMode::OptimizeWholeProgram)
+  if (SILMod.isWholeProgram())
     IsDeclaration = false;
 #endif
 

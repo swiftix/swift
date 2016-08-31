@@ -437,8 +437,7 @@ SILLinkage swift::getSpecializedLinkage(SILFunction *F, SILLinkage L) {
     // stdlib_binary_only functions so we can't mark them as Shared (making
     // their visibility in the dylib hidden).
     return F->hasSemanticsAttr("stdlib_binary_only") &&
-                   !(F->getModule().getOptions().Optimization >=
-                     SILOptions::SILOptMode::OptimizeWholeProgram)
+                   !(F->getModule().isWholeProgram())
                ? SILLinkage::Public
                : SILLinkage::Shared;
 

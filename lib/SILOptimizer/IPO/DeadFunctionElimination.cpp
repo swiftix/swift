@@ -35,8 +35,7 @@ namespace {
 /// If \p is true then we are in whole-module compilation.
 static bool isPossiblyUsedExternally(SILLinkage linkage,
                                      const SILModule &Module) {
-  if (Module.getOptions().Optimization ==
-      SILOptions::SILOptMode::OptimizeWholeProgram)
+  if (Module.isWholeProgram())
     return false;
 
   return isPossiblyUsedExternally(linkage, Module.isWholeModule());
@@ -411,8 +410,7 @@ protected:
 
   /// Retrieve the visibility information from the AST.
   bool isVisibleExternally(ValueDecl *decl) {
-    if (Module->getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram) {
+    if (Module->isWholeProgram()) {
       // Nothing is visible externaly in this mode.
       return false;
     }
@@ -623,6 +621,7 @@ class DeadFunctionElimination : FunctionLivenessComputation {
           auto *fd = cast<AbstractFunctionDecl>(methodWitness.Requirement.
                                                 getDecl());
           assert(fd == getBase(fd) && "key in witness table is overridden");
+
           SILFunction *F = methodWitness.Witness;
           if (!F)
             continue;
@@ -630,8 +629,7 @@ class DeadFunctionElimination : FunctionLivenessComputation {
           MethodInfo *mi = getMethodInfo(fd, /*isWitnessTable*/ true);
           addImplementingFunction(mi, F, nullptr);
           if (tableIsAlive || !F->isDefinition()) {
-            if (Module->getOptions().Optimization ==
-                SILOptions::SILOptMode::OptimizeWholeProgram)
+            if (Module->isWholeProgram())
               continue;
 
             ensureAliveProtocolMethod(mi);
@@ -666,9 +664,7 @@ class DeadFunctionElimination : FunctionLivenessComputation {
         MethodInfo *mi = getMethodInfo(fd, /*isWitnessTable*/ true);
         SILFunction *F = entry.getWitness();
         addImplementingFunction(mi, F, nullptr);
-
-        if (Module->getOptions().Optimization ==
-            SILOptions::SILOptMode::OptimizeWholeProgram)
+        if (Module->isWholeProgram())
           continue;
 
         ensureAliveProtocolMethod(mi);
@@ -888,6 +884,8 @@ class ExternalFunctionDefinitionsElimination : FunctionLivenessComputation {
 
     DEBUG(llvm::dbgs() << "  removed external function " << F->getName()
           << "\n");
+    llvm::dbgs() << "  removed external function " << F->getName()
+          << "\n";
     F->dropAllReferences();
     auto &Blocks = F->getBlocks();
     Blocks.clear();
@@ -943,8 +941,7 @@ class SILDeadFuncElimination : public SILModuleTransform {
 #if 0
     // Do not use external defs in the whole-program optimization
     // mode.
-    if (getModule()->getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram)
+    if (getModule()->isWholeProgram())
       return;
 #endif
 
@@ -967,12 +964,12 @@ class SILDeadFuncElimination : public SILModuleTransform {
 class SILExternalFuncDefinitionsElimination : public SILModuleTransform {
   void run() override {
     DEBUG(llvm::dbgs() << "Running ExternalFunctionDefinitionsElimination\n");
+#if 1
     // Do not use external defs in the whole-program optimization
     // mode.
-    if (getModule()->getOptions().Optimization ==
-        SILOptions::SILOptMode::OptimizeWholeProgram)
+    if (getModule()->isWholeProgram())
       return;
-
+#endif
     // The deserializer caches functions that it deserializes so that if it is
     // asked to deserialize that function again, it does not do extra work. This
     // causes the function's reference count to be incremented causing it to be

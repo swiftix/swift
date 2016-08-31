@@ -50,7 +50,6 @@ public:
     Debug,
     Optimize,
     OptimizeUnchecked,
-    OptimizeWholeProgram
   };
 
   /// Controls how to perform SIL linking.
@@ -75,6 +74,9 @@ public:
 
   /// Whether to dump verbose SIL with scope and location information.
   bool EmitVerboseSIL = false;
+
+  /// Is it a whole program compilation?
+  bool WholeProgram = false;
 
   /// Optimization mode being used.
   SILOptMode Optimization = SILOptMode::NotSet;

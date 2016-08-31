@@ -2289,8 +2289,7 @@ llvm::Value *irgen::emitWitnessTableRef(IRGenFunction &IGF,
   assert(Lowering::TypeConverter::protocolRequiresWitnessTable(proto)
          && "protocol does not have witness tables?!");
 
-  if (IGF.IGM.getSILModule().getOptions().Optimization ==
-      SILOptions::SILOptMode::OptimizeWholeProgram) {
+  if (IGF.IGM.getSILModule().isWholeProgram()) {
     // Try to load the witness table if it is not loaded yet.
     // FIXME: Is it a problem to do it so late in IRGen?
     if (conformance.isConcrete()) {

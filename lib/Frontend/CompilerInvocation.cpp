@@ -1143,11 +1143,6 @@ static bool ParseSILArgs(SILOptions &Opts, ArgList &Args,
       // For now -Oplayground is equivalent to -Onone.
       IRGenOpts.Optimize = false;
       Opts.Optimization = SILOptions::SILOptMode::None;
-    } else if (A->getOption().matches(OPT_Owholeprogram)) {
-      IRGenOpts.Optimize = true;
-      Opts.Optimization = SILOptions::SILOptMode::OptimizeWholeProgram;
-      //if (Opts.LinkMode == SILOptions::LinkNormal)
-      //  Opts.LinkMode = SILOptions::LinkAll;
     } else {
       assert(A->getOption().matches(OPT_O));
       IRGenOpts.Optimize = true;
@@ -1158,6 +1153,10 @@ static bool ParseSILArgs(SILOptions &Opts, ArgList &Args,
   if (Args.getLastArg(OPT_AssumeSingleThreaded)) {
     Opts.AssumeSingleThreaded = true;
   }
+
+  if (Args.hasArg(options::OPT_whole_program_optimization) ||
+      Args.hasArg(options::OPT_wpo))
+    Opts.WholeProgram = true;
 
   // Parse the assert configuration identifier.
   if (const Arg *A = Args.getLastArg(OPT_AssertConfig)) {

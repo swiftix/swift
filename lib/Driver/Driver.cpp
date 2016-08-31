@@ -1002,7 +1002,8 @@ void Driver::buildOutputInfo(const ToolChain &TC, const DerivedArgList &Args,
 
   } else { // DriverKind::Batch
     OI.CompilerMode = OutputInfo::Mode::StandardCompile;
-    if (Args.hasArg(options::OPT_whole_module_optimization))
+    if (Args.hasArg(options::OPT_whole_module_optimization) ||
+        Args.hasArg(options::OPT_whole_program_optimization))
       OI.CompilerMode = OutputInfo::Mode::SingleCompile;
     OI.CompilerOutputType = types::TY_Object;
   }

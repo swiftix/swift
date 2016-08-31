@@ -490,6 +490,13 @@ def whole_module_optimization : Flag<["-"], "whole-module-optimization">,
 def wmo : Flag<["-"], "wmo">, Alias<whole_module_optimization>,
   Flags<[FrontendOption, NoInteractiveOption, HelpHidden]>;
 
+def whole_program_optimization : Flag<["-"], "whole-program-optimization">,
+  HelpText<"Optimize the whole program">,
+  Flags<[FrontendOption, NoInteractiveOption]>;
+
+def wpo : Flag<["-"], "wpo">, Alias<whole_program_optimization>,
+  Flags<[FrontendOption, NoInteractiveOption, HelpHidden]>;
+
 def force_single_frontend_invocation :
   Flag<["-"], "force-single-frontend-invocation">,
   Alias<whole_module_optimization>,
