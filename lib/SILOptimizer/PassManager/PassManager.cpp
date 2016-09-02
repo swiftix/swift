@@ -832,6 +832,7 @@ void SILPassManager::viewCallGraph() {
   /// When asserts are disabled, this should be a NoOp.
 #ifndef NDEBUG
   CallGraph OCG(getModule(), getAnalysis<BasicCalleeAnalysis>());
+  std::string Filename = llvm::WriteGraph(&OCG, "callgraph1");
   llvm::ViewGraph(&OCG, "callgraph");
 #endif
 }

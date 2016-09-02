@@ -247,6 +247,7 @@ public:
     IRGenPasses[unsigned(Kind)] = Transform;
   }
 
+  void viewCallGraph();
 private:
   void execute() {
     runOneIteration();
@@ -280,7 +281,7 @@ private:
   /// Displays the call graph in an external dot-viewer.
   /// This function is meant for use from the debugger.
   /// When asserts are disabled, this is a NoOp.
-  void viewCallGraph();
+  //void viewCallGraph();
 };
 
 } // end namespace swift

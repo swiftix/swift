@@ -5270,6 +5270,11 @@ public:
 
   SILType getCastType() const { return DestTy; }
 
+  bool collectTypeOperands(SmallVectorImpl<CanType> &Types) const {
+    Types.push_back(DestTy.getSwiftRValueType());
+    return true;
+  }
+
   SILBasicBlock *getSuccessBB() { return DestBBs[0]; }
   const SILBasicBlock *getSuccessBB() const { return DestBBs[0]; }
   SILBasicBlock *getFailureBB() { return DestBBs[1]; }

@@ -125,6 +125,10 @@ public:
 
   /// Assume that code will be executed in a single-threaded environment.
   bool AssumeSingleThreaded = false;
+
+  bool isWholeProgram() {
+    return WholeProgram;
+  }
 };
 
 } // end namespace swift

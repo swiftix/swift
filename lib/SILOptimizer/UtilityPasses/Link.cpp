@@ -9,7 +9,7 @@
 // See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
 //
 //===----------------------------------------------------------------------===//
-
+#define DEBUG_TYPE "sil-link"
 #include "swift/SILOptimizer/PassManager/Passes.h"
 #include "swift/SILOptimizer/PassManager/Transforms.h"
 #include "swift/AST/ProtocolConformance.h"
@@ -38,7 +38,30 @@ void swift::performSILLinking(SILModule *M, bool LinkAll) {
 
 namespace {
 
-static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
+/// A helper class to collect information about types
+/// used by a SILModule, SILInstruction or other types.
+class UsedTypesCollector {
+  llvm::DenseSet<CanType> UsedTypes;
+  llvm::DenseSet<CanType> UsedMetatypes;
+public:
+  void collect(CanType Ty);
+  void collectMetatypes(CanType Ty);
+  void collect(const SILWitnessTable &WT);
+  void collect(const SILInstruction &I);
+  void collectMetatypes(const SILInstruction &I);
+  void collect(const SILFunction &F);
+  void collect(SILModule &I);
+
+  const llvm::DenseSet<CanType> &getTypes() const {
+    return UsedTypes;
+  }
+
+  const llvm::DenseSet<CanType> &getMetatypes() const {
+    return UsedTypes;
+  }
+};
+
+void UsedTypesCollector::collect(CanType Ty) {
   // If it is a metatype, drill down until we find
   // the actual type.
   while(auto MT = dyn_cast<AnyMetatypeType>(Ty)) {
@@ -50,7 +73,7 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
   if (!UsedTypes.insert(Ty).second)
     return;
 
-  llvm::dbgs() << "Linked type: " << Ty << "\n";
+  DEBUG(llvm::dbgs() << "Found type: " << Ty << "\n");
 
   auto NTD = Ty->getAnyNominal();
   // Generic signature of the type, if present.
@@ -62,8 +85,7 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
     for (auto P : Protocols) {
      llvm::dbgs() << "Adding protocol of " << NTD->getName() << ": "
                      << P->getNameStr() << "\n";
-     collectUsedTypes(P->getDeclaredInterfaceType()->getCanonicalType(),
-                       UsedTypes);
+     collect(P->getDeclaredInterfaceType()->getCanonicalType());
     }
 #if 0
     for (auto C : NTD->getAllConformances()) {
@@ -79,7 +101,7 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
       if (Superclass) {
         llvm::dbgs() << "Adding superclass of " << CD->getName() << ": "
                      << Superclass->getAnyNominal()->getNameStr() << "\n";
-        collectUsedTypes(Superclass->getCanonicalType(), UsedTypes);
+        collect(Superclass->getCanonicalType());
       }
     }
 
@@ -90,7 +112,7 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
     // Add types used as generic arguments.
     if (auto BGT = dyn_cast<BoundGenericType>(Ty)) {
       for (auto GA : BGT->getGenericArgs()) {
-        collectUsedTypes(GA->getCanonicalType(), UsedTypes);
+        collect(GA->getCanonicalType());
       }
     }
 
@@ -106,12 +128,12 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
   if (FnTy) {
     // Add any types referenced by the function type.
     // E.g. it could detect protocols used in requirements.
-    Ty.visit([&UsedTypes, &Ty](Type ty) {
+    Ty.visit([this, &Ty](Type ty) {
       if (ty->getCanonicalType() == Ty)
         return;
       if (UsedTypes.count(ty->getCanonicalType()))
         return;
-      collectUsedTypes(ty->getCanonicalType(), UsedTypes);
+      collect(ty->getCanonicalType());
     });
 
     if (FnTy->isPolymorphic())
@@ -128,7 +150,7 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
     case RequirementKind::Layout: {
       auto FirstTy = Req.getFirstType();
       auto FirstNTD = FirstTy->getAnyNominal();
-      collectUsedTypes(FirstTy->getCanonicalType(), UsedTypes);
+      collect(FirstTy->getCanonicalType());
       break;
     }
     default:
@@ -137,7 +159,7 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
       auto FirstNTD = FirstTy->getAnyNominal();
       auto SecondNTD = SecondTy->getAnyNominal();
       //if (FirstNTD) {
-        collectUsedTypes(FirstTy->getCanonicalType(), UsedTypes);
+        collect(FirstTy->getCanonicalType());
 #if 0
         auto Result = UsedTypes.insert(
             FirstNTD->getDeclaredType()->getCanonicalType());
@@ -148,7 +170,7 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
 #endif
       //}
       //if (SecondNTD) {
-        collectUsedTypes(SecondTy->getCanonicalType(), UsedTypes);
+        collect(SecondTy->getCanonicalType());
 #if 0
         auto Result = UsedTypes.insert(
             SecondNTD->getDeclaredType()->getCanonicalType());
@@ -163,90 +185,307 @@ static void collectUsedTypes(CanType Ty, llvm::DenseSet<CanType> &UsedTypes) {
   }
 }
 
-static void collectAllUsedTypes(SILInstruction &I,
-                                llvm::DenseSet<CanType> &UsedTypes) {
+void UsedTypesCollector::collectMetatypes(CanType Ty) {
+  // If it is a metatype, drill down until we find
+  // the actual type.
+  while(auto MT = dyn_cast<AnyMetatypeType>(Ty)) {
+    Ty = MT->getInstanceType()->getCanonicalType();
+    //llvm::dbgs() << "Got the instance type: " << Ty << "\n";
+  }
+
+  // Bail if the type was processed already.
+  if (!UsedMetatypes.insert(Ty).second)
+    return;
+
+  DEBUG(llvm::dbgs() << "collectMetatypes: Found type: " << Ty << "\n");
+
+  auto NTD = Ty->getAnyNominal();
+
+  if (NTD) {
+    auto GTD = NTD->getAsNominalTypeOrNominalTypeExtensionContext();
+    if (!GTD)
+      return;
+
+    // Add types used as generic arguments.
+    if (auto BGT = dyn_cast<BoundGenericType>(Ty)) {
+      for (auto GA : BGT->getGenericArgs()) {
+        collectMetatypes(GA->getCanonicalType());
+      }
+    }
+  }
+}
+
+
+void UsedTypesCollector::collect(const SILWitnessTable &WT) {
+  for (auto Witness : WT.getEntries()) {
+    switch (Witness.getKind()) {
+    case swift::SILWitnessTable::Invalid:
+      continue;
+    case swift::SILWitnessTable::Method: {
+      // method #declref: @function
+      auto &methodWitness = Witness.getMethodWitness();
+      break;
+    }
+    case swift::SILWitnessTable::AssociatedType: {
+      // associated_type AssociatedTypeName: ConformingType
+      auto &assocWitness = Witness.getAssociatedTypeWitness();
+      collect(assocWitness.Witness);
+      break;
+    }
+    case swift::SILWitnessTable::AssociatedTypeProtocol: {
+      auto &assocProtoWitness = Witness.getAssociatedTypeProtocolWitness();
+      if (assocProtoWitness.Witness.isConcrete())
+        collect(assocProtoWitness.Witness.getConcrete()
+                             ->getType()
+                             ->getCanonicalType());
+      break;
+    }
+    case swift::SILWitnessTable::BaseProtocol: {
+      auto &baseProtoWitness = Witness.getBaseProtocolWitness();
+      collect(
+          baseProtoWitness.Witness->getType()->getCanonicalType());
+      break;
+    }
+    case swift::SILWitnessTable::MissingOptional: {
+      break;
+    }
+    }
+  }
+}
+
+/// Collect all types used by a SIL instruction.
+/// TODO: Figure out which conformances may be used by the instruction.
+void UsedTypesCollector::collect(const SILInstruction &I) {
   SmallVector<CanType, 8> InstUsedTypes;
   // Add types of type operands.
   if (I.collectTypeOperands(InstUsedTypes)) {
     if (!InstUsedTypes.empty()) {
-      llvm::dbgs() << "Adding types from instruction: ";
-      I.dump();
+      DEBUG(llvm::dbgs() << "Adding types from instruction: "; I.dump());
       for (auto Ty : InstUsedTypes)
-        collectUsedTypes(Ty, UsedTypes);
+        collect(Ty);
     }
   }
   // Add types of all operands.
   for (auto &Op : I.getAllOperands()) {
-    collectUsedTypes(Op.get()->getType().getSwiftRValueType(), UsedTypes);
+    collect(Op.get()->getType().getSwiftRValueType());
   }
   // Add type of the result.
   if (I.hasValue())
-    collectUsedTypes(I.getType().getSwiftRValueType(), UsedTypes);
+    collect(I.getType().getSwiftRValueType());
+
+  collectMetatypes(I);
 }
 
-static void collectAllUsedTypes(SILFunction &Fn,
-                                llvm::DenseSet<CanType> &UsedTypes) {
+void UsedTypesCollector::collectMetatypes(const SILInstruction &I) {
+  SmallVector<CanType, 8> InstUsedTypes;
+  // Add types of type operands.
+  I.collectTypeOperands(InstUsedTypes);
+
+  if (ApplySite AI = ApplySite::isa(const_cast<SILInstruction *>(&I))) {
+    if (!AI.hasSubstitutions())
+      return;
+    // Analyze generic applies.
+    auto Subs = AI.getSubstitutions();
+    // Mark that each type passed as generic parameter needs type
+    // metadata to be emitted.
+    for (auto Sub : Subs) {
+      collectMetatypes(Sub.getReplacement()->getCanonicalType());
+    }
+    return;
+  }
+
+  // Metatype instructions refer to a metatype explicitly.
+  if (isa<MetatypeInst>(&I) ||
+      isa<ValueMetatypeInst>(&I) ||
+      isa<ExistentialMetatypeInst>(&I)) {
+    collectMetatypes(I.getType().getSwiftRValueType());
+    return;
+  }
+
+  // Target type of conversion instructions could need a
+  // metatype.
+  if (auto CI = dyn_cast<ConversionInst>(&I)) {
+    collectMetatypes(I.getType().getSwiftRValueType());
+    return;
+  }
+
+  if (isa<CheckedCastBranchInst>(&I) ||
+      isa<CheckedCastAddrBranchInst>(&I)) {
+    for (auto T : InstUsedTypes) {
+      collectMetatypes(T);
+    }
+    return;
+  }
+
+  // existentials may need metatypes.
+  if (isa<InitExistentialAddrInst>(&I) ||
+      isa<InitExistentialRefInst>(&I) ||
+      isa<InitExistentialMetatypeInst>(&I)) {
+    for (auto T : InstUsedTypes) {
+      collectMetatypes(T);
+    }
+    return;
+  }
+}
+
+
+void UsedTypesCollector::collect(const SILFunction &Fn) {
+
+  collect(Fn.getLoweredFunctionType());
   for (auto &BB : Fn) {
     // Add types of all BB arguments.
     for (auto &BBArg : BB.getArguments()) {
-      collectUsedTypes(BBArg->getType().getSwiftRValueType(), UsedTypes);
+      collect(BBArg->getType().getSwiftRValueType());
     }
 
     for (auto &I : BB) {
-      collectAllUsedTypes(I, UsedTypes);
+      collect(I);
     }
   }
 }
 
-static void collectAllUsedTypes(SILModule &M,
-                                llvm::DenseSet<CanType> &UsedTypes) {
+void UsedTypesCollector::collect(SILModule &M) {
   for (auto &Fn : M) {
-    llvm::dbgs() << "Collecting types used by SIL function " << Fn.getName() << "\n";
-    collectAllUsedTypes(Fn, UsedTypes);
+    DEBUG(llvm::dbgs() << "Collecting types used by SIL function "
+                       << Fn.getName() << "\n");
+    collect(Fn);
   }
 }
 
-static void linkASTTypes(SILModule &M, llvm::DenseSet<CanType> &UsedTypes) {
-    auto &ASTTypes = M.getDeserializedNominalTypesSet();
-    //ASTTypes.clear();
+/// Swift runtime library refers to a number of SIL functions.
+/// All of those functions are usually marked with @_silgen_name.
+/// Force linking of all those functions, because they may be
+/// invoked by the runtime.
 
-    // Iterate until no new types can be found.
-    while (!UsedTypes.empty()) {
+/// FIXME: Use a whitelist for now. Use some kind of automation
+/// to keep it always in sync with the standrad library.
+/// TODO: Write a test, which has an empty input swift file.
+/// Compiling this test should still result in a an SIL file
+/// that contains definitions for all SIL functions from the
+/// whitelist.
+static const char *StdlibRuntimeFunctions[] = {
+#if 0
+  "xyz",
+#else
+  // @_silgen_name annotated functions
+  "swift_stringFromUTF8InRawMemory",
+  "swift_stdlib_getErrorUserInfoNSDictionary",
+  "swift_stdlib_getErrorEmbeddedNSErrorIndirect",
+  "swift_stdlib_getErrorDomainNSString",
+  "swift_stdlib_getErrorCode",
+  "swift_stdlib_Hashable_isEqual_indirect",
+  "swift_stdlib_Hashable_hashValue_indirect",
+  "_swift_stdlib_makeAnyHashableUsingDefaultRepresentation",
+  "_swift_setDownCastIndirect",
+  "_swift_setDownCastConditionalIndirect",
+  "_swift_dictionaryDownCastIndirect",
+  "_swift_dictionaryDownCastConditionalIndirect",
+  "_swift_convertToAnyHashableIndirect",
+  "_swift_bridgeNonVerbatimFromObjectiveCToAny",
+  "_swift_bridgeNonVerbatimBoxedValue",
+  "_swift_arrayDownCastIndirect",
+  "_swift_arrayDownCastConditionalIndirect",
+  "_swift_anyHashableDownCastConditionalIndirect",
+  //"swift_getSummary",
+  // Mirrors
+  //"_TFVs11_ObjCMirrorg7summarySS",
+  //"_TFVs12_ClassMirrorg7summarySS",
+  //"_TFVs12_TupleMirrorg7summarySS",
+  //"_TFVs13_StructMirrorg7summarySS",
+  //"_TFVs11_EnumMirrorg7summarySS",
+  //"_TTWVs13_OpaqueMirrors7_MirrorsFS0_g7summarySS",
+  //"_TTWVs15_MetatypeMirrors7_MirrorsFS0_g7summarySS",
+  // BridgableMetatype
+  "_TTWVs19_BridgeableMetatypes21_ObjectiveCBridgeablesFS0_19_bridgeToObjectiveCfT_wx15_ObjectiveCType",
+#endif
+};
 
-    SmallVector<CanType, 64> Types(UsedTypes.begin(), UsedTypes.end());
+static void linkFunctionsRequiredByRuntime(SILModule &M) {
+  ArrayRef<const char *> ExposedStdlibRuntimeFunctions(StdlibRuntimeFunctions);
+  for (auto F : ExposedStdlibRuntimeFunctions) {
+    SILFunction *Fn;
+    Fn = M.lookUpFunction(F);
+    if (!Fn) {
+      M.linkFunction(F, SILModule::LinkingMode::LinkAll);
+      //M.linkFunction(F, SILModule::LinkingMode::LinkNormal);
+      DEBUG(llvm::dbgs() << "Trying to link a @_silgen_name function: " << F
+                         << "\n");
+      Fn = M.lookUpFunction(F);
+      if (!Fn)
+        continue;
+    }
+    // Mark it as non-removable, because runtime may invoke it.
+    Fn->setKeepAsPublic(true);
+  }
+}
+
+/// Link all functions and types (i.e. vtables and witness tables)
+/// used by the SIL module.
+void linkAllUsedFunctionsAndTypes(SILModule &M) {
+  auto &ASTTypes = M.getDeserializedNominalTypesSet();
+  UsedTypesCollector UsedTypes;
+
+  // Set of types that were processed already.
+  llvm::DenseSet<CanType> ProcessedTypes;
+
+  // M.linkAllWitnessTables();
+  // M.linkAllVTables();
+
+  // Link all Swift methods which are potentially used by the
+  // runtime library.
+  // TODO: This can be improved and made more precise:
+  // - Create an analysis to figure out which runtime calls
+  // are used in the user program.
+  // - Have a mapping from a runtime call name to a set of
+  // Swift methods that are possibly invoked by such a call.
+  // - Link only those Swift methods which can be really called.
+  linkFunctionsRequiredByRuntime(M);
+
+  // bool Updated = false;
+  // Iterate until no new types can be found.
+  while (true) {
+
+    SmallVector<CanType, 64> Types(UsedTypes.getTypes().begin(), UsedTypes.getTypes().end());
     // Prepare UsedType for accumulating new types for the next iteration.
-    UsedTypes.clear();
-
-#if 1
+    // UsedTypes.clear();
+    bool Updated = false;
     // FIXME: lookup may modify the set?
-    //for (auto DNT : M.getDeserializedNominalTypes()) {
     for (auto DNT : Types) {
-      llvm::dbgs() << "linkASTTypes: Processing type: " << DNT << "\n";
+      // Nothing to do, if the type was processed already.
+      if (!ProcessedTypes.insert(DNT).second)
+        continue;
+
+      Updated = true;
+
+      DEBUG(llvm::dbgs() << "linkASTTypes: Processing type: " << DNT << "\n");
       if (auto NTD = DNT->getNominalOrBoundGenericNominal()) {
         // Try to link the witness tables for this type.
         // Be very naive at the moment: Load witness tables for all
         // protocols implemented by the type.
         auto Conformances = NTD->getAllConformances();
         if (!Conformances.empty()) {
-          llvm::dbgs() << "Processing conformances for " << DNT << "\n";
+          DEBUG(llvm::dbgs() << "Processing conformances for " << DNT << "\n");
         } else {
           auto Protocols = NTD->getAllProtocols();
           for (auto P : Protocols) {
-            llvm::dbgs() << "Processing protocol of " << NTD->getName() << ": "
-                         << P->getNameStr() << "\n";
+            DEBUG(llvm::dbgs() << "Processing protocol of " << NTD->getName()
+                               << ": " << P->getNameStr() << "\n");
           }
         }
 
         for (auto C : Conformances) {
           auto WT = M.lookUpWitnessTable(C);
+          // Do not eagrly load all witness tables!
+          //continue;
           if (!WT) {
-            M.createWitnessTableDeclaration(C, SILLinkage::Public);
+            WT = M.createWitnessTableDeclaration(C, SILLinkage::Public);
             WT = M.lookUpWitnessTable(C);
             if (!WT) {
-              llvm::dbgs() << "Could not create and load SIL witness table "
-                           << WT->getName() << "\n"
-                           << "for conformance "; 
-              C->dump();
+              DEBUG(llvm::dbgs()
+                        << "Could not create and load SIL witness table "
+                        << WT->getName() << "\n"
+                        << "for conformance ";
+                    C->dump());
             }
             if (WT) {
               llvm::dbgs() << "Loaded SIL witness table " << WT->getName() << "\n";
@@ -263,24 +502,22 @@ static void linkASTTypes(SILModule &M, llvm::DenseSet<CanType> &UsedTypes) {
                 case swift::SILWitnessTable::AssociatedType: {
                   // associated_type AssociatedTypeName: ConformingType
                   auto &assocWitness = Witness.getAssociatedTypeWitness();
-                  collectUsedTypes(assocWitness.Witness, UsedTypes);
+                  UsedTypes.collect(assocWitness.Witness);
                   break;
                 }
                 case swift::SILWitnessTable::AssociatedTypeProtocol: {
                   auto &assocProtoWitness =
                       Witness.getAssociatedTypeProtocolWitness();
                   if (assocProtoWitness.Witness.isConcrete())
-                    collectUsedTypes(assocProtoWitness.Witness.getConcrete()
-                                         ->getType()
-                                         ->getCanonicalType(),
-                                     UsedTypes);
+                    UsedTypes.collect(assocProtoWitness.Witness.getConcrete()
+                                ->getType()
+                                ->getCanonicalType());
                   break;
                 }
                 case swift::SILWitnessTable::BaseProtocol: {
                   auto &baseProtoWitness = Witness.getBaseProtocolWitness();
-                  collectUsedTypes(
-                      baseProtoWitness.Witness->getType()->getCanonicalType(),
-                      UsedTypes);
+                  UsedTypes.collect(
+                      baseProtoWitness.Witness->getType()->getCanonicalType());
                   break;
                 }
                 case swift::SILWitnessTable::MissingOptional: {
@@ -290,32 +527,19 @@ static void linkASTTypes(SILModule &M, llvm::DenseSet<CanType> &UsedTypes) {
               }
             }
           } else {
-            llvm::dbgs() << "Witness table is loaded already: " << WT->getName() << "\n";
-            WT->dump();
+            DEBUG(llvm::dbgs() << "Witness table is loaded already: "
+                               << WT->getName() << "\n";
+                  WT->dump());
           }
         }
 
-        if (ASTTypes.count(NTD))
+        // No need to do anything if the type was processed already.
+        if (!ASTTypes.insert(NTD).second)
           continue;
-        ASTTypes.insert(NTD);
-        llvm::dbgs() << "Linking nominal type: " << NTD->getNameStr() << "\n";
-
-#if 0
-        auto GTD = NTD->getAsGenericTypeOrGenericTypeExtensionContext();
-        if (GTD) {
-          GTD->getConfo
-          auto Signature = GTD->getGenericSignature();
-          auto Requirements = Signature->getRequirements();
-          for (auto Req : Requirements) {
-            if (Req.getKind() != RequirementKind::Conformance)
-              continue;
-            Req.getSecondType();
-          }
-        }
-#endif
+        DEBUG(llvm::dbgs() << "Linking nominal type: " << NTD->getNameStr()
+                           << "\n");
       }
 
-      //if (auto CD = dyn_cast<ClassDecl>(DNT)) {
       if (auto CD = DNT->getClassOrBoundGenericClass()) {
         // Load a vtable for each deserialized class.
         M.lookUpVTable(CD);
@@ -341,7 +565,7 @@ static void linkASTTypes(SILModule &M, llvm::DenseSet<CanType> &UsedTypes) {
           if (Kind != SILDeclRef::Kind::Deallocator && !FD->isObjC())
             continue;
           // Only load constructors and destructors.
-          //if (Kind == SILDeclRef::Kind::Func)
+          // if (Kind == SILDeclRef::Kind::Func)
           //  continue;
           if (Kind != SILDeclRef::Kind::Func) {
             SILDeclRef MemberRef(FD, Kind, ResilienceExpansion::Minimal,
@@ -351,126 +575,54 @@ static void linkASTTypes(SILModule &M, llvm::DenseSet<CanType> &UsedTypes) {
             StringRef MangledName = MangledNameStr;
             if (M.lookUpFunction(MangledName))
               continue;
-            llvm::dbgs() << "Linking class member: " << MangledName << "\n";
+            DEBUG(llvm::dbgs() << "Linking class member: " << MangledName
+                               << "\n");
             if (!M.hasFunction(MangledName, SILLinkage::Private))
-              M.linkFunction(MemberRef,
-                                  SILModule::LinkingMode::LinkNormal);
+              M.linkFunction(MemberRef, SILModule::LinkingMode::LinkNormal);
           } else {
             SILDeclRef MemberRef(MemberLoc, ResilienceExpansion::Minimal,
                                  SILDeclRef::ConstructAtNaturalUncurryLevel,
                                  /* isForeign */ true);
             auto MangledNameStr = MemberRef.mangle();
             StringRef MangledName = MangledNameStr;
-            llvm::dbgs() << "Linking class member: " << MangledName << "\n";
-            //assert(false);
+            DEBUG(llvm::dbgs() << "Linking class member: " << MangledName
+                               << "\n");
+            // assert(false);
             if (!M.hasFunction(MangledName, SILLinkage::Private))
-              M.linkFunction(MemberRef,
-                                  SILModule::LinkingMode::LinkNormal);
+              M.linkFunction(MemberRef, SILModule::LinkingMode::LinkNormal);
           }
         }
       }
     }
-#endif
-    }
-}
+    // Re-scan functions.
+    // In principle, we only need to scan the newly loaded functions.
+    if (!Updated && !UsedTypes.getTypes().empty())
+      break;
 
-/// Swift runtime library refers to a number of SIL functions.
-/// All of those functions are usually marked with @_silgen_name.
-/// Force linking of all those functions, because they may be
-/// invoked by the runtime.
+    UsedTypes.collect(M);
+  }
 
-/// FIXME: Use a whitelist for now. Use some kind of automation
-/// to keep it always in sync with the standrad library.
-static const char *StdlibRuntimeFunctions[] = {
-  // @_silgen_name annotated functions
-  "swift_stringFromUTF8InRawMemory",
-  "swift_stdlib_getErrorUserInfoNSDictionary",
-  "swift_stdlib_getErrorEmbeddedNSErrorIndirect",
-  "swift_stdlib_getErrorDomainNSString",
-  "swift_stdlib_getErrorCode",
-  "swift_stdlib_Hashable_isEqual_indirect",
-  "swift_stdlib_Hashable_hashValue_indirect",
-  "swift_getSummary",
-  "_swift_stdlib_makeAnyHashableUsingDefaultRepresentation",
-  "_swift_setDownCastIndirect",
-  "_swift_setDownCastConditionalIndirect",
-  "_swift_dictionaryDownCastIndirect",
-  "_swift_dictionaryDownCastConditionalIndirect",
-  "_swift_convertToAnyHashableIndirect",
-  "_swift_bridgeNonVerbatimFromObjectiveCToAny",
-  "_swift_bridgeNonVerbatimBoxedValue",
-  "_swift_arrayDownCastIndirect",
-  "_swift_arrayDownCastConditionalIndirect",
-  "_swift_anyHashableDownCastConditionalIndirect",
-  // Mirrors
-  "_TFVs11_ObjCMirrorg7summarySS",
-  "_TFVs12_ClassMirrorg7summarySS",
-  "_TFVs12_TupleMirrorg7summarySS",
-  "_TFVs13_StructMirrorg7summarySS",
-  "_TFVs11_EnumMirrorg7summarySS",
-  "_TTWVs13_OpaqueMirrors7_MirrorsFS0_g7summarySS",
-  "_TTWVs15_MetatypeMirrors7_MirrorsFS0_g7summarySS",
-  // BridgableMetatype
-  "_TTWVs19_BridgeableMetatypes21_ObjectiveCBridgeablesFS0_19_bridgeToObjectiveCfT_wx15_ObjectiveCType",
-};
-
-static void linkFunctionsRequiredByRuntime(SILModule &M,
-                                           llvm::DenseSet<CanType> &UsedTypes) {
-  ArrayRef<const char *> ExposedStdlibRuntimeFunctions(StdlibRuntimeFunctions);
-  for (auto F : ExposedStdlibRuntimeFunctions) {
-    SILFunction *Fn;
-    Fn = M.lookUpFunction(F);
-    if (!Fn) {
-      M.linkFunction(F, SILModule::LinkingMode::LinkAll);
-      //M.linkFunction(F, SILModule::LinkingMode::LinkNormal);
-      llvm::dbgs() << "Trying to link a @_silgen_name function: " << F << "\n";
-      Fn = M.lookUpFunction(F);
-      if (!Fn)
-        continue;
-    }
-    // Mark it as non-removable, because runtime may invoke it.
-    Fn->setKeepAsPublic(true);
-    // Add any types referenced by the function type.
-    // E.g. it could detect protocols used in requirements.
-    collectUsedTypes(Fn->getLoweredFunctionType(), UsedTypes);
-    // TODO: Any witness tables referenced from the non-removabe functions
-    // need to be loaded.
+  for (auto MT : UsedTypes.getMetatypes()) {
+    llvm::dbgs() << "Metatype may be needed: " << MT << "\n";
   }
 }
 
 /// Copies code from the standard library into the user program to enable
 /// optimizations.
 class SILLinker : public SILModuleTransform {
+  bool IsStatic;
+public:
+  SILLinker(bool IsStatic = false) : IsStatic(IsStatic) {
+  }
 
   void run() override {
     SILModule &M = *getModule();
 
-    if (M.isWholeProgram()) {
-      //M.linkAllWitnessTables();
-      //M.linkAllVTables();
-      // Link all methods used by runtime.
-      llvm::DenseSet<CanType> UsedTypes;
-      linkFunctionsRequiredByRuntime(M, UsedTypes);
-      // FIXME: loading all witness tables is not such a great idea.
-      // It loads a lot of tables containing objc methods. Such entries
-      // cannot be removed, even if they are not invoked by the program,
-      // because they could be called by ObjC runtime.
-      // TODO: Load a whitelisted set of witness tables by witness tables names?
-      // Or may be we should have a whitelist of conformances?
-      // E.g. if we have T : P, then we lookup type T, protocol P, create a conformance,
-      // create a declaratin of a WitnessTable using this information.
-      // M.linkAllWitnessTables();
-      // Collect all AST types used by SIL.
-      collectAllUsedTypes(M, UsedTypes);
-      // Link all methods required by those types.
-      linkASTTypes(M, UsedTypes);
-#if 0
-      // Collect all AST types used by SIL.
-      collectAllUsedTypes(M, UsedTypes);
-      // Link all methods required by those types.
-      linkASTTypes(M, UsedTypes);
-#endif
+    if (IsStatic && M.isWholeProgram()) {
+      // Link all methods and types.
+      linkAllUsedFunctionsAndTypes(M);
     }
+
     for (auto &Fn : M)
       if (M.linkFunction(&Fn, SILModule::LinkingMode::LinkAll))
           invalidateAnalysis(&Fn, SILAnalysis::InvalidationKind::Everything);
@@ -482,5 +634,10 @@ class SILLinker : public SILModuleTransform {
 
 
 SILTransform *swift::createSILLinker() {
-  return new SILLinker();
+  //return new SILLinker();
+  return new SILLinker(/* IsStatic */ true);
+}
+
+SILTransform *swift::createStaticSILLinker() {
+  return new SILLinker(/* IsStatic */ true);
 }

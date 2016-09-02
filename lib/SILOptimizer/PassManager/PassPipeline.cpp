@@ -285,20 +285,20 @@ static void addPerfEarlyModulePassPipeline(SILPassPipelinePlan &P,
                                            SILOptions Options) {
   P.startPipeline("EarlyModulePasses");
 
-  if (Options.Optimization !=
-      SILOptions::SILOptMode::OptimizeWholeProgram) {
+  if (Options.isWholeProgram()) {
     // Get rid of apparently dead functions as soon as possible so that
     // we do not spend time optimizing them.
     P.addDeadFunctionElimination();
   }
   // Start by cloning functions from stdlib.
   P.addSILLinker();
-  if (Options.Optimization ==
-      SILOptions::SILOptMode::OptimizeWholeProgram) {
+#if 0
+  if (Options.isWholeProgram()) {
     // Get rid of apparently dead functions as soon as possible so that
     // we do not spend time optimizing them.
     P.addDeadFunctionElimination();
   }
+#endif
 }
 
 static void addHighLevelEarlyLoopOptPipeline(SILPassPipelinePlan &P) {
@@ -309,10 +309,17 @@ static void addHighLevelEarlyLoopOptPipeline(SILPassPipelinePlan &P) {
   addHighLevelLoopOptPasses(P);
 }
 
-static void addMidModulePassesStackPromotePassPipeline(SILPassPipelinePlan &P) {
+static void addMidModulePassesStackPromotePassPipeline(SILPassPipelinePlan &P,
+                                                       SILOptions Options) {
   P.startPipeline("MidModulePasses+StackPromote");
-  P.addDeadFunctionElimination();
-  P.addSILLinker();
+  if (!Options.isWholeProgram())
+    P.addDeadFunctionElimination();
+  P.addStaticSILLinker();
+  if (Options.isWholeProgram())
+    P.addDeadFunctionElimination();
+
+  //P.addDeadFunctionElimination();
+  //P.addSILLinker();
   P.addDeadObjectElimination();
   P.addGlobalPropertyOpt();
 
@@ -441,7 +448,7 @@ SILPassPipelinePlan::getPerformancePassPipeline(SILOptions Options) {
 
   // Then run an iteration of the high-level SSA passes.
   addHighLevelEarlyLoopOptPipeline(P);
-  addMidModulePassesStackPromotePassPipeline(P);
+  addMidModulePassesStackPromotePassPipeline(P, Options);
 
   // Run an iteration of the mid-level SSA passes.
   addMidLevelPassPipeline(P);
@@ -471,12 +478,21 @@ SILPassPipelinePlan::getPerformancePassPipeline(SILOptions Options) {
 //                            Onone Pass Pipeline
 //===----------------------------------------------------------------------===//
 
-SILPassPipelinePlan SILPassPipelinePlan::getOnonePassPipeline() {
+SILPassPipelinePlan
+SILPassPipelinePlan::getOnonePassPipeline(SILOptions Options) {
   SILPassPipelinePlan P;
 
   // First specialize user-code.
   P.startPipeline("Prespecialization");
   P.addUsePrespecialized();
+
+  if (Options.isWholeProgram()) {
+    // Link all functions, vtables, witness tables that
+    // are required.
+    P.addSILLinker();
+    // Remove everything that is not used.
+    P.addDeadFunctionElimination();
+  }
 
   P.startPipeline("Rest of Onone");
   // Don't keep external functions from stdlib and other modules.

@@ -1743,15 +1743,24 @@ ProtocolInfo::getConformance(IRGenModule &IGM, ProtocolDecl *protocol,
 
 void IRGenModule::emitSILWitnessTable(SILWitnessTable *wt) {
   // Don't emit a witness table if it is a declaration.
-  if (wt->isDeclaration())
+  if (wt->isDeclaration()) {
+    llvm::dbgs() << "Do not emit witness table for declaration: "
+                 << wt->getName() << "\n";
     return;
+  }
 
   // Don't emit a witness table that is available externally.
   // It can end up in having duplicate symbols for generated associated type
   // metadata access functions.
   // Also, it is not a big benefit for LLVM to emit such witness tables.
-  if (isAvailableExternally(wt->getLinkage()))
+  if (isAvailableExternally(wt->getLinkage())) {
+    llvm::dbgs() << "Do not emit witness table for external definition: "
+                 << wt->getName() << "\n";
     return;
+  }
+
+  llvm::dbgs() << "Do emit witness table for declaration: " << wt->getName()
+               << "\n";
 
   // Build the witnesses.
   SmallVector<llvm::Constant*, 32> witnesses;

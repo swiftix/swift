@@ -206,6 +206,7 @@ private:
   void addWitnessTable();
 
 public:
+  void removeWitnessTable();
   /// Create a new SILWitnessTable definition with the given entries.
   static SILWitnessTable *create(SILModule &M, SILLinkage Linkage,
                                  bool IsFragile,
