@@ -220,6 +220,7 @@ public:
 #include "Passes.def"
 
   typedef llvm::ArrayRef<SILFunctionTransform *> PassList;
+  void viewCallGraph();
 private:
   /// Run the SIL module transform \p SMT over all the functions in
   /// the module.
@@ -243,7 +244,7 @@ private:
   /// Displays the call graph in an external dot-viewer.
   /// This function is meant for use from the debugger.
   /// When asserts are disabled, this is a NoOp.
-  void viewCallGraph();
+  //void viewCallGraph();
 };
 
 } // end namespace swift

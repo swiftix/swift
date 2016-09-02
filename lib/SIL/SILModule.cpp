@@ -39,12 +39,17 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
     DEBUG(llvm::dbgs() << "didDeserialize: SILFunction body: " << fn->getName()
                        << "\n");
     if (fn->getModule().isWholeProgram()) {
-      fn->setFragile(IsNotFragile);
+      // For non-optimized builds, do not make functions non-external.
+      if (fn->getModule().getOptions().Optimization >=
+          SILOptions::SILOptMode::Optimize) {
+        fn->setFragile(IsNotFragile);
 
-      // All imported functions become non-fragile in the whole-program mode.
-      if (fn->isDefinition()) {
-        if (fn->isAvailableExternally()) {
-          fn->setLinkage(stripExternalFromLinkage(fn->getLinkage()));
+        // All imported functions become non-fragile in the whole-program mode.
+        if (fn->isDefinition()) {
+          if (fn->isAvailableExternally()) {
+            //fn->setLinkage(stripExternalFromLinkage(fn->getLinkage()));
+            fn->setLinkage(SILLinkage::Private);
+          }
         }
       }
     }
@@ -57,13 +62,14 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
     // All imported Swift globals become definitions in the whole-program mode.
     // Clang imported globals are not affected.
     if (var->getModule().isWholeProgram() &&
+        var->getModule().getOptions().Optimization >=
+            SILOptions::SILOptMode::Optimize &&
         !var->getClangDecl()) {
       var->setDeclaration(false);
-      var->setLinkage(SILLinkage::Hidden);
+      var->setLinkage(SILLinkage::Private);
       var->setFragile(false);
       return;
     }
-
     // For globals we currently do not support available_externally.
     // In the interpreter it would result in two instances for a single global:
     // one in the imported module and one in the main module.
@@ -93,7 +99,8 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
       updateLinkage(wt);
       return;
     }
-    // TODO: Make it public?
+    // TODO: Make it public so that other object files can refer to this witness table?
+    wt->setLinkage(SILLinkage::Private);
 
     // Read bodies of all functions referenced from the table.
     for (auto entry : wt->getEntries()) {
@@ -102,7 +109,9 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
       auto fn = entry.getMethodWitness().Witness;
       if (!fn->isDefinition()) {
         fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
+        // witness methods should have the same linkage as the witness table.
       }
+      fn->setLinkage(wt->getLinkage());
     }
   }
 
@@ -115,6 +124,7 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
     }
     // TODO: Make it public?
     wt->setLinkage(stripExternalFromLinkage(wt->getLinkage()));
+    wt->setLinkage(SILLinkage::Private);
     // Read bodies of all functions referenced from the table.
     for (auto entry : wt->getEntries()) {
       if (entry.getKind() != SILWitnessTable::WitnessKind::Method)
@@ -123,6 +133,7 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
       if (!fn->isDefinition()) {
         fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
       }
+      fn->setLinkage(wt->getLinkage());
     }
   }
 
@@ -135,12 +146,14 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
     }
     // TODO: Make it public?
     wt->setLinkage(stripExternalFromLinkage(wt->getLinkage()));
+    wt->setLinkage(SILLinkage::Private);
     // Read bodies of all functions referenced from the table.
     for (auto entry : wt->getEntries()) {
       auto fn = entry.getWitness();
       if (!fn->isDefinition()) {
         fn->getModule().linkFunction(fn, SILModule::LinkingMode::LinkNormal);
       }
+      fn->setLinkage(wt->getLinkage());
     }
   }
 

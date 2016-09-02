@@ -284,8 +284,8 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
     PM.addDeadFunctionElimination();
   // Start by cloning functions from stdlib.
   PM.addSILLinker();
-  if (Module.isWholeProgram())
-    PM.addDeadFunctionElimination();
+  //if (Module.isWholeProgram())
+  //  PM.addDeadFunctionElimination();
   PM.run();
   PM.resetAndRemoveTransformations();
 
@@ -299,8 +299,11 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
   PM.resetAndRemoveTransformations();
 
   PM.setStageName("MidModulePasses+StackPromote");
-  PM.addDeadFunctionElimination();
-  PM.addSILLinker();
+  if (!Module.isWholeProgram())
+    PM.addDeadFunctionElimination();
+  PM.addStaticSILLinker();
+  if (Module.isWholeProgram())
+    PM.addDeadFunctionElimination();
   PM.addDeadObjectElimination();
   PM.addGlobalPropertyOpt();
 
@@ -431,6 +434,14 @@ void swift::runSILPassesForOnone(SILModule &Module) {
   PM.addUsePrespecialized();
   PM.run();
   PM.resetAndRemoveTransformations();
+
+  if (Module.isWholeProgram()) {
+    // Link all functions, vtables, witness tables that
+    // are required.
+    PM.addSILLinker();
+    // Remove everything that is not used.
+    PM.addDeadFunctionElimination();
+  }
 
   // Don't keep external functions from stdlib and other modules.
   // We don't want that our unoptimized version will be linked instead
