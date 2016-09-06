@@ -29,6 +29,11 @@ using namespace swift;
 STATISTIC(NumDeadFunc, "Number of dead functions eliminated");
 STATISTIC(NumEliminatedExternalDefs, "Number of external function definitions eliminated");
 
+static bool shouldOptimize(const SILModule &Module) {
+   //return Module.getOptions().Optimization >= SILOptions::SILOptMode::Optimize;
+   return true;
+}
+
 namespace {
 
 /// Return whether the given linkage indicates that an object's
@@ -37,7 +42,7 @@ namespace {
 static bool isPossiblyUsedExternally(SILLinkage linkage,
                                      const SILModule &Module) {
   if (Module.isWholeProgram() &&
-      Module.getOptions().Optimization >= SILOptions::SILOptMode::Optimize)
+      shouldOptimize(Module))
     return false;
 
   return isPossiblyUsedExternally(linkage, Module.isWholeModule());
@@ -136,8 +141,7 @@ protected:
     // stldib only functions are not anchors in non-optimized whole program
     // builds.
     if (F->hasSemanticsAttr("stdlib_binary_only") &&
-        F->getModule().getOptions().Optimization <
-            SILOptions::SILOptMode::Optimize) {
+        !shouldOptimize(F->getModule())) {
       assert(F->getModule().isWholeProgram() &&
              "whole program optimization is expected");
       return false;
@@ -452,7 +456,7 @@ protected:
   /// Retrieve the visibility information from the AST.
   bool isVisibleExternally(ValueDecl *decl) {
     if (Module->isWholeProgram()) {
-      if (Module->getOptions().Optimization >= SILOptions::SILOptMode::Optimize)
+      if (shouldOptimize(*Module))
         // Nothing is visible externaly in this mode.
         return false;
 
@@ -678,8 +682,7 @@ class DeadFunctionElimination : FunctionLivenessComputation {
           addImplementingFunction(mi, F, nullptr);
           if (tableIsAlive || !F->isDefinition()) {
             if (Module->isWholeProgram() &&
-                Module->getOptions().Optimization >=
-                    SILOptions::SILOptMode::Optimize)
+                shouldOptimize(*Module))
               continue;
 
             ensureAliveProtocolMethod(mi);
@@ -715,8 +718,7 @@ class DeadFunctionElimination : FunctionLivenessComputation {
         SILFunction *F = entry.getWitness();
         addImplementingFunction(mi, F, nullptr);
         if (Module->isWholeProgram() &&
-            Module->getOptions().Optimization >=
-                SILOptions::SILOptMode::Optimize)
+            shouldOptimize(*Module))
           continue;
 
         ensureAliveProtocolMethod(mi);

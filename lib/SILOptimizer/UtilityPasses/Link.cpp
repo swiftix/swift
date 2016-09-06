@@ -421,6 +421,15 @@ static void linkFunctionsRequiredByRuntime(SILModule &M) {
 
 /// Link all functions and types (i.e. vtables and witness tables)
 /// used by the SIL module.
+///
+/// This works by first linking the entry points required by the
+/// runtime library and then recursively linking anything required
+/// by the current module. Every time a new function, vtable or
+/// witness table is linked, it may result in loading its entries
+/// which may require loading further functions, vtables and 
+/// witness tables. The process is finished when a fixed point
+/// is reached, i.e. no new entities that need to be linked are
+/// found.
 void linkAllUsedFunctionsAndTypes(SILModule &M) {
   auto &ASTTypes = M.getDeserializedNominalTypesSet();
   UsedTypesCollector UsedTypes;
@@ -441,7 +450,6 @@ void linkAllUsedFunctionsAndTypes(SILModule &M) {
   // - Link only those Swift methods which can be really called.
   linkFunctionsRequiredByRuntime(M);
 
-  // bool Updated = false;
   // Iterate until no new types can be found.
   while (true) {
 
@@ -575,6 +583,8 @@ void linkAllUsedFunctionsAndTypes(SILModule &M) {
             StringRef MangledName = MangledNameStr;
             if (M.lookUpFunction(MangledName))
               continue;
+            llvm::dbgs() << "Linking class member: " << MangledName
+                               << "\n";
             DEBUG(llvm::dbgs() << "Linking class member: " << MangledName
                                << "\n");
             if (!M.hasFunction(MangledName, SILLinkage::Private))

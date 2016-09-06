@@ -489,7 +489,7 @@ SILPassPipelinePlan::getOnonePassPipeline(SILOptions Options) {
   if (Options.isWholeProgram()) {
     // Link all functions, vtables, witness tables that
     // are required.
-    P.addSILLinker();
+    P.addStaticSILLinker();
     // Remove everything that is not used.
     P.addDeadFunctionElimination();
   }
@@ -500,7 +500,8 @@ SILPassPipelinePlan::getOnonePassPipeline(SILOptions Options) {
   // of the optimized version from the stdlib.
   // Here we just convert external definitions to declarations. LLVM will
   // eventually remove unused declarations.
-  P.addExternalDefsToDecls();
+  if (!Options.isWholeProgram())
+    P.addExternalDefsToDecls();
 
   // Has only an effect if the -assume-single-thread option is specified.
   P.addAssumeSingleThreaded();
