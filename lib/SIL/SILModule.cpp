@@ -29,6 +29,13 @@
 using namespace swift;
 using namespace Lowering;
 
+static bool shouldOptimize(const SILModule &Module) {
+   //return Module.getOptions().Optimization >= SILOptions::SILOptMode::Optimize;
+  if (Module.isWholeProgram())
+    return true;
+  return Module.getOptions().Optimization >= SILOptions::SILOptMode::Optimize;
+}
+
 class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
   void didDeserialize(Module *M, SILFunction *fn) override {
     DEBUG(llvm::dbgs() << "didDeserialize: SILFunction: " << fn->getName() << "\n");
@@ -40,8 +47,7 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
                        << "\n");
     if (fn->getModule().isWholeProgram()) {
       // For non-optimized builds, do not make functions non-external.
-      if (fn->getModule().getOptions().Optimization >=
-          SILOptions::SILOptMode::Optimize) {
+      if (shouldOptimize(fn->getModule())) {
         fn->setFragile(IsNotFragile);
 
         // All imported functions become non-fragile in the whole-program mode.
@@ -62,8 +68,7 @@ class SILModule::SerializationCallback : public SerializedSILLoader::Callback {
     // All imported Swift globals become definitions in the whole-program mode.
     // Clang imported globals are not affected.
     if (var->getModule().isWholeProgram() &&
-        var->getModule().getOptions().Optimization >=
-            SILOptions::SILOptMode::Optimize &&
+        shouldOptimize(var->getModule()) &&
         !var->getClangDecl()) {
       var->setDeclaration(false);
       var->setLinkage(SILLinkage::Private);
@@ -665,8 +670,7 @@ SILFunction *SILModule::hasFunction(StringRef Name, SILLinkage Linkage) {
   // compilation, simply convert it into an external declaration,
   // so that a compiled version from the shared library is used.
   if (F->isDefinition() &&
-      F->getModule().getOptions().Optimization <
-          SILOptions::SILOptMode::Optimize) {
+      !shouldOptimize(F->getModule())) {
     F->convertToDeclaration();
   }
   if (F->isExternalDeclaration())

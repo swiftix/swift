@@ -438,7 +438,7 @@ void swift::runSILPassesForOnone(SILModule &Module) {
   if (Module.isWholeProgram()) {
     // Link all functions, vtables, witness tables that
     // are required.
-    PM.addSILLinker();
+    PM.addStaticSILLinker();
     // Remove everything that is not used.
     PM.addDeadFunctionElimination();
   }
@@ -448,7 +448,8 @@ void swift::runSILPassesForOnone(SILModule &Module) {
   // of the optimized version from the stdlib.
   // Here we just convert external definitions to declarations. LLVM will
   // eventually remove unused declarations.
-  PM.addExternalDefsToDecls();
+  if (!Module.isWholeProgram())
+    PM.addExternalDefsToDecls();
 
   // Has only an effect if the -gsil option is specified.
   PM.addSILDebugInfoGenerator();
