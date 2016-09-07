@@ -384,7 +384,10 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Delete dead code and drop the bodies of shared functions.
   PM.addExternalFunctionDefinitionsElimination();
-  PM.addDeadFunctionElimination();
+  if (!Module.isWholeProgram())
+    PM.addDeadFunctionElimination();
+  else
+    PM.addStaticDeadFunctionElimination();
 
   // Perform the final lowering transformations.
   PM.addCodeSinking();

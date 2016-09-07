@@ -400,6 +400,9 @@ public:
 namespace {
 
 class DeadFunctionElimination : FunctionLivenessComputation {
+  /// True if this is a dead function elimination for a static
+  /// executable.
+  bool IsStatic;
 
   /// DeadFunctionElimination pass takes functions
   /// reachable via vtables and witness_tables into account
@@ -496,6 +499,10 @@ class DeadFunctionElimination : FunctionLivenessComputation {
     for (SILVTable &vTable : Module->getVTableList()) {
       vTable.removeEntries_if([this](SILVTable::Pair &entry) -> bool {
         if (!isAlive(entry.second)) {
+          if (Module->isWholeProgram() && !IsStatic) {
+            entry.second->addSemanticsAttr("_dead_function");
+            return false;
+          }
           DEBUG(llvm::dbgs() << "  erase dead vtable method " <<
                 entry.second->getName() << "\n");
           return true;
@@ -524,6 +531,10 @@ class DeadFunctionElimination : FunctionLivenessComputation {
         }
 #endif
         if (!isAlive(MW.Witness)) {
+          if (Module->isWholeProgram() && !IsStatic) {
+            MW.Witness->addSemanticsAttr("_dead_function");
+            return false;
+          }
           if (MW.Witness) {
             DEBUG(llvm::dbgs() << "  erase dead witness method "
                                << MW.Witness->getName() << "\n");
@@ -581,11 +592,13 @@ class DeadFunctionElimination : FunctionLivenessComputation {
   }
 
 public:
-  DeadFunctionElimination(SILModule *module)
-      : FunctionLivenessComputation(module) {}
+  DeadFunctionElimination(SILModule *module, bool isStatic = false)
+      : FunctionLivenessComputation(module), IsStatic(isStatic) {}
 
   /// The main entry point of the optimization.
   void eliminateFunctions(SILModuleTransform *DFEPass) {
+    if (Module->isWholeProgram() && !IsStatic)
+      return;
 
     DEBUG(llvm::dbgs() << "running dead function elimination\n");
     findAliveFunctions();
@@ -597,6 +610,9 @@ public:
     // reference counts of dead functions.
     for (SILFunction &F : *Module)
       if (!isAlive(&F)) {
+        if (Module->isWholeProgram() && !IsStatic &&
+            F.hasSemanticsAttr("_dead_function"))
+          continue;
         F.dropAllReferences();
       }
 
@@ -605,7 +621,12 @@ public:
       SILFunction *F = &*FI;
       ++FI;
       if (!isAlive(F)) {
+        if (Module->isWholeProgram() && !IsStatic &&
+            F->hasSemanticsAttr("_dead_function"))
+          continue;
+
         DEBUG(llvm::dbgs() << "  erase dead function " << F->getName() << "\n");
+        llvm::dbgs() << "  erase dead function " << F->getName() << "\n";
         NumDeadFunc++;
         DFEPass->invalidateAnalysisForDeadFunction(F,
                                      SILAnalysis::InvalidationKind::Everything);
@@ -727,6 +748,12 @@ public:
 namespace {
 
 class SILDeadFuncElimination : public SILModuleTransform {
+  bool IsStatic;
+
+public:
+  SILDeadFuncElimination(bool IsStatic = false) : IsStatic(IsStatic) {
+  }
+
   void run() override {
     DEBUG(llvm::dbgs() << "Running DeadFuncElimination\n");
 
@@ -746,7 +773,7 @@ class SILDeadFuncElimination : public SILModuleTransform {
     // can eliminate such functions.
     getModule()->invalidateSILLoaderCaches();
 
-    DeadFunctionElimination deadFunctionElimination(getModule());
+    DeadFunctionElimination deadFunctionElimination(getModule(), IsStatic);
     deadFunctionElimination.eliminateFunctions(this);
 
     //PM->viewCallGraph();
@@ -786,6 +813,10 @@ class SILExternalFuncDefinitionsElimination : public SILModuleTransform {
 
 SILTransform *swift::createDeadFunctionElimination() {
   return new SILDeadFuncElimination();
+}
+
+SILTransform *swift::createStaticDeadFunctionElimination() {
+  return new SILDeadFuncElimination(/* IsStatic */ true);
 }
 
 SILTransform *swift::createExternalFunctionDefinitionsElimination() {
