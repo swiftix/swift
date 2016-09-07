@@ -386,12 +386,16 @@ static void addLowLevelPassPipeline(SILPassPipelinePlan &P) {
   P.addFunctionSignatureOpts();
 }
 
-static void addLateLoopOptPassPipeline(SILPassPipelinePlan &P) {
+static void addLateLoopOptPassPipeline(SILPassPipelinePlan &P,
+                                       SILOptions Options) {
   P.startPipeline("LateLoopOpt");
 
   // Delete dead code and drop the bodies of shared functions.
   P.addExternalFunctionDefinitionsElimination();
-  P.addDeadFunctionElimination();
+  if (!Options.isWholeProgram())
+    P.addDeadFunctionElimination();
+  else
+    P.addStaticDeadFunctionElimination();
 
   // Perform the final lowering transformations.
   P.addCodeSinking();
@@ -461,7 +465,7 @@ SILPassPipelinePlan::getPerformancePassPipeline(SILOptions Options) {
   // (CapturePropagation).
   addLowLevelPassPipeline(P);
 
-  addLateLoopOptPassPipeline(P);
+  addLateLoopOptPassPipeline(P, Options);
 
   // Has only an effect if the -gsil option is specified.
   addSILDebugInfoGeneratorPipeline(P);
