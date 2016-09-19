@@ -50,7 +50,13 @@ public:
     /// A list of all the functions this function calls or partially applies.
     llvm::SetVector<SILFunction *> Callees;
     /// A list of all the callers this function has.
-    llvm::SmallSet<SILFunction *, 4> Callers;
+    /// Maps caller functions of this function to a boolean value 
+    /// The boolean flag is true, if this caller has a reference to
+    /// this function, but this reference is not used by an apply.
+    llvm::SmallDenseMap<SILFunction *, bool, 4> Callers;
+    /// A list of all the sites calling this function from a given caller.
+    llvm::SmallDenseMap<SILFunction *, SmallVector<SILInstruction *, 4>, 4>
+        CallerSites;
 
     /// The number of partial applied arguments of this function.
     ///
@@ -61,10 +67,57 @@ public:
     /// a "call" of this function.
     llvm::DenseMap<SILFunction *, int> PartialAppliers;
 
+    /// The function 
+    SILFunction *F;
+
   public:
     /// Returns true if this function has at least one caller.
     bool hasCaller() const {
-      return !Callers.empty();
+      return !CallerSites.empty();
+      //return !Callers.empty();
+    }
+
+    bool isReferenced() const {
+      // TODO: Cache the result?
+      // Check if any of the callers references it.
+      for (auto &Pair : Callers)
+        if (Pair.second)
+          return true;
+      return false;
+    }
+
+    void setReferencedByCaller(SILFunction *CallerFn) {
+      Callers[CallerFn] = true;
+    }
+
+    void setNotReferencedByCaller(SILFunction *CallerFn) {
+      Callers[CallerFn] = false;
+    }
+
+    void setFunction(SILFunction *F) {
+      this->F = F;
+    }
+
+    SILFunction *getFunction() const {
+      return F;
+    }
+
+    /// Returns true if a complete set of callers is not known
+    bool isIncomplteCallerSet() const {
+      // TODO: Handle witness methods and class methods.
+      if (F->isExternallyUsedSymbol())
+        return true;
+
+      return isReferenced();
+    }
+
+    ArrayRef<SILInstruction *> getCallerSites(SILFunction *Caller) {
+      return CallerSites[Caller];
+    }
+
+    const llvm::SmallDenseMap<SILFunction *, SmallVector<SILInstruction *, 4>, 4> &
+    getCallerSites() const {
+      return CallerSites;
     }
 
     /// Returns non zero if this function is partially applied anywhere.
