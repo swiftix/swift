@@ -16,9 +16,11 @@
 #include "swift/SIL/SILBuilder.h"
 #include "swift/SIL/SILCloner.h"
 #include "swift/SILOptimizer/Analysis/ArraySemantic.h"
+#include "swift/SILOptimizer/Analysis/CallerAnalysis.h"
 #include "swift/SILOptimizer/Analysis/DominanceAnalysis.h"
 #include "swift/SILOptimizer/Analysis/EscapeAnalysis.h"
 #include "swift/SILOptimizer/Analysis/RCIdentityAnalysis.h"
+#include "swift/SILOptimizer/Analysis/ValueTracking.h"
 #include "swift/SILOptimizer/PassManager/Passes.h"
 #include "swift/SILOptimizer/PassManager/Transforms.h"
 #include "swift/SILOptimizer/Utils/Generics.h"
@@ -43,12 +45,14 @@ class NonAtomicRCTransformer {
   EscapeAnalysis::ConnectionGraph *ConGraph;
   EscapeAnalysis *EA;
   RCIdentityFunctionInfo *RCIFI;
+  CallerAnalysis *CA;
 
 public:
   NonAtomicRCTransformer(SILPassManager *PM, SILFunction *F,
                          EscapeAnalysis::ConnectionGraph *ConGraph,
-                         EscapeAnalysis *EA, RCIdentityFunctionInfo *RCIFI)
-      : PM(PM), F(F), ConGraph(ConGraph), EA(EA), RCIFI(RCIFI) {}
+                         EscapeAnalysis *EA, RCIdentityFunctionInfo *RCIFI,
+                         CallerAnalysis *CA)
+      : PM(PM), F(F), ConGraph(ConGraph), EA(EA), RCIFI(RCIFI), CA(CA) {}
 
   StateChanges process();
 
@@ -56,10 +60,32 @@ private:
   StateChanges processNonEscapingRefCountingInsts();
   bool isEligableRefCountingInst(SILInstruction *I);
   StateChanges tryNonAtomicRC(SILInstruction *I);
+  bool isThreadLocalObject(SILValue Obj);
 };
 
+/// Try to strip all casts and projections as long they preserve the
+/// uniqueness of the value.
+static SILValue stripUniquenessPreservingCastsAndProjections(SILValue V) {
+  while (V) {
+    V = stripAddressProjections(V);
+    auto V2 = stripCasts(V);
+    if (auto *UAC = dyn_cast<UncheckedAddrCastInst>(V2)) {
+      if (UAC->getType() ==
+          SILType::getNativeObjectType(UAC->getModule().getASTContext())
+              .getAddressType()) {
+        V = UAC->getOperand();
+        continue;
+      }
+    }
+    if (V2 == V)
+      return V;
+    V = V2;
+  }
+  return V;
+}
+
 static void markAsNonAtomic(RefCountingInst *I) {
-  SILValue Op = I->getOperand(0);
+  //SILValue Op = I->getOperand(0);
   I->setNonAtomic();
 }
 
@@ -69,19 +95,258 @@ bool NonAtomicRCTransformer::isEligableRefCountingInst(SILInstruction *I) {
   return isa<RefCountingInst>(I) && !cast<RefCountingInst>(I)->isNonAtomic();
 }
 
+/// Obtain the underlying object by stripoping casts as well
+/// index and address projections.
+static SILValue obtainUnderlyingObject(SILValue V) {
+  while (true) {
+    SILValue V2 =
+        stripIndexingInsts(stripUniquenessPreservingCastsAndProjections(V));
+    if (V2 == V)
+      return V2;
+    V = V2;
+  }
+}
+
+/// Check if the the parameter \V is based on a local object, e.g. it is an
+/// allocation instruction or a struct/tuple constructed from the local objects.
+/// Returns a found local object. If a local object was not found, returns an
+/// empty SILValue.
+static SILValue getLocalObject(SILValue V) {
+  // It should be a local object.
+  V = obtainUnderlyingObject(V);
+  if (isa<AllocationInst>(V))
+    return V;
+  if (isa<LiteralInst>(V))
+    return V;
+  // Look through strong_pin instructions.
+  if (auto *SPI = dyn_cast<StrongPinInst>(V))
+    return getLocalObject(SPI->getOperand());
+  if (auto *SI = dyn_cast<StructInst>(V)) {
+    for (auto &Op : SI->getAllOperands())
+      if (!getLocalObject(Op.get()))
+        return SILValue();
+    return V;
+  }
+  if (auto *TI = dyn_cast<TupleInst>(V)) {
+    for (auto &Op : TI->getAllOperands())
+      if (!getLocalObject(Op.get()))
+        return SILValue();
+    return V;
+  }
+
+  if (auto Arg = dyn_cast<SILArgument>(V)) {
+    DEBUG(llvm::dbgs() << "Analyze incoming values for " << *Arg << "\n");
+    // It is local, if its input values are local on all paths.
+    SmallVector<SILValue, 4> IncomingValues;
+    if (Arg->getIncomingValues(IncomingValues)) {
+      llvm::SmallSetVector<SILValue, 4> Results;
+      for (auto InValue : IncomingValues) {
+        auto LocalObject = getLocalObject(InValue);
+        if (!LocalObject) {
+          DEBUG(llvm::dbgs() << "Analyzed incoming value: " << InValue << " ->  unknown\n");
+          return SILValue();
+        }
+        DEBUG(llvm::dbgs() << "Analyzed incoming value: " << InValue << " -> "
+                           << LocalObject << "\n");
+        Results.insert(LocalObject);
+      }
+      DEBUG(llvm::dbgs() << "All incoming values are local for: " << *Arg
+                         << ". There are " << Results.size()
+                         << " different incoming values\n");
+      if (Results.size() == 1) {
+        return Results.pop_back_val();
+      }
+      return SILValue();
+    } else {
+      DEBUG(llvm::dbgs() << "Could not determine incoming values for " << *Arg << "\n");
+    }
+  }
+
+  return SILValue();
+}
+
+/// Check if a given value escapes inside the function it belongs to.
+static bool isEscapingObject(SILValue V,
+                             EscapeAnalysis *EA,
+                             bool ArgNotEscapes = false) {
+  auto F = V->getParentBB()->getParent();
+  auto *ConGraph = EA->getConnectionGraph(F);
+  auto *Node = ConGraph->getNodeOrNull(V, EA);
+
+  if (!Node) {
+    DEBUG(llvm::dbgs() << "No node in the conn graph for the local object: "; V->dump());
+    return true;
+  }
+
+  // As long as the value does not escape the function, it is fine.
+  if (Node->escapesInsideFunction(
+          //isNotAliasingArgument(V, InoutAliasingAssumption::NotAliasing))) {
+          ArgNotEscapes)) {
+    DEBUG(llvm::dbgs() << "Conn graph node escapes for the local object: ";
+          V->dump());
+    return true;
+  }
+
+  // The value does not escape.
+  return false;
+}
+
+/// Return the single return value of the function.
+static SILValue findReturnValue(SILFunction *F) {
+  auto RBB = F->findReturnBB();
+  if (RBB == F->end())
+    return SILValue();
+  auto Term = dyn_cast<ReturnInst>(RBB->getTerminator());
+  return Term->getOperand();
+}
+
+bool NonAtomicRCTransformer::isThreadLocalObject(SILValue Obj) {
+  // Set of values to be checked for their locality.
+  SmallVector<SILValue, 8> WorkList;
+  // Set of processed values.
+  llvm::SmallPtrSet<SILValue, 8> Processed;
+  WorkList.push_back(Obj);
+
+  while (!WorkList.empty()) {
+    auto V = WorkList.pop_back_val();
+    if (!V)
+      return false;
+    if (Processed.count(V))
+      continue;
+    Processed.insert(V);
+    // It should be a local object.
+    //V = getUnderlyingObject(V);
+    V = obtainUnderlyingObject(V);
+    if (auto I = dyn_cast<SILInstruction>(V)) {
+      if (isa<AllocationInst>(V) &&
+          !isEscapingObject(V, EA))
+        continue;
+      if (isa<StrongPinInst>(I)) {
+        WorkList.push_back(I->getOperand(0));
+        continue;
+      }
+      if (isa<StructInst>(I) || isa<TupleInst>(I) || isa<EnumInst>(I)) {
+        // A compound value is local, if all of its components are local.
+        for (auto &Op : I->getAllOperands()) {
+          WorkList.push_back(Op.get());
+        }
+        continue;
+      }
+      if (FullApplySite AS = FullApplySite::isa(I)) {
+        // Check if result of call was a local object in the callee.
+        auto Callee = AS.getCalleeFunction();
+
+        DEBUG(if (Callee) llvm::dbgs()
+              << "Check the result of the function call: " << Callee->getName()
+              << "\n");
+
+        // Can we analyze the body of the function?
+        if (!Callee || Callee->isExternalDeclaration())
+          return false;
+
+        // Find the return object.
+        auto ReturnVal = findReturnValue(Callee);
+
+        // Bail if there is no return value. This can happen if the callee
+        // ends with an unreachable instruction.
+        if (!ReturnVal)
+          return false;
+
+        // ???? Do we need this check???
+        //if (isEscapingObject(ReturnVal, EA))
+        //  return false;
+
+        DEBUG(llvm::dbgs() << "Return value is not escaping for function: "
+                           << Callee->getName() << "\n");
+        // Check that ReturnVal is local to the function where it is defined.
+        WorkList.push_back(ReturnVal);
+        continue;
+      }
+    }
+
+    if (auto Arg = dyn_cast<SILArgument>(V)) {
+      // A BB argument is local if all of its
+      // incoming values are local.
+      if (Arg->isFunctionArg()) {
+#if 1
+        // Check if the this function argument is a thread local object at all
+        // call sites. In this case we can treat this function argument as
+        // local object.
+        auto &CallerInfo = CA->getCallerInfo(Arg->getFunction());
+        if (CallerInfo.isIncomplteCallerSet())
+          return false;
+        // Bail on partial applies.
+        if (CallerInfo.getMinPartialAppliedArgs())
+          return false;
+        llvm::dbgs() << "Found argument of a function whose callers set is known: "
+                     << Arg->getParentBB()->getParent()->getName() << ":\n"
+                     << "Arg description: ";
+        Arg->dump();
+        if (isEscapingObject(V, EA, /*ArgNotEscapes*/ true))
+          return false;
+        // We know all callers of the current function.
+        auto &CallerSites = CallerInfo.getCallerSites();
+        auto ArgIdx = Arg->getIndex();
+        for (auto Pair : CallerSites) {
+          auto &CurCallerSites = Pair.second;
+          for (auto CallerSite : CurCallerSites) {
+            // Analyze the argument passed for the Arg at the
+            // given current call site.
+            if (auto FAS = FullApplySite::isa(CallerSite)) {
+              // Bail if it is a partial apply and we don't
+              // have enough arguments.
+              if (ArgIdx >= FAS.getNumArguments())
+                return false;
+              auto PassedArg = FAS.getArgument(ArgIdx);
+              WorkList.push_back(PassedArg);
+              llvm::dbgs() << "Analyze passed argument of "
+                           << Arg->getParentBB()->getParent()->getName()
+                           << ":\n"
+                           << "Arg description: ";
+              Arg->dump();
+              llvm::dbgs() << "Passed arg value: ";
+              PassedArg->dump();
+              continue;
+            }
+            // We don't know what it is.
+            return false;
+          }
+        }
+        continue;
+#else
+        return false;
+#endif
+      }
+
+      SmallVector<SILValue, 4> IncomingValues;
+      if (Arg->getIncomingValues(IncomingValues)) {
+        for (auto InValue : IncomingValues) {
+          WorkList.push_back(InValue);
+        }
+        continue;
+      }
+    }
+
+    // Everything else is considered to be non-local.
+    return false;
+  }
+  return true;
+}
+
 /// Try to promote a reference counting instruction to its non-atomic
 /// variant.
 StateChanges NonAtomicRCTransformer::tryNonAtomicRC(SILInstruction *I) {
   assert(isa<RefCountingInst>(I));
   auto *RCInst = cast<RefCountingInst>(I);
-  auto Root = stripAddressProjections(RCInst->getOperand(0)); // stripUniq...???
-  auto *Node = ConGraph->getNodeOrNull(RCInst->getOperand(0), EA);
-  if (!Node)
-    return SILAnalysis::InvalidationKind::Nothing;
 
-  // As long as the value does not escape the function, it is fine.
-  if (Node->escapesInsideFunction(false))
+  // For the EscapeAnalysis to be correct, it should be a local object.
+  auto LocalObject = RCInst->getOperand(0);
+  auto IsLocalObject = isThreadLocalObject(LocalObject);
+  //auto LocalObject = RCInst->getOperand(0);
+  if (!IsLocalObject) {
+    DEBUG(llvm::dbgs() << "Operand of instruction is not local: "; LocalObject->dump());
     return SILAnalysis::InvalidationKind::Nothing;
+  }
 
   // This value does not escape, which means that it is
   // thread-local.
@@ -105,6 +370,7 @@ StateChanges NonAtomicRCTransformer::processNonEscapingRefCountingInsts() {
       // doing the optimization.
       SILInstruction *I = &*Iter++;
       if (isEligableRefCountingInst(I)) {
+        DEBUG(llvm::dbgs() << "Consider eligable instruction: "; I->dump());
         Changes = StateChanges(Changes | tryNonAtomicRC(I));
       }
     }
@@ -142,11 +408,13 @@ private:
 
     auto *EA = PM->getAnalysis<EscapeAnalysis>();
     auto *RCIA = PM->getAnalysis<RCIdentityAnalysis>();
+    auto *CA = PM->getAnalysis<CallerAnalysis>();
 
     SILFunction *F = getFunction();
     auto *ConGraph = EA->getConnectionGraph(F);
     if (ConGraph) {
-      NonAtomicRCTransformer Transformer(PM, F, ConGraph, EA, RCIA->get(F));
+      DEBUG(ConGraph->dump());
+      NonAtomicRCTransformer Transformer(PM, F, ConGraph, EA, RCIA->get(F), CA);
       auto Changes = Transformer.process();
       if (Changes) {
         PM->invalidateAnalysis(F, Changes);
