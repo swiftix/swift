@@ -303,7 +303,7 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Replace atomic RC instructions by non-atomic RC
   // whenever possible.
-  PM.addNonAtomicRC();
+  // PM.addNonAtomicRC();
 
   PM.runOneIteration();
   PM.resetAndRemoveTransformations();
@@ -345,9 +345,7 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Replace atomic RC instructions by non-atomic RC
   // whenever possible.
-  PM.addNonAtomicRC();
-
-
+  // PM.addNonAtomicRC();
 
   // Speculate virtual call targets.
   PM.addSpeculativeDevirtualization();
@@ -402,6 +400,10 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
   // Try to hoist all releases, including epilogue releases. This should be
   // after FSO.
   PM.addLateReleaseHoisting();
+
+  // Replace atomic RC instructions by non-atomic RC
+  // whenever possible.
+  PM.addNonAtomicRC();
 
   PM.runOneIteration();
 
