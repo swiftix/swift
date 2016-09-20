@@ -218,9 +218,11 @@ bool NonAtomicRCTransformer::isThreadLocalObject(SILValue Obj) {
     //V = getUnderlyingObject(V);
     V = obtainUnderlyingObject(V);
     if (auto I = dyn_cast<SILInstruction>(V)) {
-      if (isa<AllocationInst>(V) &&
-          !isEscapingObject(V, EA))
+      if (isa<AllocationInst>(V)) {
+        if (isEscapingObject(V, EA))
+          return false;
         continue;
+      }
       if (isa<StrongPinInst>(I)) {
         WorkList.push_back(I->getOperand(0));
         continue;
@@ -232,6 +234,17 @@ bool NonAtomicRCTransformer::isThreadLocalObject(SILValue Obj) {
         }
         continue;
       }
+      if (isa<TupleExtractInst>(I) || isa<StructExtractInst>(I) ||
+          isa<UncheckedEnumDataInst>(I)) {
+        // The result of tuple_extract/struct_extract is thread-local if its
+        // operand is thread local.
+        WorkList.push_back(I->getOperand(0));
+        continue;
+      }
+      if (isa<RawPointerToRefInst>(V) || isa<AddressToPointerInst>(V)) {
+        WorkList.push_back(I->getOperand(0));
+        continue;
+      }
       if (FullApplySite AS = FullApplySite::isa(I)) {
         // Check if result of call was a local object in the callee.
         auto Callee = AS.getCalleeFunction();
@@ -241,8 +254,19 @@ bool NonAtomicRCTransformer::isThreadLocalObject(SILValue Obj) {
               << "\n");
 
         // Can we analyze the body of the function?
-        if (!Callee || Callee->isExternalDeclaration())
+        if (!Callee)
           return false;
+
+        if (Callee->isExternalDeclaration()) {
+          // A special handling for some stdlib functions.
+          if (Callee->getName().find("TFSaap9subscriptFSix", 0) !=
+              StringRef::npos) {
+            // This is a Array.subscript.nativePinningMutableAddressor call.
+            // The result is always unique and thus thread-local.
+            continue;
+          }
+          return false;
+        }
 
         // Find the return object.
         auto ReturnVal = findReturnValue(Callee);
@@ -328,6 +352,10 @@ bool NonAtomicRCTransformer::isThreadLocalObject(SILValue Obj) {
     }
 
     // Everything else is considered to be non-local.
+    if (!isa<LoadInst>(V)) {
+      llvm::dbgs() << "Unknown RC value: ";
+      V->dump();
+    }
     return false;
   }
   return true;
