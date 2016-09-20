@@ -445,6 +445,11 @@ void swift::runSILPassesForOnone(SILModule &Module) {
   // eventually remove unused declarations.
   PM.addExternalDefsToDecls();
 
+  // Replace atomic RC instructions by non-atomic RC
+  // whenever possible.
+  PM.addNonAtomicRC();
+
+
   // Has only an effect if the -gsil option is specified.
   PM.addSILDebugInfoGenerator();
 
