@@ -61,6 +61,8 @@ private:
   bool isEligableRefCountingInst(SILInstruction *I);
   StateChanges tryNonAtomicRC(SILInstruction *I);
   bool isThreadLocalObject(SILValue Obj);
+  bool isThreadLocalFunctionArg(SILArgument *Arg,
+                                SmallVectorImpl<SILValue> &WorkList);
 };
 
 /// Try to strip all casts and projections as long they preserve the
@@ -200,6 +202,55 @@ static SILValue findReturnValue(SILFunction *F) {
   return Term->getOperand();
 }
 
+/// Check if a function argument is a thread-local object.
+bool NonAtomicRCTransformer::isThreadLocalFunctionArg(
+    SILArgument *Arg, SmallVectorImpl<SILValue> &WorkList) {
+  assert(Arg->isFunctionArg() && "Function argument expected");
+  // Check if the this function argument is a thread local object at all
+  // call sites. In this case we can treat this function argument as
+  // local object.
+  auto &CallerInfo = CA->getCallerInfo(Arg->getFunction());
+  if (CallerInfo.isIncomplteCallerSet())
+    return false;
+  // Bail on partial applies.
+  if (CallerInfo.getMinPartialAppliedArgs())
+    return false;
+  llvm::dbgs() << "Found argument of a function whose callers set is known: "
+               << Arg->getParentBB()->getParent()->getName() << ":\n"
+               << "Arg description: ";
+  Arg->dump();
+  if (isEscapingObject(Arg, EA, /*ArgNotEscapes*/ true))
+    return false;
+  // We know all callers of the current function.
+  auto &CallerSites = CallerInfo.getCallerSites();
+  auto ArgIdx = Arg->getIndex();
+  for (auto Pair : CallerSites) {
+    auto &CurCallerSites = Pair.second;
+    for (auto CallerSite : CurCallerSites) {
+      // Analyze the argument passed for the Arg at the
+      // given current call site.
+      if (auto FAS = FullApplySite::isa(CallerSite)) {
+        // Bail if it is a partial apply and we don't
+        // have enough arguments.
+        if (ArgIdx >= FAS.getNumArguments())
+          return false;
+        auto PassedArg = FAS.getArgument(ArgIdx);
+        WorkList.push_back(PassedArg);
+        llvm::dbgs() << "Analyze passed argument of "
+                     << Arg->getParentBB()->getParent()->getName() << ":\n"
+                     << "Arg description: ";
+        Arg->dump();
+        llvm::dbgs() << "Passed arg value: ";
+        PassedArg->dump();
+        continue;
+      }
+      // We don't know what it is.
+      return false;
+    }
+  }
+  return true;
+}
+
 bool NonAtomicRCTransformer::isThreadLocalObject(SILValue Obj) {
   // Set of values to be checked for their locality.
   SmallVector<SILValue, 8> WorkList;
@@ -292,56 +343,12 @@ bool NonAtomicRCTransformer::isThreadLocalObject(SILValue Obj) {
       // A BB argument is local if all of its
       // incoming values are local.
       if (Arg->isFunctionArg()) {
-#if 1
-        // Check if the this function argument is a thread local object at all
-        // call sites. In this case we can treat this function argument as
-        // local object.
-        auto &CallerInfo = CA->getCallerInfo(Arg->getFunction());
-        if (CallerInfo.isIncomplteCallerSet())
+        if (!isThreadLocalFunctionArg(Arg, WorkList))
           return false;
-        // Bail on partial applies.
-        if (CallerInfo.getMinPartialAppliedArgs())
-          return false;
-        llvm::dbgs() << "Found argument of a function whose callers set is known: "
-                     << Arg->getParentBB()->getParent()->getName() << ":\n"
-                     << "Arg description: ";
-        Arg->dump();
-        if (isEscapingObject(V, EA, /*ArgNotEscapes*/ true))
-          return false;
-        // We know all callers of the current function.
-        auto &CallerSites = CallerInfo.getCallerSites();
-        auto ArgIdx = Arg->getIndex();
-        for (auto Pair : CallerSites) {
-          auto &CurCallerSites = Pair.second;
-          for (auto CallerSite : CurCallerSites) {
-            // Analyze the argument passed for the Arg at the
-            // given current call site.
-            if (auto FAS = FullApplySite::isa(CallerSite)) {
-              // Bail if it is a partial apply and we don't
-              // have enough arguments.
-              if (ArgIdx >= FAS.getNumArguments())
-                return false;
-              auto PassedArg = FAS.getArgument(ArgIdx);
-              WorkList.push_back(PassedArg);
-              llvm::dbgs() << "Analyze passed argument of "
-                           << Arg->getParentBB()->getParent()->getName()
-                           << ":\n"
-                           << "Arg description: ";
-              Arg->dump();
-              llvm::dbgs() << "Passed arg value: ";
-              PassedArg->dump();
-              continue;
-            }
-            // We don't know what it is.
-            return false;
-          }
-        }
         continue;
-#else
-        return false;
-#endif
       }
 
+      // Process a BB argument.
       SmallVector<SILValue, 4> IncomingValues;
       if (Arg->getIncomingValues(IncomingValues)) {
         for (auto InValue : IncomingValues) {
