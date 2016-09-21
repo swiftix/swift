@@ -196,6 +196,8 @@ PASS(ReleaseHoisting, "release-hoisting",
      "Hoist releases")
 PASS(LateReleaseHoisting, "late-release-hoisting",
      "Hoist releases")
+PASS(RegionBasedNonAtomicRC, "region-based-non-atomic-rc",
+     "Use region-based optimizations to utilize non-atomic reference counting whenever possible")
 PASS(RemovePins, "remove-pins",
      "Remove pin/unpin pairs")
 PASS(SideEffectsDumper, "side-effects-dump",

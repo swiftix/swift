@@ -303,7 +303,7 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Replace atomic RC instructions by non-atomic RC
   // whenever possible.
-  // PM.addNonAtomicRC();
+  PM.addRegionBasedNonAtomicRC();
 
   PM.runOneIteration();
   PM.resetAndRemoveTransformations();
@@ -345,7 +345,7 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Replace atomic RC instructions by non-atomic RC
   // whenever possible.
-  // PM.addNonAtomicRC();
+  PM.addRegionBasedNonAtomicRC();
 
   // Speculate virtual call targets.
   PM.addSpeculativeDevirtualization();
@@ -404,6 +404,7 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
   // Replace atomic RC instructions by non-atomic RC
   // whenever possible.
   PM.addNonAtomicRC();
+  PM.addRegionBasedNonAtomicRC();
 
   PM.runOneIteration();
 
@@ -433,6 +434,15 @@ void swift::runSILPassesForOnone(SILModule &Module) {
 
   SILPassManager PM(&Module, "Onone");
 
+#if 1
+  // Replace atomic RC instructions by non-atomic RC
+  // whenever possible.
+  // Do it before bodies of any external functions from stdlib
+  // removed, because this way the escape-analysis can produce
+  // better results as it has more information.
+  PM.addNonAtomicRC();
+#endif
+
   // First specialize user-code.
   PM.addUsePrespecialized();
   PM.run();
@@ -445,10 +455,11 @@ void swift::runSILPassesForOnone(SILModule &Module) {
   // eventually remove unused declarations.
   PM.addExternalDefsToDecls();
 
+#if 1
   // Replace atomic RC instructions by non-atomic RC
   // whenever possible.
   PM.addNonAtomicRC();
-
+#endif
 
   // Has only an effect if the -gsil option is specified.
   PM.addSILDebugInfoGenerator();

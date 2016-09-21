@@ -17,6 +17,7 @@ set(TRANSFORMS_SOURCES
   Transforms/NonAtomicRC.cpp
   Transforms/RedundantLoadElimination.cpp
   Transforms/RedundantOverflowCheckRemoval.cpp
+  Transforms/RegionBasedNonAtomicRC.cpp
   Transforms/ReleaseDevirtualizer.cpp
   Transforms/RemovePin.cpp
   Transforms/SILCleanup.cpp
