@@ -21,6 +21,7 @@ import SwiftShims
 internal typealias _ArrayBridgeStorage
   = _BridgeStorage<_ContiguousArrayStorageBase, _NSArrayCore>
 
+@_versioned
 @_fixed_layout
 internal struct _ArrayBuffer<Element> : _ArrayBufferProtocol {
 
@@ -273,6 +274,7 @@ extension _ArrayBuffer {
   /// A pointer to the first element.
   ///
   /// - Precondition: The elements are known to be stored contiguously.
+  @_versioned
   internal var firstElementAddress: UnsafeMutablePointer<Element> {
     _sanityCheck(_isNative, "must be a native buffer")
     return _native.firstElementAddress
