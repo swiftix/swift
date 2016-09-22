@@ -114,6 +114,11 @@ bool swift::ArraySemanticsCall::isValidSignature() {
 swift::ArraySemanticsCall::ArraySemanticsCall(ValueBase *V,
                                               StringRef SemanticStr,
                                               bool MatchPartialName) {
+  if (!V) {
+    SemanticsCall = nullptr;
+    return;
+  }
+
   if (auto *AI = dyn_cast<ApplyInst>(V))
     if (auto *Fn = AI->getReferencedFunction())
       if ((MatchPartialName &&
