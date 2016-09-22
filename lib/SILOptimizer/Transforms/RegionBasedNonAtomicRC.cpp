@@ -73,10 +73,10 @@ struct BlockState {
 
 class Dataflow {
 protected:
-  SILFunction *F;
+  const SILFunction *F;
 
   // Maps a basic block to its numeric id
-  llvm::DenseMap<SILBasicBlock *, int> BlockIds;
+  llvm::DenseMap<const SILBasicBlock *, int> BlockIds;
 
   // Dataflow analysis state for each BB.
   // Indexed by the ids assigned in BlockIds.
@@ -88,24 +88,24 @@ protected:
   unsigned StateLength;
 
 public:
-  Dataflow(SILFunction *F);
-  int getBlockIdx(SILBasicBlock *BB) const { return BlockIds.lookup(BB); }
+  Dataflow(const SILFunction *F);
+  int getBlockIdx(const SILBasicBlock *BB) const { return BlockIds.lookup(BB); }
   unsigned getStateLength() const { return StateLength; }
   void setStateLength(unsigned Length) {
     assert(!StateLength);
     StateLength = Length;
   }
   virtual void initStates();
-  virtual StateBitVector mergePredecessorStates(SILBasicBlock *BB);
+  virtual StateBitVector mergePredecessorStates(const SILBasicBlock *BB);
   virtual void compute();
-  BlockState &getBlockState(SILBasicBlock *BB) {
+  BlockState &getBlockState(const SILBasicBlock *BB) {
     return BlockStates[BlockIds[BB]];
   }
   virtual void dump();
   virtual ~Dataflow() {}
 };
 
-Dataflow::Dataflow(SILFunction *F) : F(F), StateLength(0) {
+Dataflow::Dataflow(const SILFunction *F) : F(F), StateLength(0) {
   // Assign ids to each BB.
   unsigned idx = 0;
   for (auto &BB : *F) {
@@ -133,7 +133,7 @@ void Dataflow::initStates() {
 
 /// Perform a logical AND on the OUT sets of all predecessors.
 /// (^ OUT(Pred)) for all Pred from predecessors of BB
-StateBitVector Dataflow::mergePredecessorStates(SILBasicBlock *BB) {
+StateBitVector Dataflow::mergePredecessorStates(const SILBasicBlock *BB) {
   if (BB->pred_empty())
     return getBlockState(BB).In;
   StateBitVector Result(getStateLength(), true);
@@ -147,6 +147,7 @@ StateBitVector Dataflow::mergePredecessorStates(SILBasicBlock *BB) {
 }
 
 /// Main loop of the dataflow analysis.
+/// TODO: Make it iterate only once for functions that do not have loops.
 void Dataflow::compute() {
   // TODO: Use a worklist for a faster convergence
   bool Changed;
@@ -198,7 +199,7 @@ void Dataflow::dump() {
 // for tracking the uniguqness.
 class UniquenessDataflow : public Dataflow {
 public:
-  UniquenessDataflow(SILFunction *F) : Dataflow(F) {}
+  UniquenessDataflow(const SILFunction *F) : Dataflow(F) {}
 
   void initStates(unsigned StateLength) {
     setStateLength(StateLength);
@@ -303,8 +304,8 @@ private:
 };
 
 namespace {
-/// \brief A SILCloner subclass which clones a closure function while
-/// promoting some of its box parameters to stack addresses.
+/// \brief A very simple SILCloner subclass which clones an existing function
+/// without any changes.
 class FunctionCloner : public SILClonerWithScopes<FunctionCloner> {
 public:
   friend class SILVisitor<FunctionCloner>;
@@ -361,8 +362,7 @@ SILFunction *FunctionCloner::initCloned(SILFunction *Orig,
   return Fn;
 }
 
-/// \brief Populate the body of the cloned closure, modifying instructions as
-/// necessary to take into consideration the removed parameters.
+/// \brief Populate the body of the cloned function.
 void FunctionCloner::populateCloned() {
   SILFunction *Cloned = getCloned();
   SILModule &M = Cloned->getModule();
@@ -393,6 +393,7 @@ void FunctionCloner::populateCloned() {
   }
 }
 
+/// Produce an exact clone of the function, but under a new name.
 static SILFunction *getClonedFunction(SILFunction *OrigF, StringRef NewName) {
   FunctionCloner Cloner(OrigF, NewName);
   Cloner.populateCloned();
@@ -485,6 +486,7 @@ bool RegionBasedNonAtomicRCTransformer::isBeneficialToClone(SILFunction *F) {
   // If the function is marked as "generate.nonatomic", then it is supposed
   // to be cloned. Let's trust the developer for now.
   return true;
+
   SILValue Self = F->getSelfArgument();
   for (auto &BB : *F)
     for (auto &I : BB) {
@@ -580,7 +582,6 @@ void RegionBasedNonAtomicRCTransformer::replaceByNonAtomicApply(
 
 
 static void markAsNonAtomic(RefCountingInst *I) {
-  //SILValue Op = I->getOperand(0);
   I->setNonAtomic();
 }
 
@@ -614,24 +615,6 @@ static SILValue obtainUnderlyingObject(SILValue V) {
   }
 }
 
-/// Is it an instruction that creates a uniquelly referenced
-/// object?
-static ArraySemanticsCall isMakeUniqueCall(SILInstruction *I) {
-  ArraySemanticsCall Call(I);
-  if (Call) {
-    switch (Call.getKind()) {
-    default:
-      break;
-    case ArrayCallKind::kMakeMutable:
-    case ArrayCallKind::kMutateUnknown:
-    case ArrayCallKind::kGuaranteeMutable:
-      return Call;
-    }
-  }
-  // TODO: Handle other COW types here?
-  return ArraySemanticsCall(I, "non-existing", false);
-}
-
 static ArraySemanticsCall isMakeUniqueCall(ArraySemanticsCall &Call) {
   if (Call) {
     switch (Call.getKind()) {
@@ -647,6 +630,15 @@ static ArraySemanticsCall isMakeUniqueCall(ArraySemanticsCall &Call) {
   return ArraySemanticsCall(&*Call, "non-existing", false);
 }
 
+/// Is it an instruction that creates a uniquelly referenced
+/// object?
+static ArraySemanticsCall isMakeUniqueCall(SILInstruction *I) {
+  // TODO: Handle other COW types here?
+  // May be each mutating function call on a COW object should be
+  // considered as make_unique?
+  ArraySemanticsCall Call(I);
+  return isMakeUniqueCall(Call);
+}
 
 /// \return true of the given container is known to be a unique copy of the
 /// array with no aliases. Cases we check:
@@ -657,35 +649,38 @@ static ArraySemanticsCall isMakeUniqueCall(ArraySemanticsCall &Call) {
 /// initialized directly, or copied from a function return value. We don't
 /// need to check how it is initialized here, because that will show up as a
 /// store to the local's address.
-bool checkUniqueCowContainer(SILFunction *Function, SILValue CowContainer) {
-  if (SILArgument *Arg = dyn_cast<SILArgument>(CowContainer)) {
-    // Check that the argument is passed as an inout type. This means there are
-    // no aliases accessible within this function scope.
-    auto Params = Function->getLoweredFunctionType()->getParameters();
-    ArrayRef<SILArgument *> FunctionArgs = Function->begin()->getBBArgs();
-    for (unsigned ArgIdx = 0, ArgEnd = Params.size(); ArgIdx != ArgEnd;
-         ++ArgIdx) {
-      if (FunctionArgs[ArgIdx] != Arg)
-        continue;
-
-      if (!Params[ArgIdx].isIndirectInOut()) {
-        DEBUG(llvm::dbgs() << "    Skipping COW: Not an inout argument!\n";
-              CowContainer->dump());
-        return false;
-      }
-    }
-    return true;
-  }
-
+bool checkUniqueCowContainer(SILFunction *F, SILValue CowContainer) {
   if (isa<AllocStackInst>(CowContainer))
     return true;
 
-  DEBUG(llvm::dbgs()
+  SILArgument *Arg = dyn_cast<SILArgument>(CowContainer);
+  if (!Arg || !F) {
+    DEBUG(
+        llvm::dbgs()
             << "    Skipping COW object: Not an argument or local variable!\n";
         CowContainer->dump());
-  return false;
+    return false;
+  }
+
+  // Check that the argument is passed as an inout type. This means there are
+  // no aliases accessible within this function scope.
+  auto Params = F->getLoweredFunctionType()->getParameters();
+  ArrayRef<SILArgument *> FunctionArgs = F->begin()->getBBArgs();
+  for (unsigned ArgIdx = 0, ArgEnd = Params.size(); ArgIdx != ArgEnd;
+       ++ArgIdx) {
+    if (FunctionArgs[ArgIdx] != Arg)
+      continue;
+
+    if (!Params[ArgIdx].isIndirectInOut()) {
+      DEBUG(llvm::dbgs() << "    Skipping COW: Not an inout argument!\n";
+            CowContainer->dump());
+      return false;
+    }
+  }
+  return true;
 }
 
+/// Check if Arg is a known unique function argument.
 bool RegionBasedNonAtomicRCTransformer::isUniqueArg(SILValue Arg) {
   return std::find(UniqueArgs.begin(), UniqueArgs.end(), Arg) !=
          UniqueArgs.end();
@@ -779,8 +774,17 @@ bool RegionBasedNonAtomicRCTransformer::isStoreAliasingCowValue(
   if (Root == CowStruct)
     return true;
 
+  // If this is a store of a trivial field (i.e. containing no references),
+  // then it cannot alias any buffer pointers.
+  if (Dest->getType().getObjectType().isTrivial(F->getModule()))
+    return true;
+
   // Is it a store to a field of a COW struct, e.g. to the buffer reference?
-  // TODO: Make this check more precise?
+  // For the moment, consider stores into any fields of a COW data structure
+  // as aliasing. This is very pessimistic, but correct.
+  // TODO: Make this check more precise? We want to detect stores into
+  // fileds containing a reference to the COW-buffers. Such fields are likely
+  // to be marked in a special way in the future.
   //if (RCIFI->getRCIdentityRoot(stripAddressProjections(Root)) == CowStruct)
   if (RCIFI->getRCIdentityRoot(stripUniquenessPreservingCastsAndProjections(Root)) == CowStruct)
     return true;
@@ -788,6 +792,7 @@ bool RegionBasedNonAtomicRCTransformer::isStoreAliasingCowValue(
   return false;
 }
 
+/// Scan all basic blocks and intialize GEN, KILL and OUT sets.
 void RegionBasedNonAtomicRCTransformer::scanAllBlocks() {
   // Unique/non-atomic function parameters are in
   // the IN set of the entry block.
@@ -795,7 +800,8 @@ void RegionBasedNonAtomicRCTransformer::scanAllBlocks() {
     if (isUniqueArg(Arg)) {
       auto Id = CowValueId[Arg];
       DF.getBlockState(&*F->begin()).In[Id] = true;
-      DEBUG(llvm::dbgs() << "Adding a unique parameter into IN set of the entry basic block: ";
+      DEBUG(llvm::dbgs() << "Adding a unique parameter into IN set of the "
+                            "entry basic block: ";
             Arg->dump());
     }
   }
@@ -805,7 +811,7 @@ void RegionBasedNonAtomicRCTransformer::scanAllBlocks() {
   }
 }
 
-// Get set of apply arguments that may alias a given COW value.
+// Get a set of apply arguments that may alias a given COW value.
 // Returns true, if there is at least one aliasing argument.
 bool RegionBasedNonAtomicRCTransformer::getCowValueArgsOfApply(
     FullApplySite AI, SILValue CowValue, SmallVectorImpl<int> &Args,
@@ -1164,7 +1170,7 @@ StateChanges RegionBasedNonAtomicRCTransformer::transformAllBlocks() {
 
   // The set of currently active uniqness regions.
   // Indexed by the id of a CowValue being tracked.
-  // Initialized with the IN set.
+  // Initialized with the IN set of the current basic block.
   StateBitVector CurrentlyActive;
 
   for (auto &C : Candidates) {
@@ -1248,7 +1254,7 @@ StateChanges RegionBasedNonAtomicRCTransformer::transformAllBlocks() {
                 AI.getInstruction()->dumpInContext());
           replaceByNonAtomicApply(AI);
         }
-        // Mark region as active.
+        // Start of a uniqeness region.
         CurrentlyActive[Id] = true;
         continue;
       }
@@ -1355,6 +1361,7 @@ StateChanges RegionBasedNonAtomicRCTransformer::transformAllBlocks() {
       // But what if it is only read inside the function? it would be nice if
       // EA would say it does not escape.
 
+      // End of a uniqeness region.
       assert(Kind == CandidateKind::CANDIDATE_KILL);
       auto Id = CowValueId[CowValue];
       CurrentlyActive[Id] = false;
@@ -1370,6 +1377,8 @@ StateChanges RegionBasedNonAtomicRCTransformer::transformAllBlocks() {
             llvm::dbgs() << "\n"
                          << "RCRoot = " << Root << "\n");
 
+      // The result of this check will be always true, because
+      // it is inside a uniqueness region.
       auto Id = CowValueId[CowValue];
       SILBuilderWithScope B(I);
       auto boolTy =
@@ -1384,6 +1393,7 @@ StateChanges RegionBasedNonAtomicRCTransformer::transformAllBlocks() {
     }
 
     if (auto *DSI = dyn_cast<DeallocStackInst>(I)) {
+      // End of a uniqueness region.
       assert(Kind == CandidateKind::CANDIDATE_KILL);
       auto Id = CowValueId[CowValue];
       CurrentlyActive[Id] = false;
@@ -1452,14 +1462,19 @@ void RegionBasedNonAtomicRCTransformer::findAllMakeUnique() {
   findUniqueParameters();
   // Find all make_mutable. This gives us the number
   // of differrent CowValues which are made unique
-  // in the function.
+  // in the current function.
   for (SILBasicBlock &BB : *F) {
     for (auto Iter = BB.begin(); Iter != BB.end();) {
       SILInstruction *I = &*Iter++;
+
+      // TODO: Check for non-escaping Cow Containers like
+      // local variables and by-value arguments? Or let it
+      // be handled by the non-region-based non-atomic-rc pass?
+
       if (!isa<ApplyInst>(I)) {
         continue;
       }
-      //ArraySemanticsCall SemCall(I);
+
       auto Call = isMakeUniqueCall(I);
       if (Call) {
         DEBUG(llvm::dbgs() << "Found a make_unique call:" << I << "\n");
@@ -1483,33 +1498,6 @@ void RegionBasedNonAtomicRCTransformer::findAllMakeUnique() {
         }
         continue;
       }
-
-#if 0
-      if (Call && Call.hasSelf()) {
-        // This is a semantics call, but it is not a make_unique call.
-        // Check if the Self parameter of the call is unique, because
-        // it is a projection of a unique inout parameter.
-        auto CowValue = Call.getSelf();
-        SILValue Op =
-            stripUniquenessPreservingCastsAndProjections(CowValue);
-        auto Root = RCIFI->getRCIdentityRoot(Op);
-        // Check if it is a projection of one of the unique
-        // arguments of the function F.
-        for (auto UP : UniqueParams) {
-          if () {
-          }
-        }
-
-        // Create a region for this cow value.
-        // If we have seen a region for the same value already, we should
-        // assign the same index to it.
-        if (CowValue && !CowValueId.count(CowValue)) {
-          CowValueId[CowValue] = UniqueIdx++;
-          IdToCowValue.push_back(CowValue);
-        }
-        continue;
-      }
-#endif
     }
   }
 }
@@ -1517,6 +1505,7 @@ void RegionBasedNonAtomicRCTransformer::findAllMakeUnique() {
 StateChanges RegionBasedNonAtomicRCTransformer::processUniqenessRegions() {
   // Identify the beginning of all uniqueness regions.
   findAllMakeUnique();
+  // Bail if there are now COW values to be tracked.
   if (CowValueId.empty())
     return SILAnalysis::InvalidationKind::Nothing;
   DF.initStates(CowValueId.size());
