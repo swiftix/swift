@@ -229,5 +229,23 @@ EnumAddCasesTest.test("AddPayloadToMultiPayload") {
   expectEqual(starfishCount, 0)
 }
 
+///////////////////////////////////////////////////////////////////////
+
+extension AddPayloadToGenericSinglePayload {
+  static func staticMethodInExtension(t: T) -> AddPayloadToGenericSinglePayload {
+    return .Capybara(t)
+  }
+}
+
+EnumAddCasesTest.test("AddPayloadToGenericSinglePayload") {
+  let s = AddPayloadToGenericSinglePayload<Int>.staticMethodInExtension(t: 123)
+  switch s {
+  case .Capybara(let t):
+    expectEqual(t, 123)
+  default:
+    assert(false)
+  }
+}
+
 runAllTests()
 

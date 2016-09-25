@@ -150,3 +150,12 @@ public func addPayloadToMultiPayloadCases(_ s: Starfish)
   return [.Cats(s), .Ponies(s), .Pandas, .Piglets(1234321)]
 #endif
 }
+
+///////////////////////////////////////////////////////////////////////
+
+public enum AddPayloadToGenericSinglePayload<T> {
+  case Capybara(T)
+#if AFTER
+  case Chinchilla(T)
+#endif
+}
