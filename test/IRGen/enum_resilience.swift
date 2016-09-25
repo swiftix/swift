@@ -205,6 +205,28 @@ public func resilientEnumPartialApply(_ f: (Medium) -> Int) {
 // CHECK-LABEL: define internal void @_TPA__TTRXFo_iO14resilient_enum6Medium_dSi_XFo_iS0__iSi_(%Si* noalias nocapture sret, %swift.opaque* noalias nocapture, %swift.refcounted*)
 
 
+// Resilient enum with non-resilient case ordering
+@_fragile_case_order
+public enum FragileCaseOrder {
+  case A(Int)
+  case B(Int)
+  case C(Int)
+}
+
+// CHECK-LABEL: define{{( protected)?}} void @_TF15enum_resilience23getWithFragileCaseOrderFT1xSi_OS_16FragileCaseOrder(%O15enum_resilience16FragileCaseOrder* noalias nocapture sret, {{i32|i64}})
+public func getWithFragileCaseOrder(x: Int) -> FragileCaseOrder {
+  // CHECK: [[PAYLOAD_ADDR:%.*]] = bitcast %O15enum_resilience16FragileCaseOrder* %0 to %Si*
+  // CHECK-NEXT: [[PAYLOAD_PTR:%.*]] = getelementptr inbounds %Si, %Si* [[PAYLOAD_ADDR]], i32 0, i32 0
+  // CHECK-NEXT: store [[INT]] %1, [[INT]]* [[PAYLOAD_PTR]]
+  // CHECK-NEXT: [[PAYLOAD_TAG_ADDR:%.*]] = getelementptr inbounds %O15enum_resilience16FragileCaseOrder, %O15enum_resilience16FragileCaseOrder* %0, i32 0, i32 1
+  // CHECK-NEXT: [[PAYLOAD_TAG_PTR:%.*]] = bitcast [1 x i8]* [[PAYLOAD_TAG_ADDR]] to i2*
+  // CHECK-NEXT: store i2 0, i2* [[PAYLOAD_TAG_PTR]]
+  // CHECK-NEXT: ret void
+
+  return FragileCaseOrder.A(x)
+}
+
+
 // Enums with resilient payloads from a different resilience domain
 // require runtime metadata instantiation, just like generics.
 
@@ -240,3 +262,4 @@ public func getResilientEnumType() -> Any.Type {
 // CHECK-NEXT: ret %swift.type* [[RESULT]]
 
 // CHECK-LABEL: define{{( protected)?}} private void @initialize_metadata_EnumWithResilientPayload(i8*)
+
