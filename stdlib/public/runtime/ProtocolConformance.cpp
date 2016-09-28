@@ -658,13 +658,13 @@ recur:
         case ProtocolConformanceReferenceKind::WitnessTable:
           // If the record provides a nondependent witness table for all
           // instances of a generic type, cache it for the generic pattern.
-          C.cacheSuccess(R, P, record.getWitnessTable(metadata));
+          C.cacheSuccess(R, P, record.getStaticWitnessTable());
           break;
 
         case ProtocolConformanceReferenceKind::WitnessTableAccessor:
           // If the record provides a dependent witness table accessor,
           // cache the result for the instantiated type metadata.
-          C.cacheSuccess(metadata, P, record.getWitnessTable(metadata));
+          C.cacheSuccess(type, P, record.getWitnessTable(type));
           break;
 
         }
