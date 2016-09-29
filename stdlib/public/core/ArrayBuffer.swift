@@ -30,6 +30,7 @@ internal struct _ArrayBuffer<Element> : _ArrayBufferProtocol {
     _storage = _ArrayBridgeStorage(native: _emptyArrayStorage)
   }
 
+  @_versioned  // FIXME(abi): Used from tests
   internal init(nsArray: _NSArrayCore) {
     _sanityCheck(_isClassOrObjCExistential(Element.self))
     _storage = _ArrayBridgeStorage(objC: nsArray)
@@ -114,6 +115,7 @@ extension _ArrayBuffer {
   /// Convert to an NSArray.
   ///
   /// O(1) if the element type is bridged verbatim, O(*n*) otherwise.
+  @_versioned  // FIXME(abi): Used from tests
   internal func _asCocoaArray() -> _NSArrayCore {
     return _fastPath(_isNative) ? _native._asCocoaArray() : _nonNative
   }
