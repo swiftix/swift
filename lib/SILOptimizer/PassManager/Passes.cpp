@@ -303,7 +303,7 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Replace atomic RC instructions by non-atomic RC
   // whenever possible.
-  PM.addRegionBasedNonAtomicRC();
+  // PM.addRegionBasedNonAtomicRC();
 
   PM.runOneIteration();
   PM.resetAndRemoveTransformations();
@@ -345,7 +345,7 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Replace atomic RC instructions by non-atomic RC
   // whenever possible.
-  PM.addRegionBasedNonAtomicRC();
+  //PM.addRegionBasedNonAtomicRC();
 
   // Speculate virtual call targets.
   PM.addSpeculativeDevirtualization();
@@ -405,6 +405,13 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
   // whenever possible.
   PM.addNonAtomicRC();
   PM.addRegionBasedNonAtomicRC();
+  // RegionBasedNonAtomicRC may have replaced some conditional branches by
+  // unconditional ones and made some BBs unreachable. Some cleanup may be
+  // required after this.
+  PM.addSimplifyCFG();
+  PM.addCSE();
+  PM.addSILCombine();
+  PM.addDCE();
 
   PM.runOneIteration();
 

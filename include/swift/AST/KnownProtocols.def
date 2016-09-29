@@ -64,6 +64,7 @@ PROTOCOL_(BridgedStoredNSError)
 PROTOCOL_(ObjectiveCBridgeable)
 PROTOCOL_(DestructorSafeContainer)
 PROTOCOL_(SwiftNewtypeWrapper)
+PROTOCOL_(COW)
 
 EXPRESSIBLE_BY_LITERAL_PROTOCOL(ExpressibleByArrayLiteral)
 EXPRESSIBLE_BY_LITERAL_PROTOCOL(ExpressibleByBooleanLiteral)

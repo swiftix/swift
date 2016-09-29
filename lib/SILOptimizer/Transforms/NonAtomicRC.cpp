@@ -297,6 +297,10 @@ bool NonAtomicRCTransformer::isThreadLocalObject(SILValue Obj) {
         continue;
       }
       if (FullApplySite AS = FullApplySite::isa(I)) {
+        // Bail if result of a call escapes in the current function.
+        if (isEscapingObject(V, EA))
+          return false;
+
         // Check if result of call was a local object in the callee.
         auto Callee = AS.getCalleeFunction();
 

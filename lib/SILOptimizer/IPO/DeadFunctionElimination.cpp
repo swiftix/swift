@@ -75,7 +75,8 @@ protected:
     // a pipeline, as it may break some optimizations.
     if (F->isKeepAsPublic()) {
       F->setLinkage(SILLinkage::Public);
-      F->setFragile(IsFragile_t::IsNotFragile);
+      // Don't change the fragility!
+      //F->setFragile(IsFragile_t::IsNotFragile);
       DEBUG(llvm::dbgs() << "DFE: Preserve the specialization "
                          << F->getName() << '\n');
       return true;

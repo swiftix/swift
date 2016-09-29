@@ -34,6 +34,7 @@ set(SWIFTLIB_ESSENTIAL
   Builtin.swift
   BuiltinMath.swift.gyb
   Character.swift
+  COW.swift
   CocoaArray.swift
   Collection.swift
   CollectionAlgorithms.swift.gyb
