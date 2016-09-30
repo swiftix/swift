@@ -55,6 +55,7 @@ public:
   IGNORED_ATTR(Effects)
   IGNORED_ATTR(Exported)
   IGNORED_ATTR(FixedLayout)
+  IGNORED_ATTR(FragileCaseOrder)
   IGNORED_ATTR(Infix)
   IGNORED_ATTR(Inline)
   IGNORED_ATTR(NSApplicationMain)
@@ -718,6 +719,7 @@ public:
     IGNORED_ATTR(Inline)
     IGNORED_ATTR(Effects)
     IGNORED_ATTR(FixedLayout)
+    IGNORED_ATTR(FragileCaseOrder)
     IGNORED_ATTR(Lazy)      // checked early.
     IGNORED_ATTR(LLDBDebuggerFunction)
     IGNORED_ATTR(Mutating)

@@ -53,14 +53,14 @@ public:
 
     // Instantiation-specific.
     
+    // Add fields for generic cases.
+    asImpl().addGenericFields(Target, Target->getDeclaredTypeInContext());
+    
     // Reserve a word to cache the payload size if the type has dynamic layout.
     auto &strategy = getEnumImplStrategy(IGM,
            Target->DeclContext::getDeclaredTypeInContext()->getCanonicalType());
     if (strategy.needsPayloadSizeInMetadata())
       asImpl().addPayloadSize();
-    
-    // Add fields for generic cases.
-    asImpl().addGenericFields(Target, Target->getDeclaredTypeInContext());
   }
 };
 

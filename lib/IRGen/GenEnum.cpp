@@ -4656,7 +4656,7 @@ namespace {
     }
     
     bool needsPayloadSizeInMetadata() const override {
-      llvm_unreachable("resilient enums cannot be defined");
+      return false;
     }
 
     void initializeMetadata(IRGenFunction &IGF,
@@ -4802,7 +4802,8 @@ EnumImplStrategy::get(TypeConverter &TC, SILType type, EnumDecl *theEnum) {
 
   // Resilient tag numbering decreases for payload tags, so reverse the
   // payload tags if this enum is resilient from any context.
-  if (TC.IGM.isResilient(theEnum, ResilienceExpansion::Minimal))
+  if (!theEnum->getAttrs().hasAttribute<FragileCaseOrderAttr>() &&
+      TC.IGM.isResilient(theEnum, ResilienceExpansion::Minimal))
     std::reverse(elementsWithPayload.begin(), elementsWithPayload.end());
 
   assert(numElements == elementsWithPayload.size()
