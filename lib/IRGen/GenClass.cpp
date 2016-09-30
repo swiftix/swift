@@ -245,9 +245,12 @@ namespace {
           //
           // FIXME: We need to implement indirect field/vtable entry access
           // before we can enable this
-          /* ClassHasFixedFieldCount = false; */
-          addFieldsForClass(superclass, superclassType);
-          NumInherited = Elements.size();
+          if (IGM.Context.LangOpts.EnableClassResilience) {
+            ClassHasFixedFieldCount = false;
+          } else {
+            addFieldsForClass(superclass, superclassType);
+            NumInherited = Elements.size();
+          }
 
           ClassHasFixedSize = false;
 
