@@ -219,8 +219,8 @@ public func getWithFragileCaseOrder(x: Int) -> FragileCaseOrder {
   // CHECK-NEXT: [[PAYLOAD_PTR:%.*]] = getelementptr inbounds %Si, %Si* [[PAYLOAD_ADDR]], i32 0, i32 0
   // CHECK-NEXT: store [[INT]] %1, [[INT]]* [[PAYLOAD_PTR]]
   // CHECK-NEXT: [[PAYLOAD_TAG_ADDR:%.*]] = getelementptr inbounds %O15enum_resilience16FragileCaseOrder, %O15enum_resilience16FragileCaseOrder* %0, i32 0, i32 1
-  // CHECK-NEXT: [[PAYLOAD_TAG_PTR:%.*]] = bitcast [1 x i8]* [[PAYLOAD_TAG_ADDR]] to i2*
-  // CHECK-NEXT: store i2 0, i2* [[PAYLOAD_TAG_PTR]]
+  // CHECK-NEXT: [[PAYLOAD_TAG_PTR:%.*]] = bitcast [1 x i8]* [[PAYLOAD_TAG_ADDR]] to i8*
+  // CHECK-NEXT: store i8 0, i8* [[PAYLOAD_TAG_PTR]]
   // CHECK-NEXT: ret void
 
   return FragileCaseOrder.A(x)
