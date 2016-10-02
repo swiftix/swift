@@ -68,7 +68,8 @@ namespace {
 typedef llvm::SmallBitVector StateBitVector;
 
 #ifndef NDEBUG
-static llvm::raw_ostream &operator<<(llvm::raw_ostream &stream, llvm::BitVector &BV) {
+static llvm::raw_ostream &operator<<(llvm::raw_ostream &stream,
+                                     llvm::BitVector &BV) {
   unsigned size = BV.size();
   stream << "[ ";
   for (unsigned i = 0; i < size; ++i)
@@ -97,6 +98,7 @@ struct BlockState {
   StateBitVector Kill;
 };
 
+// This class implements a general form of a dataflow analysis for a function.
 class Dataflow {
 protected:
   const SILFunction *F;
@@ -121,9 +123,11 @@ public:
     assert(!StateLength);
     StateLength = Length;
   }
-  virtual void initStates();
+  virtual void initStates(unsigned StateLength);
   virtual StateBitVector mergePredecessorStates(const SILBasicBlock *BB);
-  virtual void compute();
+  virtual StateBitVector mergeSuccessorStates(const SILBasicBlock *BB);
+  virtual void computeForwardDataflow();
+  virtual void computeBackwardsDataflow();
   BlockState &getBlockState(const SILBasicBlock *BB) {
     return BlockStates[BlockIds[BB]];
   }
@@ -142,7 +146,7 @@ Dataflow::Dataflow(const SILFunction *F) : F(F), StateLength(0) {
   BlockStates.resize(BlockIds.size());
 }
 
-void Dataflow::initStates() {
+void Dataflow::initStates(unsigned StateLength) {
   /*
     for (auto &BBState: BlockStates)  {
       // In is all 1s
@@ -171,10 +175,12 @@ StateBitVector Dataflow::mergePredecessorStates(const SILBasicBlock *BB) {
   }
   return Result;
 }
-
+StateBitVector Dataflow::mergeSuccessorStates(const SILBasicBlock *BB) {
+  llvm_unreachable("Not implemented yet");
+}
 /// Main loop of the dataflow analysis.
 /// TODO: Make it iterate only once for functions that do not have loops.
-void Dataflow::compute() {
+void Dataflow::computeForwardDataflow() {
   // TODO: Use a worklist for a faster convergence
   bool Changed;
   // Iterate until a fixpoint is reached.
@@ -207,9 +213,14 @@ void Dataflow::compute() {
   } while (Changed);
 }
 
+void Dataflow::computeBackwardsDataflow() {
+  llvm_unreachable("Not implemented yet");
+}
+
 /// Helper function to dump the results of
 /// the dataflow analysis.
 void Dataflow::dump() {
+#ifndef NDEBUG
   for (auto &BB : *F) {
     auto &BlockState = getBlockState(&BB);
     auto BBId = getBlockIdx(&BB);
@@ -219,6 +230,7 @@ void Dataflow::dump() {
           llvm::dbgs() << "Gen = " << BlockState.Gen << "\n";
           llvm::dbgs() << "Kill = " << BlockState.Kill << "\n"; BB.dump());
   }
+#endif
 }
 
 // Customization of a general dataflow analysis
@@ -227,7 +239,7 @@ class UniquenessDataflow : public Dataflow {
 public:
   UniquenessDataflow(const SILFunction *F) : Dataflow(F) {}
 
-  void initStates(unsigned StateLength) {
+  void initStates(unsigned StateLength) override {
     setStateLength(StateLength);
 
     for (auto &BBState : BlockStates) {
@@ -242,7 +254,7 @@ public:
   }
 
   void compute() {
-    Dataflow::compute();
+    Dataflow::computeForwardDataflow();
     dump();
   }
 };
@@ -250,6 +262,7 @@ public:
 typedef SILAnalysis::InvalidationKind StateChanges;
 
 class RegionBasedNonAtomicRCTransformer {
+  // Kinds of regions that can be tracked.
   enum RegionMode {
     UNIQUENESS_REGIONS,
     THREAD_LOCAL_REGIONS,
@@ -282,6 +295,7 @@ class RegionBasedNonAtomicRCTransformer {
   llvm::SmallPtrSet<SILBasicBlock *, 32> CandidateBBs;
   unsigned UniqueIdx;
 
+  // Type of region being processed.
   RegionMode Mode;
 
   enum CandidateKind {
@@ -308,7 +322,9 @@ class RegionBasedNonAtomicRCTransformer {
   // The set of instructions that are interesting for this
   // optimization.
   // Candidate instructions inside a basic block are stored
-  // in the order of their execution.
+  // in the order of their execution. The transformation phase
+  // visits only the collected candidate instructions to avoid
+  // re-scanning the whole function.
   llvm::SmallVector<Candidate, 32> Candidates;
   // Set of instructions removed by the pass.
   SmallPtrSet<SILInstruction *, 32> RemovedInstructions;
@@ -459,7 +475,6 @@ void FunctionCloner::populateCloned() {
   // Create arguments for the entry block
   SILBasicBlock *OrigEntryBB = &*Orig->begin();
   SILBasicBlock *ClonedEntryBB = new (M) SILBasicBlock(Cloned);
-  unsigned ArgNo = 0;
   auto I = OrigEntryBB->bbarg_begin(), E = OrigEntryBB->bbarg_end();
   while (I != E) {
     // Create a new argument which copies the original argument.
@@ -631,12 +646,12 @@ static ApplySite replaceWithDifferentFunction(ApplySite AI, SILFunction *NewF) {
         Arguments, ResultBB, TAI->getErrorBB());
     return NewTAI;
   }
-  if (auto *A = dyn_cast<ApplyInst>(AI)) {
+  if (auto *ApplyI = dyn_cast<ApplyInst>(AI)) {
     auto ResultType = NewF->getLoweredType().getFunctionInterfaceResultType();
     auto *NewAI = Builder.createApply(Loc, Callee, AI.getSubstCalleeSILType(),
                                       ResultType, AI.getSubstitutions(),
-                                      Arguments, A->isNonThrowing());
-    A->replaceAllUsesWith(NewAI);
+                                      Arguments, ApplyI->isNonThrowing());
+    ApplyI->replaceAllUsesWith(NewAI);
     return NewAI;
   }
   if (auto *PAI = dyn_cast<PartialApplyInst>(AI)) {
@@ -670,7 +685,7 @@ void RegionBasedNonAtomicRCTransformer::replaceByNonAtomicApply(
   recursivelyDeleteTriviallyDeadInstructions(AI.getInstruction(), true);
 }
 
-
+/// Mark a reference counting instruction as non-atomic.
 static void markAsNonAtomic(RefCountingInst *I) {
   I->setNonAtomic();
 }
@@ -705,6 +720,25 @@ bool RegionBasedNonAtomicRCTransformer::checkUniqueCowContainer(
   if (isa<AllocStackInst>(Root))
     return true;
 
+  // TODO: If we get a COW value as argument, we don't know
+  // for sure where its buffer comes from. In particular,
+  // it could referenced and accessible from other objects
+  // (e.g. if this array is a property inside a class or
+  // captured by a closure).
+  // Thus, if we are not sure about the origin of the buffer or
+  // COW object, we have to assume that they can be part
+  // of something else. Therefore, any RC release operation
+  // may potentially deallocate them  It makes the analysis
+  // rather complicated, because now we need to take into
+  // account any RC operation, even if it is peformed on
+  // a totally unrelated objects.
+  //
+  // If we want to keep analysis simple, we could just
+  // make it applicable only for objects whose origin
+  // is known (i.e. local COW objects created by means
+  // of a COW type constructor). While very simple to
+  // implement, it can be too restrictive to make the
+  // analysis really useful.
   SILArgument *Arg = dyn_cast<SILArgument>(Root);
   if (!Arg || !F) {
     DEBUG(
@@ -753,7 +787,7 @@ bool RegionBasedNonAtomicRCTransformer::isCowValue(ValueBase *CowStruct,
     return true;
 
   // Is it an RC operation on the buffer reference?
- //          stripAddressProjections(CowLoad->getOperand())) == CowStruct)
+  //          stripAddressProjections(CowLoad->getOperand())) == CowStruct)
   if (!CowStruct->getType().isAddress() &&
       RCIFI->getRCIdentityRoot(stripUniquenessPreservingCastsAndProjections(
           LoadOperand)) == CowStruct)
@@ -820,7 +854,8 @@ bool RegionBasedNonAtomicRCTransformer::isRCofCowValueAt(ValueBase *CowStruct,
   return false;
 }
 
-/// Returns true, if a given type is a COW type.
+/// Returns a COW type, if a given type is a COW type.
+/// Return an empty type otherwise.
 static CanType getCOWType(CanType Ty, SILModule &M) {
   // Strip of metatypes.
   while(auto MetaTy = dyn_cast<AnyMetatypeType>(Ty)) {
@@ -859,7 +894,8 @@ static CanType getCOWType(SILType Ty, SILModule &M) {
   return getCOWType(Ty.getSwiftRValueType(), M);
 }
 
-// TODO: Generalize for any COW types, not only arrays.
+/// Checks if a store to a given destination may alias
+/// a given CowValue.
 bool RegionBasedNonAtomicRCTransformer::isStoreAliasingCowValue(
     ValueBase *CowStruct, SILValue Dest) {
 
@@ -882,7 +918,8 @@ bool RegionBasedNonAtomicRCTransformer::isStoreAliasingCowValue(
   // fileds containing a reference to the COW-buffers. Such fields are likely
   // to be marked in a special way in the future.
   //if (RCIFI->getRCIdentityRoot(stripAddressProjections(Root)) == CowStruct)
-  if (RCIFI->getRCIdentityRoot(stripUniquenessPreservingCastsAndProjections(Root)) == CowStruct)
+  if (RCIFI->getRCIdentityRoot(
+          stripUniquenessPreservingCastsAndProjections(Root)) == CowStruct)
     return true;
 
   return false;
@@ -917,7 +954,8 @@ bool RegionBasedNonAtomicRCTransformer::getCowValueArgsOfApply(
     SmallVectorImpl<bool> &IsIndirectParam) {
   if (!AI.getInstruction())
     return true;
-  DEBUG(llvm::dbgs() << "Analyzing if the following apply instruction is a candidate:\n";
+  DEBUG(llvm::dbgs()
+            << "Analyzing if the following apply instruction is a candidate:\n";
         AI.getInstruction()->dumpInContext());
   bool Result = false;
   for (unsigned i = 0, e = AI.getArguments().size(); i < e; ++i) {
@@ -929,9 +967,9 @@ bool RegionBasedNonAtomicRCTransformer::getCowValueArgsOfApply(
     // available), assume the worst case, i.e. the value would escape.
     auto Arg = AI.getArgument(i);
     bool isAlias = isCowValue(CowValue, Arg);
-    DEBUG(llvm::dbgs() << "Analyzing if the the argument aliases a COW value:\nArgument:\n";
-          CowValue->dumpInContext();
-          llvm::dbgs() << "COW value:\n";
+    DEBUG(llvm::dbgs() << "Analyzing if the the argument aliases a COW "
+                          "value:\nArgument:\n";
+          CowValue->dumpInContext(); llvm::dbgs() << "COW value:\n";
           Arg->dumpInContext();
           llvm::dbgs() << "Is alias?: " << isAlias << "\n");
     if (isAlias) {
@@ -956,6 +994,9 @@ bool RegionBasedNonAtomicRCTransformer::getCowValueArgsOfApply(
   return Result;
 }
 
+/// Mark an instruction and its BB as candidates. The transform
+/// phase would visit only candidate instructions to avoid
+/// re-scannign of the whole function.
 void RegionBasedNonAtomicRCTransformer::markAsCandidate(SILInstruction *I,
                                                         SILValue CowValue,
                                                         CandidateKind Kind,
@@ -965,6 +1006,7 @@ void RegionBasedNonAtomicRCTransformer::markAsCandidate(SILInstruction *I,
   DEBUG(llvm::dbgs() << "Mark as canidate:\n"; I->dumpInContext());
 }
 
+// Classification of COW operations.
 enum class COWOperation {
   // It is not an operation on a COW type.
   None,
@@ -1011,8 +1053,9 @@ static COWOperation classifyOperationOnCowType(SILInstruction *I) {
     // For example, the implementation of a make_unique may invoke some
     // other mutating functions, which do not make the whole COW object unique
     // on their own.
-    // TODO: Check that it is a public function at the AST level. Public mutating
-    // functions on a COW type are supposed to make it unique among other things.
+    // TODO: Check that it is a public function at the AST level. Public
+    // mutating functions on a COW type are supposed to make the instance unique
+    // among other things.
     if (Callee->isPossiblyUsedExternally())
       return COWOperation::Mutating;
   }
@@ -1055,7 +1098,8 @@ static COWOperation classifyOperationOnCowType(SILInstruction *I) {
 /// TODO: This is a workaround we need until we introduce is_unique_br
 /// instruction.
 static SILBasicBlock *findTrueSuccessor(SILInstruction *I) {
-  assert(I->getType() == SILType::getBuiltinIntegerType(1, I->getModule().getASTContext()) &&
+  assert(I->getType() == SILType::getBuiltinIntegerType(
+                             1, I->getModule().getASTContext()) &&
          "Expected Builtin.Int1");
   if (!I->hasOneUse())
     return nullptr;
@@ -1157,7 +1201,7 @@ void RegionBasedNonAtomicRCTransformer::scanApplyInst(FullApplySite AI,
         AI.getInstruction()->dumpInContext());
   auto CowTypeOperationKind = classifyOperationOnCowType(AI.getInstruction());
   if (CowTypeOperationKind == COWOperation::Mutating) {
-    // Any mutating operation on COW type makes it unique.
+    // Any public mutating operation on COW type makes it unique.
     // This is a GEN operation, it starts a region.
     // FIXME: Some constructors take an existing buffer as parameters
     // and do not produce a unique COW value.
@@ -1167,7 +1211,8 @@ void RegionBasedNonAtomicRCTransformer::scanApplyInst(FullApplySite AI,
       CowValue = AI.getInstruction();
       // Skip if we are not tracking this COWValue.
       if (!CowValueId.count(CowValue)) {
-        DEBUG(llvm::dbgs() << "Skip a call of a static method on a non-tracked COW value\n");
+        DEBUG(llvm::dbgs()
+              << "Skip a call of a static method on a non-tracked COW value\n");
         return;
       }
     }
@@ -1215,7 +1260,8 @@ void RegionBasedNonAtomicRCTransformer::scanApplyInst(FullApplySite AI,
     auto hasAliases =
         getCowValueArgsOfApply(AI, CowValue, Args, IsIndirectParam);
     if (Args.empty() || !hasAliases) {
-      DEBUG(llvm::dbgs() << "None of the apply arguments alias any tracked COW values\n");
+      DEBUG(llvm::dbgs()
+            << "None of the apply arguments alias any tracked COW values\n");
       continue;
     }
     for (auto Arg : Args) {
@@ -1304,6 +1350,11 @@ void RegionBasedNonAtomicRCTransformer::scanIsUniqueInst(SILInstruction *I,
   }
 }
 
+// TODO: Retain and release operations affect the uniquness of a COW value.
+// As long as we can detect all reference-count changing instructions
+// between two is_unique checks (along all paths) and we can prove that
+// the cumulative affect on the reference count is 0, we can ignore them,
+// because the reference will stay unique.
 void RegionBasedNonAtomicRCTransformer::scanRefCountingInst(RefCountingInst *RC,
                                                             ScanState &S) {
   auto Ref = RC->getOperand(0);
@@ -1406,7 +1457,7 @@ void RegionBasedNonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB,
     }
 
     if (isa<IsUniqueInst>(I) ||
-        // Does pinned mean unique???
+        // Pinned always implies unique.
         isa<IsUniqueOrPinnedInst>(I)) {
       scanIsUniqueInst(I, S);
       continue;
@@ -1439,7 +1490,6 @@ void RegionBasedNonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB,
   // Initialize OUT sets with GEN sets.
   BBState.Out = BBState.Gen;
 
-
   for (auto i = S.KilledCowValues.find_first(); i != -1;
        i = S.KilledCowValues.find_next(i)) {
     BBState.Kill[i] = true;
@@ -1450,8 +1500,6 @@ void RegionBasedNonAtomicRCTransformer::scanBasicBlock(SILBasicBlock *BB,
 
 void RegionBasedNonAtomicRCTransformer::transformStoreInst(StoreInst *SI,
                                                            TransformState &S) {
-  auto CowValue = S.C->CowValue;
-
   assert(S.Kind == CandidateKind::CANDIDATE_STORE_DEST ||
          S.Kind == CandidateKind::CANDIDATE_STORE_SRC);
   assert(S.CowValue);
@@ -1460,11 +1508,11 @@ void RegionBasedNonAtomicRCTransformer::transformStoreInst(StoreInst *SI,
 
   if (S.Kind == CandidateKind::CANDIDATE_STORE_DEST) {
     DEBUG(llvm::dbgs() << "Kill operation for CowValue\n"
-                       << CowValue;
+                       << S.CowValue;
           SI->dumpInContext());
     // The region is not active anymore after this point.
     S.CurrentlyActive[Id] = false;
-    DEBUG(llvm::dbgs() << "end uniqueness region for: " << CowValue << "\n"
+    DEBUG(llvm::dbgs() << "end uniqueness region for: " << S.CowValue << "\n"
                        << "at instruction: ";
           SI->dump());
     return;
@@ -1618,7 +1666,8 @@ RegionBasedNonAtomicRCTransformer::transformAllBlocks(RegionMode Mode) {
   DEBUG(llvm::dbgs() << "** Transform basic blocks inside " << F->getName()
                      << " **\n");
 
-  UniquenessDataflow &DF = (Mode == UNIQUENESS_REGIONS) ? UniquenessDF : ThreadLocalDF;
+  UniquenessDataflow &DF =
+      (Mode == UNIQUENESS_REGIONS) ? UniquenessDF : ThreadLocalDF;
 
   SILBasicBlock *LastBB = nullptr;
   BlockState *BBState = nullptr;
@@ -1704,7 +1753,7 @@ RegionBasedNonAtomicRCTransformer::transformAllBlocks(RegionMode Mode) {
   return S.Changes;
 }
 
-/// Find parameters that are knonw to be unique/non-atomic.
+/// Find parameters that are knonwn to be unique/non-atomic.
 void RegionBasedNonAtomicRCTransformer::findUniqueParameters() {
   if (!F->getName().endswith("_NonAtomic"))
     return;
@@ -1763,8 +1812,6 @@ static bool isValueOfUniqueReferenceType(SILValue CowValue,
 /// on the array can be non-atomic. Subsequent
 /// make_mutable calls on the same array can
 /// be eliminated.
-/// TODO: Support value-types other than Array, e.g.
-/// Set or Dictionary.
 void RegionBasedNonAtomicRCTransformer::findAllMakeUnique() {
   findUniqueParameters();
   // Find all distict SILValues, which are potential unique/thread-local COW
@@ -1774,11 +1821,14 @@ void RegionBasedNonAtomicRCTransformer::findAllMakeUnique() {
     for (auto Iter = BB.begin(); Iter != BB.end();) {
       SILInstruction *I = &*Iter++;
 
+      // The interesting instructions are is_unique checks and
+      // invocations of public mutable operations on COW values.
+
       if (isa<IsUniqueInst>(I) || isa<IsUniqueOrPinnedInst>(I)) {
         SILValue Op =
             stripUniquenessPreservingCastsAndProjections(I->getOperand(0));
         auto CowValue = RCIFI->getRCIdentityRoot(Op);
-        // Check of the root is a COW value.
+        // Check if the root is a COW value.
         if (isValueOfUniqueReferenceType(CowValue, I)) {
           DEBUG(llvm::dbgs() << "Found an is_unique on a COW type:\n";
                 I->dumpInContext());
@@ -1809,7 +1859,7 @@ void RegionBasedNonAtomicRCTransformer::findAllMakeUnique() {
 
       if (FAS && FAS.hasSelfArgument() &&
           checkUniqueCowContainer(F, FAS.getSelfArgument())) {
-        // Add to the set of makeUnique calls
+        // Add to the set of makeUnique calls.
         // The COW object that is made a thread-local by this call.
         SILValue Op =
             stripUniquenessPreservingCastsAndProjections(FAS.getSelfArgument());
@@ -1832,6 +1882,7 @@ void RegionBasedNonAtomicRCTransformer::findAllMakeUnique() {
   }
 }
 
+#ifndef NDEBUG
 static void dumpValueIdMapping(StringRef title,
                                llvm::DenseMap<SILValue, unsigned> &CowValueId) {
   llvm::dbgs() << title << "\n";
@@ -1839,6 +1890,7 @@ static void dumpValueIdMapping(StringRef title,
     llvm::dbgs() << KV.second << " <== " << KV.first << "\n";
   }
 }
+#endif
 
 void RegionBasedNonAtomicRCTransformer::computeUniqenesssRegions() {
   Mode = UNIQUENESS_REGIONS;
@@ -1847,7 +1899,8 @@ void RegionBasedNonAtomicRCTransformer::computeUniqenesssRegions() {
   scanAllBlocks(UniquenessDF);
   // Perform a datafow analysis to find out the span
   // of each region.
-  DEBUG(dumpValueIdMapping("Mapping after computeUniqenesssRegions", CowValueId));
+  DEBUG(
+      dumpValueIdMapping("Mapping after computeUniqenesssRegions", CowValueId));
   UniquenessDF.compute();
 }
 
@@ -1858,7 +1911,8 @@ void RegionBasedNonAtomicRCTransformer::computeThreadLocalRegions() {
   scanAllBlocks(ThreadLocalDF);
   // Perform a datafow analysis to find out the span
   // of each region.
-  DEBUG(dumpValueIdMapping("Mapping after computeThreadLocalRegions", CowValueId));
+  DEBUG(dumpValueIdMapping("Mapping after computeThreadLocalRegions",
+                           CowValueId));
   ThreadLocalDF.compute();
 }
 
@@ -1932,4 +1986,6 @@ private:
 
 } // end anonymous namespace
 
-SILTransform *swift::createRegionBasedNonAtomicRC() { return new RegionBasedNonAtomicRC(); }
+SILTransform *swift::createRegionBasedNonAtomicRC() {
+  return new RegionBasedNonAtomicRC();
+}
