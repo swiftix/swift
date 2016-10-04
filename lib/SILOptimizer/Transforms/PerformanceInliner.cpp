@@ -1121,7 +1121,8 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
 
   // We don't support this yet.
   if (AI.hasSubstitutions()) {
-    return nullptr;
+    // Try inlining of generics.
+    //return nullptr;
   }
 
   SILFunction *Caller = AI.getFunction();
@@ -1483,9 +1484,21 @@ bool SILPerformanceInliner::inlineCallsIntoFunction(SILFunction *Caller) {
     // the substitution list.
     OpenedArchetypesTracker.registerUsedOpenedArchetypes(AI.getInstruction());
 
+    TypeSubstitutionMap ContextSubs;
+    std::vector<Substitution> ApplySubs(AI.getSubstitutions());
+
+    //if (PAI) {
+    //  auto PAISubs = PAI->getSubstitutions();
+    //  ApplySubs.insert(ApplySubs.end(), PAISubs.begin(), PAISubs.end());
+    //}
+
+    ContextSubs.copyFrom(
+        AI.getCalleeFunction()->getContextGenericParams()->getSubstitutionMap(
+            ApplySubs));
+
     SILInliner Inliner(*Caller, *Callee,
                        SILInliner::InlineKind::PerformanceInline,
-                       AI.getSubstitutions(),
+                       ContextSubs,
                        OpenedArchetypesTracker);
 
     auto Success = Inliner.inlineFunction(AI, Args);
