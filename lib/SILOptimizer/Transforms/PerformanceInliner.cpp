@@ -1124,26 +1124,26 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
   if (AI.hasSubstitutions()) {
     // Try inlining of generics.
     // return nullptr;
-    // Do not inline functions with @_semantics
-    // inside the stdlib.
-    // Or do not inline generic functions in stdlib at all?
-#if 0
-    if (Callee->hasSemanticsAttrs() &&
+#if 1
+    // Do not inline generic functions with @_semantics inside the stdlib,
+    // because it would break some optimizations depending on the
+    // @_semantics (e.g. array optimizations).
+    if (Callee->hasSemanticsAttrThatStartsWith("array.") &&
         AI.getModule().getSwiftModule()->getName().str() == STDLIB_NAME)
       return nullptr;
 #endif
+#if 0
     // Inline generics only very late, when everything else has been inlined
     // and specialized already.
     if (WhatToInline != InlineSelection::Everything)
       return nullptr;
-    // No generics inlining when producing pre-specializations, because
-    // otherwise specialized functions are not produced at all.
-#if 1
-    // Don't inline generics inside the standard library or pre-specializations.
-    if (//Callee->hasSemanticsAttrs() &&
-        AI.getModule().getSwiftModule()->getName().str() == SWIFT_ONONE_SUPPORT
-        || AI.getModule().getSwiftModule()->getName().str() == STDLIB_NAME
-        )
+#endif
+    // No generics inlining when producing pre-specializations.
+    if (AI.getModule().getSwiftModule()->getName().str() == SWIFT_ONONE_SUPPORT)
+      return nullptr;
+#if 0
+    // Don't inline generics inside the standard library.
+    if (AI.getModule().getSwiftModule()->getName().str() == STDLIB_NAME)
       return nullptr;
 #endif
   }
