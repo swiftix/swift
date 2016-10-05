@@ -48,6 +48,11 @@ llvm::cl::opt<bool> SILViewSILGenCFG(
     "sil-view-silgen-cfg", llvm::cl::init(false),
     llvm::cl::desc("Enable the sil cfg viewer pass before diagnostics"));
 
+llvm::cl::opt<bool> swift::StdlibSILSerializationAfterHighLevelOptz(
+    "stdlib-sil-serialization-before-optz", llvm::cl::init(false),
+    llvm::cl::desc("Perform SIL serialization of the standard library before "
+                   "optimizations"));
+
 using namespace swift;
 
 // Enumerates the optimization kinds that we do in SIL.
@@ -257,8 +262,8 @@ void AddSSAPasses(SILPassManager &PM, OptimizationLevelKind OpLevel) {
   PM.addRemovePins();
 }
 
-
-void swift::runSILOptimizationPasses(SILModule &Module) {
+void swift::runSILOptimizationPasses(SILModule &Module,
+                                     ExecutableAction &SerializeAction) {
   // Verify the module, if required.
   if (Module.getOptions().VerifyAll)
     Module.verify();
@@ -303,6 +308,11 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   PM.runOneIteration();
   PM.resetAndRemoveTransformations();
+
+  // Serialize SIL module after high-level optimization passes
+  // to preserve the functons annotated with semantics.
+  if (StdlibSILSerializationAfterHighLevelOptz)
+    SerializeAction.run();
 
   // Run an iteration of the mid-level SSA passes.
   PM.setStageName("MidLevel");
