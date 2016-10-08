@@ -26,6 +26,7 @@
 #include "swift/SILOptimizer/Utils/Local.h"
 #include "swift/SILOptimizer/Utils/ConstantFolding.h"
 #include "swift/SILOptimizer/Utils/SILInliner.h"
+#include "swift/Strings.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -1122,6 +1123,20 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
   // We don't support this yet.
   if (AI.hasSubstitutions()) {
     return nullptr;
+    // Do not inline @_semantics functions when compiling the stdlib,
+    // because they need to be preserved, so that the optimizer
+    // can properly optimize a user code later.
+    if (Callee->hasSemanticsAttrs() &&
+        (Callee->getModule().getSwiftModule()->getName().str() == STDLIB_NAME ||
+         Callee->getModule().getSwiftModule()->getName().str() ==
+             SWIFT_ONONE_SUPPORT))
+      return nullptr;
+    // Perform generic inlining only for transparent or always inline functions.
+    if (!Callee->isTransparent() &&
+        Callee->getInlineStrategy() != AlwaysInline)
+      if (true || WhatToInline != InlineSelection::Everything) {
+        return nullptr;
+    }
   }
 
   SILFunction *Caller = AI.getFunction();

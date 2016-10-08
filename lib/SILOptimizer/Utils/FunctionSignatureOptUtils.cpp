@@ -72,8 +72,8 @@ bool swift::canSpecializeFunction(SILFunction *F) {
     return false;
 
   // For now ignore functions with indirect results.
-  if (F->getLoweredFunctionType()->hasIndirectResults())
-    return false;
+  //if (F->getLoweredFunctionType()->hasIndirectResults())
+  //  return false;
 
   // Do not specialize the signature of always inline functions. We
   // will just inline them and specialize each one of the individual
@@ -82,8 +82,8 @@ bool swift::canSpecializeFunction(SILFunction *F) {
     return false;
 
   // For now ignore generic functions to keep things simple...
-  if (F->getLoweredFunctionType()->isPolymorphic())
-    return false;
+  //if (F->getLoweredFunctionType()->isPolymorphic())
+  //  return false;
 
   // Make sure F has a linkage that we can optimize.
   if (!isSpecializableRepresentation(F->getRepresentation()))

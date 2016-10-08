@@ -663,10 +663,13 @@ findMatchingRetains(SILBasicBlock *BB) {
 //                          Owned Argument Utilities
 //===----------------------------------------------------------------------===//
 
-ConsumedArgToEpilogueReleaseMatcher::
-ConsumedArgToEpilogueReleaseMatcher(RCIdentityFunctionInfo *RCFI,
-                                    SILFunction *F, ExitKind Kind)
-   : F(F), RCFI(RCFI), Kind(Kind), ProcessedBlock(nullptr) {
+ConsumedArgToEpilogueReleaseMatcher::ConsumedArgToEpilogueReleaseMatcher(
+    RCIdentityFunctionInfo *RCFI,
+    SILFunction *F,
+    ArrayRef<SILArgumentConvention> ArgumentConventions,
+    ExitKind Kind)
+    : F(F), RCFI(RCFI), Kind(Kind), ArgumentConventions(ArgumentConventions),
+      ProcessedBlock(nullptr) {
   recompute();
 }
 
@@ -769,6 +772,18 @@ processMatchingReleases() {
   }
 }
 
+/// Check if a given argument convention is in the list
+/// of possible argument conventions.
+static bool
+isOneOfConventions(SILArgumentConvention Convention,
+                   ArrayRef<SILArgumentConvention> ArgumentConventions) {
+  for (auto ArgumentConvention : ArgumentConventions) {
+    if (Convention == ArgumentConvention)
+      return true;
+  }
+  return false;
+}
+
 void
 ConsumedArgToEpilogueReleaseMatcher::
 collectMatchingReleases(SILBasicBlock *BB) {
@@ -789,8 +804,12 @@ collectMatchingReleases(SILBasicBlock *BB) {
   // that overlaps with this release. This release for sure is not the final
   // release.
   for (auto II = std::next(BB->rbegin()), IE = BB->rend(); II != IE; ++II) {
+    bool isDestroyAddr = false;
+    if (isa<DestroyAddrInst>(*II)) {
+      // It is a destroy addr for a 
+    }
     // If we do not have a release_value or strong_release. We can continue
-    if (!isa<ReleaseValueInst>(*II) && !isa<StrongReleaseInst>(*II)) {
+    else if (!isa<ReleaseValueInst>(*II) && !isa<StrongReleaseInst>(*II)) {
 
       // We cannot match a final release if it is followed by a dealloc_ref.
       if (isa<DeallocRefInst>(*II))
@@ -827,13 +846,13 @@ collectMatchingReleases(SILBasicBlock *BB) {
     // releases in the sense that we do not allow for race conditions in between
     // destructors.
     if (!Arg || !Arg->isFunctionArg() ||
-        !Arg->hasConvention(SILArgumentConvention::Direct_Owned))
+        !isOneOfConventions(Arg->getArgumentConvention(), ArgumentConventions))
       break;
 
-    // Ok, we have a release on a SILArgument that is direct owned. Attempt to
-    // put it into our arc opts map. If we already have it, we have exited the
-    // return value sequence so break. Otherwise, continue looking for more arc
-    // operations.
+    // Ok, we have a release on a SILArgument that has a consuming convention.
+    // Attempt to put it into our arc opts map. If we already have it, we have
+    // exited the return value sequence so break. Otherwise, continue looking
+    // for more arc operations.
     auto Iter = ArgInstMap.find(Arg);
     if (Iter == ArgInstMap.end()) {
       ArgInstMap[Arg].push_back(Target);
