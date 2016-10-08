@@ -49,6 +49,20 @@ struct goo {
   var bottom : foo
 }
 
+public protocol P {
+  func foo() -> Int64
+}
+
+public protocol KlassFoo : class {
+  func bar() -> Int64
+}
+
+public class KlassBar : KlassFoo {
+  public func bar() -> Int64
+  deinit
+  init()
+}
+
 sil @use_Int : $@convention(thin) (Int) -> ()
 
 
@@ -1479,6 +1493,85 @@ bb0(%0 : $Builtin.Int32):
   return %9999 : $()
 }
 
+// CHECK-LABEL: sil hidden [thunk] [always_inline] @generic_owned_to_guaranteed : $@convention(thin) <T where T : KlassFoo> (@owned T) -> Int64
+// CHECK: function_ref @_T027generic_owned_to_guaranteedTf4g_n 
+// CHECK: apply
+// CHECK: release_value
+// CHECK: end sil function 'generic_owned_to_guaranteed'
+
+// CHECK-LABEL: sil [thunk] [always_inline] @generic_owned_to_guaranteed_caller : $@convention(thin) <T where T : KlassFoo> (@owned T) -> Int64 
+// CHECK: function_ref @_T034generic_owned_to_guaranteed_callerTf4g_n 
+// CHECK: apply
+// CHECK: release_value
+// CHECK: end sil function 'generic_owned_to_guaranteed_caller'
+
+sil hidden [noinline] @generic_owned_to_guaranteed : $@convention(thin) <T where T : KlassFoo> (@owned T) -> Int64 {
+bb0(%0 : $T):
+  %2 = witness_method $T, #KlassFoo.bar!1 : <Self where Self : KlassFoo> (Self) -> () -> Int64 : $@convention(witness_method) <τ_0_0 where τ_0_0 : KlassFoo> (@guaranteed τ_0_0) -> Int64
+  %3 = apply %2<T>(%0) : $@convention(witness_method) <τ_0_0 where τ_0_0 : KlassFoo> (@guaranteed τ_0_0) -> Int64
+  strong_release %0 : $T
+  return %3 : $Int64
+}
+
+sil @generic_owned_to_guaranteed_caller : $@convention(thin) <T where T : KlassFoo> (@owned T) -> Int64 {
+bb0(%0 : $T):
+  %2 = function_ref @generic_owned_to_guaranteed : $@convention(thin) <τ_0_0 where τ_0_0 : KlassFoo> (@owned τ_0_0) -> Int64
+  strong_retain %0 : $T
+  %4 = apply %2<T>(%0) : $@convention(thin) <τ_0_0 where τ_0_0 : KlassFoo> (@owned τ_0_0) -> Int64
+  %5 = function_ref @generic_owned_to_guaranteed : $@convention(thin) <τ_0_0 where τ_0_0 : KlassFoo> (@owned τ_0_0) -> Int64
+  strong_retain %0 : $T
+  %7 = apply %5<T>(%0) : $@convention(thin) <τ_0_0 where τ_0_0 : KlassFoo> (@owned τ_0_0) -> Int64
+  %8 = struct_extract %4 : $Int64, #Int64._value
+  %9 = struct_extract %7 : $Int64, #Int64._value
+  %10 = integer_literal $Builtin.Int1, -1
+  %11 = builtin "sadd_with_overflow_Int64"(%8 : $Builtin.Int64, %9 : $Builtin.Int64, %10 : $Builtin.Int1) : $(Builtin.Int64, Builtin.Int1)
+  %12 = tuple_extract %11 : $(Builtin.Int64, Builtin.Int1), 0
+  %13 = tuple_extract %11 : $(Builtin.Int64, Builtin.Int1), 1
+  cond_fail %13 : $Builtin.Int1
+  %15 = struct $Int64 (%12 : $Builtin.Int64)
+  strong_release %0 : $T
+  return %15 : $Int64
+}
+
+// CHECK-LABEL: sil hidden [thunk] [always_inline] @generic_in_to_guaranteed : $@convention(thin) <T where T : P> (@in T) -> Int64
+// CHECK: function_ref @_T024generic_in_to_guaranteedTf4g_n 
+// CHECK: apply
+// CHECK: destroy_addr
+// CHECK: end sil function 'generic_in_to_guaranteed'
+
+// CHECK-LABEL: sil [thunk] [always_inline] @generic_in_to_guaranteed_caller : $@convention(thin) <T where T : P> (@in T) -> Int64 
+// CHECK: function_ref @_T031generic_in_to_guaranteed_callerTf4g_n 
+// CHECK: apply
+// CHECK: destroy_addr
+// CHECK: end sil function 'generic_in_to_guaranteed_caller'
+
+sil hidden [noinline] @generic_in_to_guaranteed : $@convention(thin) <T where T : P> (@in T) -> Int64 {
+bb0(%0 : $*T):
+  %2 = witness_method $T, #P.foo!1 : <Self where Self : P> (Self) -> () -> Int64 : $@convention(witness_method) <τ_0_0 where τ_0_0 : P> (@in_guaranteed τ_0_0) -> Int64
+  %3 = apply %2<T>(%0) : $@convention(witness_method) <τ_0_0 where τ_0_0 : P> (@in_guaranteed τ_0_0) -> Int64
+  destroy_addr %0 : $*T
+  return %3 : $Int64
+}
+
+sil @generic_in_to_guaranteed_caller : $@convention(thin) <T where T : P> (@in T) -> Int64 {
+bb0(%0 : $*T):
+  %2 = function_ref @generic_in_to_guaranteed : $@convention(thin) <τ_0_0 where τ_0_0 : P> (@in τ_0_0) -> Int64
+  %3 = alloc_stack $T
+  copy_addr %0 to [initialization] %3 : $*T
+  %5 = apply %2<T>(%3) : $@convention(thin) <τ_0_0 where τ_0_0 : P> (@in τ_0_0) -> Int64
+  dealloc_stack %3 : $*T
+  %7 = apply %2<T>(%0) : $@convention(thin) <τ_0_0 where τ_0_0 : P> (@in τ_0_0) -> Int64
+  %8 = struct_extract %5 : $Int64, #Int64._value
+  %9 = struct_extract %7 : $Int64, #Int64._value
+  %10 = integer_literal $Builtin.Int1, -1
+  %11 = builtin "sadd_with_overflow_Int64"(%8 : $Builtin.Int64, %9 : $Builtin.Int64, %10 : $Builtin.Int1) : $(Builtin.Int64, Builtin.Int1)
+  %12 = tuple_extract %11 : $(Builtin.Int64, Builtin.Int1), 0
+  %13 = tuple_extract %11 : $(Builtin.Int64, Builtin.Int1), 1
+  cond_fail %13 : $Builtin.Int1
+  %15 = struct $Int64 (%12 : $Builtin.Int64)
+  return %15 : $Int64
+}
+
 // CHECK-LABEL: sil @_T036exploded_release_to_guaranteed_paramTf4gX_n
 // CHECK: bb0([[INPUT_ARG0:%[0-9]+]] : $Int):
 // CHECK-NOT: strong_release
@@ -1552,4 +1645,16 @@ bb0(%0 : $Builtin.Int32):
 // CHECK:  apply
 // CHECK:  tuple
 // CHECK:  return
+
+// Check that a owned-to-guaranteed has happened.
+// CHECK-LABEL: sil hidden [noinline] @_T027generic_owned_to_guaranteedTf4g_n : $@convention(thin) <T where T : KlassFoo> (@guaranteed T) -> Int64
+
+// Check that a owned-to-guaranteed has happened.
+// CHECK-LABEL: sil @_T034generic_owned_to_guaranteed_callerTf4g_n : $@convention(thin) <T where T : KlassFoo> (@guaranteed T) -> Int64
+
+// Check that a in-to-guaranteed has happened.
+// CHECK-LABEL: sil hidden [noinline] @_T024generic_in_to_guaranteedTf4g_n : $@convention(thin) <T where T : P> (@in_guaranteed T) -> Int64
+
+// Check that a in-to-guaranteed has happened.
+// CHECK-LABEL: sil @_T031generic_in_to_guaranteed_callerTf4g_n : $@convention(thin) <T where T : P> (@in_guaranteed T) -> Int64
 
