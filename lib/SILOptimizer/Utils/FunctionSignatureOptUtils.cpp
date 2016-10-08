@@ -71,18 +71,16 @@ bool swift::canSpecializeFunction(SILFunction *F) {
   if (F->isExternalDeclaration())
     return false;
 
-  // For now ignore functions with indirect results.
-  if (F->getLoweredFunctionType()->hasIndirectResults())
-    return false;
-
   // Do not specialize the signature of always inline functions. We
   // will just inline them and specialize each one of the individual
   // functions that these sorts of functions are inlined into.
   if (F->getInlineStrategy() == Inline_t::AlwaysInline)
     return false;
 
-  // For now ignore generic functions to keep things simple...
-  if (F->getLoweredFunctionType()->isPolymorphic())
+  // If a generic function can be used externally, then performing FSO
+  // on it would make the client code slower.
+  if (F->isPossiblyUsedExternally() &&
+      F->getLoweredFunctionType()->isPolymorphic())
     return false;
 
   // Make sure F has a linkage that we can optimize.
