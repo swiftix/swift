@@ -174,3 +174,8 @@ SILValue SILOpenedArchetypesState::getOpenedArchetypeDef(Type Ty) const {
     return OpenedArchetypesTracker->getOpenedArchetypeDef(Ty);
   return SILValue();
 }
+
+
+unsigned SILOpenedArchetypesTracker::GlobalTrackerNum;
+
+llvm::DenseMap<SILOpenedArchetypesTracker::OpenedArchetypeDefsMap *, int> SILOpenedArchetypesTracker::MapRefCounts;

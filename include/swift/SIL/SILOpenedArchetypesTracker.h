@@ -32,20 +32,59 @@ namespace swift {
 class SILOpenedArchetypesTracker : public DeleteNotificationHandler {
 public:
   typedef llvm::DenseMap<Type, SILValue> OpenedArchetypeDefsMap;
+
+  SILOpenedArchetypesTracker(SILOpenedArchetypesTracker &Tracker)
+      : SILOpenedArchetypesTracker(Tracker.F, Tracker) {}
+
+  SILOpenedArchetypesTracker(const SILOpenedArchetypesTracker &Tracker)
+      : SILOpenedArchetypesTracker(Tracker.F) {
+    assert(Tracker.getOpenedArchetypeDefs().empty() &&
+           "Only empty const SILOpenedArchetypesTracker can be copied");
+  }
+
   // Re-use pre-populated map if available.
   SILOpenedArchetypesTracker(const SILFunction &F,
                              SILOpenedArchetypesTracker &Tracker)
-      : F(F), OpenedArchetypeDefs(Tracker.OpenedArchetypeDefs) { }
+      : F(F), OpenedArchetypeDefs(Tracker.OpenedArchetypeDefs),
+        Deinitialized(0), TrackerNum(GlobalTrackerNum++) {
+    llvm::dbgs() << "Created SILOpenedArchetypesTracker 1 " << TrackerNum << "\n";
+    llvm::dbgs() << "Tracker address: " << this << "\n";
+    MapRefCounts[&Tracker.OpenedArchetypeDefs]++;
+    MapRefCounts[&LocalOpenedArchetypeDefs]++;
+    assert(MapRefCounts.count(&OpenedArchetypeDefs) && "Non-Local OAD should be in the map");
+    assert(MapRefCounts.count(&LocalOpenedArchetypeDefs) && "Local OAD should be in the map");
+    llvm::dbgs() << "Registering Non-Local OAD " << &OpenedArchetypeDefs << "\n";
+    llvm::dbgs() << "Registering Local OAD " << &LocalOpenedArchetypeDefs << "\n";
+  }
 
   // Re-use pre-populated map if available.
   SILOpenedArchetypesTracker(const SILFunction &F,
                              OpenedArchetypeDefsMap &OpenedArchetypeDefs)
-      : F(F), OpenedArchetypeDefs(OpenedArchetypeDefs) { }
+      : F(F), OpenedArchetypeDefs(OpenedArchetypeDefs),
+        Deinitialized(0), TrackerNum(GlobalTrackerNum++) {
+    llvm::dbgs() << "Created SILOpenedArchetypesTracker 2 " << TrackerNum << "\n";
+    llvm::dbgs() << "Tracker address: " << this << "\n";
+    MapRefCounts[&OpenedArchetypeDefs]++;
+    MapRefCounts[&LocalOpenedArchetypeDefs]++;
+    assert(MapRefCounts.count(&OpenedArchetypeDefs) && "Non-Local OAD should be in the map");
+    assert(MapRefCounts.count(&LocalOpenedArchetypeDefs) && "Local OAD should be in the map");
+    llvm::dbgs() << "Registering Non-Local OAD " << &OpenedArchetypeDefs << "\n";
+    llvm::dbgs() << "Registering Local OAD " << &LocalOpenedArchetypeDefs << "\n";
+  }
 
   // Use its own local map if no pre-populated map is provided.
   SILOpenedArchetypesTracker(const SILFunction &F)
-      : F(F), OpenedArchetypeDefs(LocalOpenedArchetypeDefs) { }
-
+      : F(F), OpenedArchetypeDefs(LocalOpenedArchetypeDefs),
+        Deinitialized(0), TrackerNum(GlobalTrackerNum++) {
+    llvm::dbgs() << "Created SILOpenedArchetypesTracker with own OpenedArchetypeDefs 3 " << TrackerNum << "\n";
+    llvm::dbgs() << "Tracker address: " << this << "\n";
+    //MapRefCounts[&OpenedArchetypeDefs]++;
+    MapRefCounts[&LocalOpenedArchetypeDefs]++;
+    assert(MapRefCounts.count(&OpenedArchetypeDefs) && "Non-Local OAD should be in the map");
+    assert(MapRefCounts.count(&LocalOpenedArchetypeDefs) && "Local OAD should be in the map");
+    llvm::dbgs() << "Registering Non-Local OAD " << &OpenedArchetypeDefs << "\n";
+    llvm::dbgs() << "Registering Local OAD " << &LocalOpenedArchetypeDefs << "\n";
+  }
 
   const SILFunction &getFunction() const { return F; }
 
@@ -63,10 +102,18 @@ public:
   // Return the SILValue defining a given archetype.
   // If the defining value is not known, return an empty SILValue.
   SILValue getOpenedArchetypeDef(Type archetype) const {
+    llvm::dbgs() << "SILOpenedArchetypesTracker::getOpenedArchetypeDef " << TrackerNum << "\n";
+    llvm::dbgs() << "Tracker address: " << this << "\n";
+    assert(MapRefCounts.count(&OpenedArchetypeDefs) && "Non-Local OAD should be in the map");
+    assert(MapRefCounts.count(const_cast<OpenedArchetypeDefsMap *>(&LocalOpenedArchetypeDefs)) && "Local OAD should be in the map");
     return OpenedArchetypeDefs.lookup(archetype);
   }
 
   const OpenedArchetypeDefsMap &getOpenedArchetypeDefs() const {
+    llvm::dbgs() << "SILOpenedArchetypesTracker::getOpenedArchetypeDefs " << TrackerNum << "\n";
+    llvm::dbgs() << "Tracker address: " << this << "\n";
+    assert(MapRefCounts.count(&OpenedArchetypeDefs) && "Non-Local OAD should be in the map");
+    assert(MapRefCounts.count(const_cast<OpenedArchetypeDefsMap *>(&LocalOpenedArchetypeDefs)) && "Local OAD should be in the map");
     return OpenedArchetypeDefs;
   }
 
@@ -100,11 +147,42 @@ public:
   void handleDeleteNotification(swift::ValueBase *Value);
 
   virtual ~SILOpenedArchetypesTracker() {
+    assert(!Deinitialized);
+    llvm::dbgs() << "Deinit SILOpenedArchetypesTracker " << TrackerNum << "\n";
+    llvm::dbgs() << "Tracker address: " << this << "\n";
+    llvm::dbgs() << "Non-Local OAD " << &OpenedArchetypeDefs << "\n";
+    llvm::dbgs() << "Local OAD " << &LocalOpenedArchetypeDefs << "\n";
+    assert(TrackerNum <= GlobalTrackerNum);
+
+    assert(MapRefCounts.count(&LocalOpenedArchetypeDefs) && "Local OAD should be in the map");
+    auto &LocalRefCount = MapRefCounts[&LocalOpenedArchetypeDefs];
+    assert(LocalRefCount == 1 && "Wrong LocalRefCount");
+
+    assert(MapRefCounts.count(&OpenedArchetypeDefs) && "Non-Local OAD should be in the map");
+    auto &RefCount = MapRefCounts[&OpenedArchetypeDefs];
+    assert((&RefCount == &LocalRefCount || RefCount > 1) && "Wrong RefCount");
+
+    if (&LocalRefCount != &RefCount)
+      --RefCount;
+
+    if (!--LocalRefCount) {
+      llvm::dbgs() << "Erasing Local OAD " << &LocalOpenedArchetypeDefs << "\n";
+      MapRefCounts.erase(&LocalOpenedArchetypeDefs);
+    }
+
+    //if (&LocalRefCount != &RefCount && !--RefCount) {
+    //  MapRefCounts.erase(&OpenedArchetypeDefs);
+    //}
     // Unregister the handler.
     F.getModule().removeDeleteNotificationHandler(this);
+    Deinitialized++;
   }
 
 private:
+  // Never copy
+  // SILOpenedArchetypesTracker(const SILOpenedArchetypesTracker &) = delete;
+  SILOpenedArchetypesTracker &operator = (const SILOpenedArchetypesTracker &) = delete;
+
   /// The function whose opened archetypes are being tracked.
   /// Used only for verification purposes.
   const SILFunction &F;
@@ -113,6 +191,10 @@ private:
   /// Local map to be used if no other map was provided in the
   /// constructor.
   OpenedArchetypeDefsMap LocalOpenedArchetypeDefs;
+  int Deinitialized;
+  unsigned TrackerNum;
+  static unsigned GlobalTrackerNum;
+  static llvm::DenseMap<OpenedArchetypeDefsMap *, int> MapRefCounts;
 };
 
 // A state object containing information about opened archetypes.
