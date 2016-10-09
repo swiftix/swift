@@ -806,7 +806,7 @@ collectMatchingReleases(SILBasicBlock *BB) {
   for (auto II = std::next(BB->rbegin()), IE = BB->rend(); II != IE; ++II) {
     bool isDestroyAddr = false;
     if (isa<DestroyAddrInst>(*II)) {
-      // It is a destroy addr for a 
+      // It is probably a destroy addr for an @in argument.
     }
     // If we do not have a release_value or strong_release. We can continue
     else if (!isa<ReleaseValueInst>(*II) && !isa<StrongReleaseInst>(*II)) {
@@ -864,12 +864,37 @@ collectMatchingReleases(SILBasicBlock *BB) {
     //
     // If we are seeing a redundant release we have exited the return value
     // sequence, so break.
-    if (isRedundantRelease(Iter->second, Arg, OrigOp)) 
-      break;
+    if (!isa<DestroyAddrInst>(Target))
+      if (isRedundantRelease(Iter->second, Arg, OrigOp)) 
+        break;
     
     // We've seen part of this base, but this is a part we've have not seen.
     // Record it. 
     Iter->second.push_back(Target);
+  }
+
+  // Check if we can find destory_addr for each @in argument.
+  auto *F = BB->getParent();
+  auto Args = F->getArguments();
+  for (auto Arg : Args) {
+    if (Arg->isIndirectResult())
+      continue;
+    if (Arg->getArgumentConvention() != SILArgumentConvention::Indirect_In)
+      continue;
+    // This is an @in argument. Check if it has a destroy_addr.
+    if (ArgInstMap.find(Arg) == ArgInstMap.end()) {
+      // We haven't seen a destroy_addr in the epilogue BB yet,
+      // but may be it is hoisted?
+      for (auto Use : getNonDebugUses(Arg)) {
+        auto User = Use->getUser();
+        if (!isa<DestroyAddrInst>(User))
+          continue;
+        ArgInstMap[Arg].push_back(dyn_cast<SILInstruction>(User));
+      }
+    }
+    // If we have more than one destroy_addr, we don't know what to do.
+    if (ArgInstMap[Arg].size() > 1)
+      ArgInstMap[Arg].clear();
   }
 }
 
