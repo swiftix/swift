@@ -1122,7 +1122,7 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
 
   // We don't support this yet.
   if (AI.hasSubstitutions()) {
-    return nullptr;
+    //return nullptr;
     // Do not inline @_semantics functions when compiling the stdlib,
     // because they need to be preserved, so that the optimizer
     // can properly optimize a user code later.
@@ -1131,11 +1131,20 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
          Callee->getModule().getSwiftModule()->getName().str() ==
              SWIFT_ONONE_SUPPORT))
       return nullptr;
+#if 0
     // Perform generic inlining only for transparent or always inline functions.
     if (!Callee->isTransparent() &&
         Callee->getInlineStrategy() != AlwaysInline)
       if (true || WhatToInline != InlineSelection::Everything) {
         return nullptr;
+    }
+#endif
+
+    if (Callee->isThunk() && Callee->getInlineStrategy() == AlwaysInline) {
+      llvm::dbgs() << "\nInlining generic function " << Callee->getName() << "\n";
+      Callee->dump();
+    } else {
+      return nullptr;
     }
   }
 

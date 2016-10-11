@@ -434,9 +434,101 @@ computeOptimizedArgInterface(ArgumentDescriptor &AD, SILParameterInfoList &Out) 
   Out.push_back(AD.PInfo.getValue());
 }
 
+/// Collect all archetypes used by a function.
+static void collectUsedArchetypes(SILFunction *F,
+                                  llvm::DenseSet<Type> &UsedArchetypes,
+                                  ArrayRef<SILParameterInfo> InterfaceParams,
+                                  ArrayRef<SILResultInfo> InterfaceResults) {
+  CanSILFunctionType FTy = F->getLoweredFunctionType();
+  auto HasGenericSignature = FTy->getGenericSignature() != nullptr;
+  if (!HasGenericSignature)
+    return;
+
+  auto RegisterArchetypesAndGenericTypes = [&UsedArchetypes](Type Ty) {
+    if (isa<ArchetypeType>(Ty.getCanonicalTypeOrNull()))
+      UsedArchetypes.insert(Ty);
+    if (isa<GenericTypeParamType>(Ty.getCanonicalTypeOrNull()))
+      UsedArchetypes.insert(Ty);
+  };
+
+  for (auto Param : InterfaceParams) {
+    Param.getType().visit(RegisterArchetypesAndGenericTypes);
+  }
+
+  for (auto Result : InterfaceResults) {
+    Result.getType().visit(RegisterArchetypesAndGenericTypes);
+  }
+
+  if (UsedArchetypes.size() >=
+          FTy->getGenericSignature()->getGenericParams().size())
+    return;
+
+  for (auto &BB : *F) {
+    for (auto &I : BB) {
+      for (auto Arg : BB.getBBArgs()) {
+        if (&BB != &*F->begin()) {
+          // Scan types of all BB arguments. Ignore the entry BB, because
+          // it is handled in a special way.
+          Arg->getType().getSwiftRValueType().visit(RegisterArchetypesAndGenericTypes);
+        }
+      }
+      // Scan types of all operands.
+      for (auto &Op : I.getAllOperands()) {
+        Op.get()->getType().getSwiftRValueType().visit(RegisterArchetypesAndGenericTypes);
+      }
+      // Scan all substitutions of apply instructions.
+      if (auto AI = ApplySite::isa(&I)) {
+        auto Subs = AI.getSubstitutions();
+        for (auto Sub : Subs) {
+          Sub.getReplacement().visit(RegisterArchetypesAndGenericTypes);
+        }
+      }
+      // Scan the result type of the instruction.
+      if (I.getType()) {
+        I.getType().getSwiftRValueType().visit(RegisterArchetypesAndGenericTypes);
+      }
+    }
+  }
+}
+
+// Map the parameter, result and error types out of context to get the interface
+// type.
+static void
+mapInterfaceTypes(SILFunction *F,
+                  MutableArrayRef<SILParameterInfo> InterfaceParams,
+                  MutableArrayRef<SILResultInfo> InterfaceResults,
+                  Optional<SILResultInfo> &InterfaceErrorResult) {
+
+  for (auto &Param : InterfaceParams) {
+    if (!Param.getType()->hasArchetype())
+      continue;
+    Param = SILParameterInfo(
+      F->mapTypeOutOfContext(Param.getType())->getCanonicalType(),
+      Param.getConvention());
+  }
+
+  for (auto &Result : InterfaceResults) {
+    if (!Result.getType()->hasArchetype())
+      continue;
+    auto InterfaceResult = Result.getWithType(
+        F->mapTypeOutOfContext(Result.getType())->getCanonicalType());
+    Result = InterfaceResult;
+  }
+
+  if (InterfaceErrorResult.hasValue()) {
+    if (InterfaceErrorResult.getValue().getType()->hasArchetype()) {
+      InterfaceErrorResult = SILResultInfo(
+          F->mapTypeOutOfContext(InterfaceErrorResult.getValue().getType())
+              ->getCanonicalType(),
+          InterfaceErrorResult.getValue().getConvention());
+    }
+  }
+}
+
 CanSILFunctionType FunctionSignatureTransform::createOptimizedSILFunctionType() {
   CanSILFunctionType FTy = F->getLoweredFunctionType();
   auto ExpectedFTy = F->getLoweredType().castTo<SILFunctionType>();
+  auto HasGenericSignature = FTy->getGenericSignature() != nullptr;
 
   // The only way that we modify the arity of function parameters is here for
   // dead arguments. Doing anything else is unsafe since by definition non-dead
@@ -460,10 +552,37 @@ CanSILFunctionType FunctionSignatureTransform::createOptimizedSILFunctionType() 
         InterfaceResults.push_back(SILResultInfo(InterfaceResult.getType(),
                                                  ResultConvention::Unowned));
         continue;
-      }   
-    }   
+      }
+    }
 
     InterfaceResults.push_back(InterfaceResult);
+  }
+
+  llvm::DenseSet<Type> UsedArchetypes;
+  if (HasGenericSignature) {
+    // Not all of the generic type parameters are used by the function
+    // parameters.
+    // Check which of the generic type parameters are not used and check if they
+    // are used anywhere in the function body. If this is not the case, we can
+    // remove the unused generic type parameters from the generic signature.
+    collectUsedArchetypes(F, UsedArchetypes, InterfaceParams, InterfaceResults);
+
+    // The set of used archetypes is complete now.
+    if (UsedArchetypes.empty()) {
+      // None of the generic type parameters are used.
+      llvm::dbgs() << "None of generic parameters are used by " << F->getName() << "\n";
+      llvm::dbgs() << "Interface params:\n";
+      for (auto Param : InterfaceParams) {
+        Param.getType().dump();
+        //llvm::dbgs() << Param.getType() << "\n";
+      }
+
+      llvm::dbgs() << "Interface results:\n";
+      for (auto Result : InterfaceResults) {
+        Result.getType().dump();
+        //llvm::dbgs() << Result.getType() << "\n";
+      }
+    }
   }
 
   // Don't use a method representation if we modified self.
@@ -472,49 +591,21 @@ CanSILFunctionType FunctionSignatureTransform::createOptimizedSILFunctionType() 
     ExtInfo = ExtInfo.withRepresentation(SILFunctionTypeRepresentation::Thin);
   }
 
-  // Map the parameter, result and error types out of context to get the interface
-  // type.
-  SmallVector<SILParameterInfo, 4> MappedInterfaceParams;
-  MappedInterfaceParams.reserve(InterfaceParams.size());
-  for (auto &Param : InterfaceParams) {
-    if (!Param.getType()->hasArchetype()) {
-      MappedInterfaceParams.push_back(Param);
-      continue;
-    }
-    MappedInterfaceParams.push_back(
-      SILParameterInfo(
-          F->mapTypeOutOfContext(Param.getType())
-              ->getCanonicalType(),
-          Param.getConvention()));
-  }
-
-  SmallVector<SILResultInfo, 4> MappedInterfaceResults;
-  for (auto &Result : InterfaceResults) {
-    if (!Result.getType()->hasArchetype()) {
-      MappedInterfaceResults.push_back(Result);
-      continue;
-    }
-    auto InterfaceResult = Result.getWithType(
-        F->mapTypeOutOfContext(Result.getType())
-            ->getCanonicalType());
-    MappedInterfaceResults.push_back(InterfaceResult);
-  }
-
   Optional<SILResultInfo> InterfaceErrorResult;
   if (ExpectedFTy->hasErrorResult()) {
-    if (!ExpectedFTy->getErrorResult().getType()->hasArchetype()) {
-      InterfaceErrorResult = ExpectedFTy->getErrorResult();
-    } else {
-      InterfaceErrorResult = SILResultInfo(
-          F->mapTypeOutOfContext(ExpectedFTy->getErrorResult().getType())
-              ->getCanonicalType(),
-          ExpectedFTy->getErrorResult().getConvention());
-    }
+    InterfaceErrorResult = ExpectedFTy->getErrorResult();
   }
 
-  return SILFunctionType::get(FTy->getGenericSignature(), ExtInfo,
-                              FTy->getCalleeConvention(), MappedInterfaceParams,
-                              MappedInterfaceResults, InterfaceErrorResult,
+  // Map the parameter, result and error types out of context to get the interface
+  // type.
+  mapInterfaceTypes(F, InterfaceParams, InterfaceResults, InterfaceErrorResult);
+
+  GenericSignature *GenericSig =
+      UsedArchetypes.empty() ? nullptr : FTy->getGenericSignature();
+
+  return SILFunctionType::get(GenericSig, ExtInfo,
+                              FTy->getCalleeConvention(), InterfaceParams,
+                              InterfaceResults, InterfaceErrorResult,
                               F->getModule().getASTContext());
 }
 
@@ -535,9 +626,16 @@ void FunctionSignatureTransform::createFunctionSignatureOptimizedFunction() {
   // the performance as no implcit type metadata needs to be passed to this
   // function.
 
+  auto NewFTy = createOptimizedSILFunctionType();
+  GenericEnvironment *NewFGenericEnv;
+  if (NewFTy->getGenericSignature()) {
+    NewFGenericEnv = F->getGenericEnvironment();
+  } else {
+    NewFGenericEnv = nullptr;
+  }
   NewF = M.createFunction(
       linkage, Name,
-      createOptimizedSILFunctionType(), F->getGenericEnvironment(),
+      NewFTy, NewFGenericEnv,
       F->getLocation(), F->isBare(),
       F->isTransparent(), F->isFragile(), F->isThunk(), F->getClassVisibility(),
       F->getInlineStrategy(), F->getEffectsKind(), 0, F->getDebugScope(),
@@ -629,6 +727,16 @@ void FunctionSignatureTransform::createFunctionSignatureOptimizedFunction() {
 
   // Do the last bit work to finalize the thunk.
   OwnedToGuaranteedFinalizeThunkFunction(Builder, F);
+
+  if (F->getLoweredFunctionType()->getGenericSignature() &&
+      !NewF->getLoweredFunctionType()->getGenericSignature()) {
+    // We removed a generic signature from the optimized version.
+    llvm::dbgs() << "FSO thunk is:\n";
+    F->dump();
+    llvm::dbgs() << "\nFSO optimized function:\n";
+    NewF->dump();
+  }
+
   assert(F->getDebugScope()->Parent != NewF->getDebugScope()->Parent);
 }
 

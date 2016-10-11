@@ -872,7 +872,7 @@ collectMatchingReleases(SILBasicBlock *BB) {
     // Record it. 
     Iter->second.push_back(Target);
   }
-
+#if 0
   // Check if we can find destory_addr for each @in argument.
   auto *F = BB->getParent();
   auto Args = F->getArguments();
@@ -892,10 +892,12 @@ collectMatchingReleases(SILBasicBlock *BB) {
         ArgInstMap[Arg].push_back(dyn_cast<SILInstruction>(User));
       }
     }
-    // If we have more than one destroy_addr, we don't know what to do.
-    if (ArgInstMap[Arg].size() > 1)
-      ArgInstMap[Arg].clear();
+    // If we have more than one destroy_addr or no destroy_addrs at all,
+    // we don't know what to do.
+    if (ArgInstMap[Arg].size() != 1)
+      ArgInstMap.erase(Arg);
   }
+#endif
 }
 
 void
