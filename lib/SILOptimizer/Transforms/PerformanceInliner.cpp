@@ -390,8 +390,21 @@ bool SILPerformanceInliner::isProfitableToInlineNonGeneric(FullApplySite AI,
                               /* IsGeneric */ false);
 }
 
+/// Checks if a given generic apply should be inlined unconditionally, i.e.
+/// without any complex analysis using e.g. a cost model.
+/// It returns true if a function should be inlined.
+/// It returns false if a function should not be inlined.
+/// It returns None if the decision cannot be made without a more complex
+/// analysis. 
+static Optional<bool> shouldInlineGeneric(FullApplySite AI) {
   assert(!AI.getSubstitutions().empty() &&
          "Expected a generic apply");
+
+  // If all substitutions are concrete, then there is no need to perform the
+  // generic inlining. Let the generic specializer create a specialized
+  // function and then decide if it is beneficial to inline it.
+  if (!hasUnboundGenericTypes(AI.getSubstitutions()))
+    return false;
 
   SILFunction *Callee = AI.getReferencedFunction();
 
@@ -410,8 +423,29 @@ bool SILPerformanceInliner::isProfitableToInlineNonGeneric(FullApplySite AI,
 
   // Only inline if we decided to inline or we are asked to inline all
   // generic functions.
-  if (ShouldInline || EnableSILInliningOfGenerics)
+  if (ShouldInline)
     return true;
+
+  return None;
+}
+
+/// Return true if inlining this call site is profitable.
+bool SILPerformanceInliner::isProfitableToInlineGeneric(FullApplySite AI,
+                                              Weight CallerWeight,
+                                              ConstantTracker &callerTracker,
+                                              int &NumCallerBlocks) {
+  assert(!AI.getSubstitutions().empty() &&
+         "Expected a generic apply");
+  
+  auto ShouldInlineGeneric = shouldInlineGeneric(AI);
+  if (ShouldInlineGeneric.hasValue())
+    return ShouldInlineGeneric.getValue();
+
+  SILFunction *Callee = AI.getReferencedFunction();
+
+  if (EnableSILInliningOfGenerics) {
+    return true;
+  }
 
   return false;
 }
