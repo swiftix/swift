@@ -444,7 +444,8 @@ bool SILPerformanceInliner::isProfitableToInlineGeneric(FullApplySite AI,
   SILFunction *Callee = AI.getReferencedFunction();
 
   if (EnableSILInliningOfGenerics) {
-    return true;
+    return isProfitableToInline(AI, CallerWeight, callerTracker, NumCallerBlocks,
+                              /* IsGeneric */ true);
   }
 
   return false;
