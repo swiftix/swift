@@ -45,6 +45,11 @@ using namespace Mangle;
 //===----------------------------------------------------------------------===//
 
 static void mangleSubstitution(Mangler &M, Substitution Sub) {
+  if (Sub.getReplacement()->hasArchetype()) {
+    // It is a partial specialization.
+    M.append("_PS");
+    return;
+  }
   M.mangleType(Sub.getReplacement()->getCanonicalType(), 0);
   for (auto C : Sub.getConformances()) {
     if (C.isAbstract())

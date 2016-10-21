@@ -58,6 +58,8 @@ public:
 
   void addSubstitution(CanType type, Type replacement);
 
+  void replaceSubstitution(CanType type, Type replacement);
+
   void addConformances(CanType type, ArrayRef<ProtocolConformanceRef> conformances);
 
   void addParent(CanType type, CanType parent,
