@@ -96,6 +96,14 @@ addSubstitution(CanType type, Type replacement) {
 }
 
 void SubstitutionMap::
+replaceSubstitution(CanType type, Type replacement) {
+  subMap.erase(type.getPointer());
+  auto result = subMap.insert(std::make_pair(type.getPointer(), replacement));
+  assert(result.second);
+  (void) result;
+}
+
+void SubstitutionMap::
 addConformances(CanType type, ArrayRef<ProtocolConformanceRef> conformances) {
   if (conformances.empty())
     return;

@@ -43,6 +43,216 @@ static unsigned getBoundGenericDepth(Type t) {
   return Depth;
 }
 
+#if 0
+// =============================================================================
+// Creation of new generic functions
+// =============================================================================
+
+static const char * const GenericParamNames[] = {
+  "T",
+  "U",
+  "V",
+  "W",
+  "X",
+  "Y",
+  "Z"
+};
+
+static std::pair<ArchetypeType*, GenericTypeParamDecl*>
+createGenericParam(ASTContext &ctx, const char *name, unsigned index) {
+  Module *M = ctx.TheBuiltinModule;
+  Identifier ident = ctx.getIdentifier(name);
+  ArchetypeType *archetype
+    = ArchetypeType::getNew(ctx, nullptr,
+                            static_cast<AssociatedTypeDecl *>(nullptr),
+                            ident, ArrayRef<Type>(), Type(), false);
+  auto genericParam =
+    new (ctx) GenericTypeParamDecl(&M->getMainFile(FileUnitKind::Builtin),
+                                   ident, SourceLoc(), 0, index);
+  return std::make_pair(archetype, genericParam);
+}
+
+/// Create a generic parameter list with multiple generic parameters.
+static GenericParamList *getGenericParams(ASTContext &ctx,
+                                          unsigned numParameters,
+                       SmallVectorImpl<ArchetypeType*> &archetypes,
+                       SmallVectorImpl<GenericTypeParamDecl*> &genericParams) {
+  assert(numParameters <= llvm::array_lengthof(GenericParamNames));
+  assert(genericParams.empty());
+
+  for (unsigned i = 0; i != numParameters; ++i) {
+    auto archetypeAndParam = createGenericParam(ctx, GenericParamNames[i], i);
+    archetypes.push_back(archetypeAndParam.first);
+    genericParams.push_back(archetypeAndParam.second);
+  }
+
+  auto paramList = GenericParamList::create(ctx, SourceLoc(), genericParams,
+                                            SourceLoc());
+  return paramList;
+}
+
+namespace {
+  class GenericSignatureBuilder {
+  public:
+    ASTContext &Context;
+
+  private:
+    GenericParamList *TheGenericParamList;
+
+    SmallVector<GenericTypeParamDecl*, 2> GenericTypeParams;
+    SmallVector<ArchetypeType*, 2> Archetypes;
+
+    TypeSubstitutionMap InterfaceToArchetypeMap;
+
+    SmallVector<TupleTypeElt, 4> InterfaceParams;
+    SmallVector<Type, 4> BodyParams;
+
+    Type InterfaceResult;
+    Type BodyResult;
+
+  public:
+    GenericSignatureBuilder(ASTContext &ctx, unsigned numGenericParams = 1)
+        : Context(ctx) {
+      TheGenericParamList = getGenericParams(ctx, numGenericParams,
+                                             Archetypes, GenericTypeParams);
+
+      for (unsigned i = 0, e = GenericTypeParams.size(); i < e; i++) {
+        auto paramTy = GenericTypeParams[i]->getDeclaredType()
+            ->getCanonicalType().getPointer();
+        InterfaceToArchetypeMap[paramTy] = Archetypes[i];
+      }
+    }
+
+    template <class G>
+    void addParameter(const G &generator) {
+      InterfaceParams.push_back(generator.build(*this, false));
+      BodyParams.push_back(generator.build(*this, true));
+    }
+
+    template <class G>
+    void setResult(const G &generator) {
+      InterfaceResult = generator.build(*this, false);
+      BodyResult = generator.build(*this, true);
+    }
+
+    ValueDecl *build(Identifier name) {
+      return getBuiltinGenericFunction(name, InterfaceParams, BodyParams,
+                                       InterfaceResult, BodyResult,
+                                       TheGenericParamList,
+                                       InterfaceToArchetypeMap);
+    }
+
+    // Don't use these generator classes directly; call the make{...}
+    // functions which follow this class.
+
+    struct ConcreteGenerator {
+      Type TheType;
+      Type build(GenericSignatureBuilder &builder, bool forBody) const {
+        return TheType;
+      }
+    };
+    struct ParameterGenerator {
+      unsigned Index;
+      Type build(GenericSignatureBuilder &builder, bool forBody) const {
+        return (forBody ? builder.Archetypes[Index]
+                        : builder.GenericTypeParams[Index]->getDeclaredType());
+      }
+    };
+    struct LambdaGenerator {
+      std::function<Type(GenericSignatureBuilder &,bool)> TheFunction;
+      Type build(GenericSignatureBuilder &builder, bool forBody) const {
+        return TheFunction(builder, forBody);
+      }
+    };
+    template <class T, class U>
+    struct FunctionGenerator {
+      T Arg;
+      U Result;
+      FunctionType::ExtInfo ExtInfo;
+      Type build(GenericSignatureBuilder &builder, bool forBody) const {
+        return FunctionType::get(Arg.build(builder, forBody),
+                                 Result.build(builder, forBody),
+                                 ExtInfo);
+      }
+    };
+    template <class T>
+    struct InOutGenerator {
+      T Object;
+      Type build(GenericSignatureBuilder &builder, bool forBody) const {
+        return InOutType::get(Object.build(builder, forBody));
+      }
+    };
+    template <class T>
+    struct MetatypeGenerator {
+      T Object;
+      Optional<MetatypeRepresentation> Repr;
+      Type build(GenericSignatureBuilder &builder, bool forBody) const {
+        return MetatypeType::get(Object.build(builder, forBody), Repr);
+      }
+    };
+  };
+}
+
+static GenericSignatureBuilder::ConcreteGenerator
+makeConcrete(Type type) {
+  return { type };
+}
+
+static GenericSignatureBuilder::ParameterGenerator
+makeGenericParam(unsigned index = 0) {
+  return { index };
+}
+
+template <class... Gs>
+static GenericSignatureBuilder::LambdaGenerator
+makeTuple(const Gs & ...elementGenerators) {
+  return {
+    [=](GenericSignatureBuilder &builder, bool forBody) -> Type {
+      TupleTypeElt elts[] = {
+        elementGenerators.build(builder, forBody)...
+      };
+      return TupleType::get(elts, builder.Context);
+    }
+  };
+}
+
+template <class T, class U>
+static GenericSignatureBuilder::FunctionGenerator<T,U>
+makeFunction(const T &arg, const U &result,
+             FunctionType::ExtInfo extInfo = FunctionType::ExtInfo()) {
+  return { arg, result, extInfo };
+}
+
+template <class T>
+static GenericSignatureBuilder::InOutGenerator<T>
+makeInOut(const T &object) {
+  return { object };
+}
+
+template <class T>
+static GenericSignatureBuilder::MetatypeGenerator<T>
+makeMetatype(const T &object, Optional<MetatypeRepresentation> repr = None) {
+  return { object, repr };
+}
+
+SILFunction *createFunctionWithSubstitutions(SILFunction *Orig,
+                                             ArrayRef<Substitution> ParamSubs) {
+  if (!hasUnboundGenericTypes(ParamSubs))
+    return Orig;
+
+  // Some of the substitutions contain unbound generic types.
+  // Try to create a new generic function.
+
+  for (auto Sub : ParamSubs) {
+    if (Sub.getReplacement()->hasArchetype()) {
+      // This type parameter should stay generic.
+      contninue;
+    }
+    // This type parameter is not needed as it is concrete.
+  }
+}
+#endif
+
 // =============================================================================
 // ReabstractionInfo
 // =============================================================================
@@ -57,10 +267,105 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
   }
 
   SubstitutionMap InterfaceSubs;
+  SubstitutionMap NewInterfaceSubs;
+  SubstitutionMap *FinalInterfaceSubs = &InterfaceSubs;
+
   if (OrigF->getLoweredFunctionType()->getGenericSignature())
     InterfaceSubs = OrigF->getLoweredFunctionType()->getGenericSignature()
       ->getSubstitutionMap(ParamSubs);
 
+  bool HasConcreteGenericParams = false;
+  bool HasUnboundGenericParams = false;
+  for (auto &entry : InterfaceSubs.getMap()) {
+    if (entry.second->getCanonicalType()->hasArchetype()) {
+      HasUnboundGenericParams = true;
+      continue;
+    }
+    HasConcreteGenericParams = true;
+    //break;
+  }
+
+  if (!HasConcreteGenericParams) {
+    // All substititions are unbound.
+    DEBUG(llvm::dbgs() <<
+          "    Cannot specialize with all unbound interface substitutions.\n");
+    DEBUG(for (auto Sub : ParamSubs) {
+            Sub.dump();
+          });
+    return;
+  }
+
+  if (HasUnboundGenericParams) {
+#if 1
+    // Try to form a new generic signature based on the old one.
+    auto OrigSig = OrigF->getLoweredFunctionType()->getGenericSignature();
+    ArchetypeBuilder Builder(*OrigF->getModule().getSwiftModule(), OrigF->getModule().getASTContext().Diags);
+
+    //Builder.addGenericSignature(OrigSig, OrigF->getGenericEnvironment(), true);
+    for (auto GP : OrigSig->getGenericParams()) {
+      Builder.addGenericParameter(GP);
+    }
+
+    auto OrigRequirements = OrigSig->getRequirements();
+    auto Source = RequirementSource(RequirementSource::Explicit, SourceLoc());
+    for (auto &Req : OrigRequirements) {
+      Builder.addRequirement(Req, Source);
+    }
+
+#if 1
+    for (auto &entry : InterfaceSubs.getMap()) {
+      if (!entry.second->getCanonicalType()->hasArchetype()) {
+        auto CanTy = entry.first->getCanonicalType();
+        auto OutTy = !CanTy->hasTypeParameter() ? OrigF->mapTypeOutOfContext(CanTy) : CanTy;
+        //auto InTy = OrigF->mapTypeIntoContext(CanTy);
+
+        Builder.addSameTypeRequirementToConcrete(
+            Builder.resolveArchetype(OutTy),
+            entry.second->getCanonicalType(),
+            RequirementSource(RequirementSource::Explicit, SourceLoc()));
+
+        //Builder.addSameTypeRequirementToConcrete(
+        //    Builder.resolveArchetype(InTy),
+        //    entry.second->getCanonicalType(),
+        //    RequirementSource(RequirementSource::Explicit, SourceLoc()));
+      }
+    }
+#endif
+    // TODO: Minimize the generic signature?
+    // I.e. if a given generic parameter is only use in a form T == concrete_type and nowhere else,
+    // simply remove it.
+    Builder.finalize(SourceLoc(), false);
+    auto NewGenSig = Builder.getGenericSignature();
+    NewGenSig->dump();
+#endif
+
+    // There are some unbound substitutions.
+    auto ForwardingSubs = OrigF->getForwardingSubstitutions();
+    NewInterfaceSubs = InterfaceSubs;
+    FinalInterfaceSubs = &NewInterfaceSubs;
+    // Remap unbound generic params to themselves.
+    for (auto &entry : InterfaceSubs.getMap()) {
+      if (entry.second->getCanonicalType()->hasArchetype()) {
+        auto CanTy = entry.first->getCanonicalType();
+#if 0
+        // NewInterfaceSubs.removeType(entry.first);
+        auto CanTy = entry.first->getCanonicalType();
+        NewInterfaceSubs.replaceSubstitution(
+            CanTy,
+            (CanTy->hasArchetype() || isa<GenericTypeParamType>(CanTy))
+                //? OrigF->mapTypeOutOfContext(entry.first->getCanonicalType())
+                ? OrigF->mapTypeIntoContext(CanTy)
+                : CanTy);
+#endif
+        // Do not substitute this type.
+        NewInterfaceSubs.removeType(CanTy);
+      } else {
+        //NewInterfaceSubs.addSubstitution(entry.first->getCanonicalType(), entry.second);
+      }
+    }
+  }
+
+#if 0
   // We do not support partial specialization.
   if (hasUnboundGenericTypes(InterfaceSubs.getMap())) {
     DEBUG(llvm::dbgs() <<
@@ -70,6 +375,8 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
           });
     return;
   }
+#endif
+
   if (hasDynamicSelfTypes(InterfaceSubs.getMap())) {
     DEBUG(llvm::dbgs() << "    Cannot specialize with dynamic self.\n");
     return;
@@ -90,13 +397,62 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
   SILModule &M = OrigF->getModule();
   Module *SM = M.getSwiftModule();
 
-  SubstitutedType = SILType::substFuncType(M, SM, InterfaceSubs.getMap(),
+  // Find out how the function type looks like after applying the provided
+  // substitutions.
+  SubstitutedType = SILType::substFuncType(M, SM, FinalInterfaceSubs->getMap(),
                                            OrigF->getLoweredFunctionType(),
-                                           /*dropGenerics = */ true);
+                                           /*dropGenerics = */ !HasUnboundGenericParams);
 
-  NumResults = SubstitutedType->getNumIndirectResults();
-  Conversions.resize(NumResults + SubstitutedType->getParameters().size());
-  if (SubstitutedType->getNumDirectResults() == 0) {
+  auto MappedSubstitutedType = SubstitutedType;
+  auto FinalSubstitutedType = SubstitutedType;
+
+  if (HasUnboundGenericParams) {
+    // If generic signature was not dropped, then it still has the same number
+    // of generic parameters as the origF's lowered function type. But the
+    // actual signature of the partially specialized function should contain
+    // only generic parameters for those generic typw parameters which were not
+    // substituted by concrete types.
+    auto SubstOrigGenSig = SubstitutedType->getGenericSignature();
+
+    // Form a new list of generic parameters. It contains all those generic
+    // parameters, which are not bound in the substitued generic signature.
+    // FIXME: Can we reuse the GenericTypeParamType and requirements from
+    // the existing signature.
+    auto OrigGenricParams = SubstOrigGenSig->getGenericParams();
+    SmallVector<GenericTypeParamType *, 4> GenericParams;
+    for (auto GP : OrigGenricParams) {
+      TypeBase *Ty = GP->getCanonicalType().getPointer();
+      Type ReplacementTy = InterfaceSubs.getMap().lookup(Ty);
+      assert(ReplacementTy);
+      if (!ReplacementTy->getCanonicalType()->hasArchetype())
+        continue;
+      GenericParams.push_back(GP);
+    }
+
+    // Create a new generic signature with fewer generic type parameters.
+    auto SubstGenSig = GenericSignature::get(
+        GenericParams, SubstOrigGenSig->getRequirements());
+
+    // Create a new substituted type, which the updated signature.
+    Optional<SILResultInfo> ErrorResult;
+    if (SubstitutedType->hasErrorResult())
+      ErrorResult = SubstitutedType->getErrorResult();
+
+    FinalSubstitutedType = SILFunctionType::get(
+        SubstGenSig, SubstitutedType->getExtInfo(),
+        SubstitutedType->getCalleeConvention(),
+        SubstitutedType->getParameters(), SubstitutedType->getAllResults(),
+        ErrorResult, M.getASTContext());
+    // MappedSubstitutedType =
+    // dyn_cast<SILFunctionType>(OrigF->mapTypeIntoContext(MappedSubstitutedType)->getCanonicalType());
+    // MappedSubstitutedType = SILType::substFuncType(M, SM,
+    // FinalInterfaceSubs->getMap(), SubstitutedType, false);
+  }
+
+  NumResults = FinalSubstitutedType->getNumIndirectResults();
+  Conversions.resize(NumResults + FinalSubstitutedType->getParameters().size());
+  // TODO: isLoadable checks assert for generic types currently.
+  if (FinalSubstitutedType->getNumDirectResults() == 0) {
     // The original function has no direct result yet. Try to convert the first
     // indirect result to a direct result.
     // TODO: We could also convert multiple indirect results by returning a
@@ -104,6 +460,7 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     unsigned IdxForResult = 0;
     for (SILResultInfo RI : SubstitutedType->getIndirectResults()) {
       assert(RI.isIndirect());
+      if (!RI.getSILType().getSwiftRValueType()->hasUnboundGenericType())
       if (RI.getSILType().isLoadable(M) && !RI.getType()->isVoid()) {
         Conversions.set(IdxForResult);
         break;
@@ -114,13 +471,14 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
   // Try to convert indirect incoming parameters to direct parameters.
   unsigned IdxForParam = NumResults;
   for (SILParameterInfo PI : SubstitutedType->getParameters()) {
+    if (!PI.getSILType().getSwiftRValueType()->hasUnboundGenericType())
     if (PI.getSILType().isLoadable(M) &&
         PI.getConvention() == ParameterConvention::Indirect_In) {
       Conversions.set(IdxForParam);
     }
     ++IdxForParam;
   }
-  SpecializedType = createSpecializedType(SubstitutedType, M);
+  SpecializedType = createSpecializedType(FinalSubstitutedType, M);
 }
 
 // Convert the substituted function type into a specialized function type based
@@ -187,6 +545,13 @@ GenericFuncSpecializer::GenericFuncSpecializer(SILFunction *GenericFunc,
       ReInfo(ReInfo) {
 
   assert(GenericFunc->isDefinition() && "Expected definition to specialize!");
+
+#if 0
+  if (hasUnboundGenericTypes(ParamSubs)) {
+    // We need a partial specialization.
+    auto NewF = createFunctionWithSubstitutions(GenericFunc, ParamSubs);
+  }
+#endif
 
   Mangle::Mangler Mangler;
   GenericSpecializationMangler GenericMangler(Mangler, GenericFunc,
@@ -761,4 +1126,3 @@ SILFunction *swift::lookupPrespecializedSymbol(SILModule &M,
 
   return Specialization;
 }
-

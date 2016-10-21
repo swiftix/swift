@@ -306,6 +306,7 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
         SILInstruction *def = constTracker.getDefInCaller(AI.getCallee());
         if (def && (isa<FunctionRefInst>(def) || isa<PartialApplyInst>(def)))
           BlockW.updateBenefit(Benefit, RemovedClosureBenefit);
+#if 1
         // Check if inlining the callee would allow for further
         // optimizations like devirtualization or generic specialization. 
         if (!def)
@@ -382,6 +383,7 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
             }
           }
         }
+#endif
       } else if (auto *LI = dyn_cast<LoadInst>(&I)) {
         // Check if it's a load from a stack location in the caller. Such a load
         // might be optimized away if inlined.
