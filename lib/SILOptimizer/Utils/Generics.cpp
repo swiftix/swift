@@ -302,10 +302,12 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     ArchetypeBuilder Builder(*OrigF->getModule().getSwiftModule(), OrigF->getModule().getASTContext().Diags);
 
     //Builder.addGenericSignature(OrigSig, OrigF->getGenericEnvironment(), true);
+    // Add all generic parameters.
     for (auto GP : OrigSig->getGenericParams()) {
       Builder.addGenericParameter(GP);
     }
 
+    // Add all original requirements.
     auto OrigRequirements = OrigSig->getRequirements();
     auto Source = RequirementSource(RequirementSource::Explicit, SourceLoc());
     for (auto &Req : OrigRequirements) {
@@ -313,6 +315,8 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     }
 
 #if 1
+    // For each substitution with a concrete type as a replacement,
+    // add a new concrete type equality requirement.
     for (auto &entry : InterfaceSubs.getMap()) {
       if (!entry.second->getCanonicalType()->hasArchetype()) {
         auto CanTy = entry.first->getCanonicalType();
@@ -335,8 +339,93 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     // I.e. if a given generic parameter is only use in a form T == concrete_type and nowhere else,
     // simply remove it.
     Builder.finalize(SourceLoc(), false);
+    //Builder.minimize();
     auto NewGenSig = Builder.getGenericSignature();
     NewGenSig->dump();
+
+    // Now, check for each generic parameter if it is only used by same concrete type requirements.
+    // If this is the case, it can be removed.
+    // Walk over the set of requirements and collect information about genric parameters
+    // that only occur in the first type of a same concrete-type type requirement.
+    // These generics params are the ones that can be eliminated.
+    // TODO: Create the substitution remapping at the same time?
+    auto NewRequirements = NewGenSig->getRequirements();
+    llvm::DenseSet<Type> AliveGenericParams;
+    auto RememberAliveGenericParams = [&AliveGenericParams] (Type ty) {
+      if (isa<GenericTypeParamType>(ty.getPointer()))
+        AliveGenericParams.insert(ty);
+    };
+
+    auto FindReferenceToAliveGenericParam = [&AliveGenericParams] (Type ty) -> bool {
+      return AliveGenericParams.count(ty) > 0;
+    };
+
+    llvm::dbgs() << "Generic signature requirements:";
+    for (auto &Req : NewRequirements) {
+      llvm::dbgs() << "\nRequirement kind: " << (int)Req.getKind()
+                   << "\n for type: ";
+      Req.getFirstType().dump();
+      llvm::dbgs() << "Requirement:\n";
+      Req.dump();
+      auto First = Req.getFirstType();
+      switch (Req.getKind()) {
+      case RequirementKind::WitnessMarker:
+        continue;
+      case RequirementKind::SameType: {
+        auto Second = Req.getSecondType();
+        if (!Second->getCanonicalType()->hasArchetype())
+          continue;
+        // Keep alive any generic parameter referenced in First.
+        First.visit(RememberAliveGenericParams);
+      }
+      case RequirementKind::Conformance:
+      case RequirementKind::Superclass: {
+        auto Second = Req.getSecondType();
+        // Keep alive any generic parameter referenced in First and Second.
+        First.visit(RememberAliveGenericParams);
+        Second.visit(RememberAliveGenericParams);
+      }
+      }
+    }
+
+    // Dump the set of used generic parameter types.
+    if (!AliveGenericParams.empty()) {
+      llvm::dbgs() << "Alive generic parameters:\n";
+      for (auto Ty : AliveGenericParams) {
+        Ty.dump();
+      }
+    }
+
+    // Create a new generic signature which only contains those generic
+    // parameter types which are alive.
+    {
+      ArchetypeBuilder Builder(*OrigF->getModule().getSwiftModule(),
+                               OrigF->getModule().getASTContext().Diags);
+      for (auto GP : NewGenSig->getGenericParams()) {
+        if (!AliveGenericParams.count(GP))
+          continue;
+        Builder.addGenericParameter(GP);
+      }
+
+      // Add all original requirements.
+      auto NewGenSigRequirements = NewGenSig->getRequirements();
+      auto Source = RequirementSource(RequirementSource::Explicit, SourceLoc());
+      for (auto &Req : NewGenSigRequirements) {
+        auto First = Req.getFirstType();
+        // Check if the first type refers to any alive generic parameter type.
+        if (!First.findIf(FindReferenceToAliveGenericParam))
+          continue;
+        // Skip any requirements for the dead generic parameter types.
+        Builder.addRequirement(Req, Source);
+      }
+
+      Builder.finalize(SourceLoc(), false);
+      // Builder.minimize();
+      llvm::dbgs() << "Final minimized generic signature:\n";
+      auto FinalSig = Builder.getGenericSignature();
+      FinalSig->dump();
+    }
+
 #endif
 
     // There are some unbound substitutions.
