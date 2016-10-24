@@ -42,10 +42,11 @@ public:
                 IsFragile_t Fragile,
                 const ReabstractionInfo &ReInfo,
                 ArrayRef<Substitution> ParamSubs,
+                ArrayRef<Substitution> NewParamSubs,
                 StringRef NewName,
                 CloneCollector::CallbackType Callback)
   : TypeSubstCloner(*initCloned(F, Fragile, ReInfo, NewName), *F,
-                    ParamSubs), ReInfo(ReInfo), Callback(Callback) {
+                    ParamSubs, NewParamSubs), ReInfo(ReInfo), Callback(Callback) {
     assert(F->getDebugScope()->Parent != getCloned()->getDebugScope()->Parent);
   }
   /// Clone and remap the types in \p F according to the substitution
@@ -56,10 +57,11 @@ public:
                 IsFragile_t Fragile,
                 const ReabstractionInfo &ReInfo,
                 ArrayRef<Substitution> ParamSubs,
+                ArrayRef<Substitution> NewParamSubs,
                 StringRef NewName,
                 CloneCollector::CallbackType Callback =nullptr) {
     // Clone and specialize the function.
-    GenericCloner SC(F, Fragile, ReInfo, ParamSubs,
+    GenericCloner SC(F, Fragile, ReInfo, ParamSubs, NewParamSubs,
                      NewName, Callback);
     SC.populateCloned();
     SC.cleanUp(SC.getCloned());

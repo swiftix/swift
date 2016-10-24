@@ -60,6 +60,18 @@ class ReabstractionInfo {
   /// SubstitutedType.
   CanSILFunctionType SpecializedType;
 
+  /// The generic environment to be used.
+  GenericEnvironment *GenericEnv;
+
+  // Specialized set of substitutions.
+  ArrayRef<Substitution> SpecializedParamSubs;
+
+  // Adjusted set of substitutions.
+  ArrayRef<Substitution> AdjustedParamSubs;
+
+  // Set of substitutions.
+  ArrayRef<Substitution> ParamSubs;
+
 public:
   /// Constructs the ReabstractionInfo for generic function \p Orig with
   /// substitutions \p ParamSubs.
@@ -122,6 +134,14 @@ public:
   /// substituted type. Returns an invalid type if specialization is not
   /// possible.
   CanSILFunctionType getSpecializedType() const { return SpecializedType; }
+
+  GenericEnvironment *getGenericEnvironment() const { return GenericEnv; }
+
+  ArrayRef<Substitution> getSpecializedSubstitutions() const { return SpecializedParamSubs; }
+
+  ArrayRef<Substitution> getAdjustedParamSubstitutions() const { return AdjustedParamSubs; }
+
+  ArrayRef<Substitution> getParamSubstitutions() const { return ParamSubs; }
 
   /// Create a specialized function type for a specific substituted type \p
   /// SubstFTy by applying the re-abstractions.
