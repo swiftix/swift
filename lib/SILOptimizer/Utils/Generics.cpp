@@ -260,15 +260,19 @@ SILFunction *createFunctionWithSubstitutions(SILFunction *Orig,
 // Initialize SpecializedType iff the specialization is allowed.
 ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
                                      ArrayRef<Substitution> ParamSubs) {
-  GenericEnv = nullptr;
-  SpecializedParamSubs = ParamSubs;
-  this->ParamSubs = ParamSubs;
-  AdjustedParamSubs = ParamSubs;
   if (!OrigF->shouldOptimize()) {
     DEBUG(llvm::dbgs() << "    Cannot specialize function " << OrigF->getName()
                        << " marked to be excluded from optimizations.\n");
     return;
   }
+  GenericEnv = nullptr;
+  SpecializedParamSubs = ParamSubs;
+  this->ParamSubs = ParamSubs;
+  AdjustedParamSubs = ParamSubs;
+  AdjustedCloningParamSubs = ParamSubs;
+
+  SILModule &M = OrigF->getModule();
+  Module *SM = M.getSwiftModule();
 
   SubstitutionMap InterfaceSubs;
   SubstitutionMap NewInterfaceSubs;
@@ -286,11 +290,7 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
       continue;
     }
     HasConcreteGenericParams = true;
-    //break;
   }
-
-  if (HasUnboundGenericParams)
-    return;
 
   if (!HasConcreteGenericParams) {
     // All substititions are unbound.
@@ -301,240 +301,6 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
           });
     return;
   }
-
-  auto OrigSig = OrigF->getLoweredFunctionType()->getGenericSignature();
-  GenericSignature *SubstGenSig = OrigSig;
-  if (HasUnboundGenericParams) {
-#if 1
-    // Try to form a new generic signature based on the old one.
-    ArchetypeBuilder Builder(*OrigF->getModule().getSwiftModule(), OrigF->getModule().getASTContext().Diags);
-
-    //Builder.addGenericSignature(OrigSig, OrigF->getGenericEnvironment(), true);
-#if 1
-    // Add all generic parameters.
-    // TODO: How to preserve the names of the types? Can we find that from the
-    // generic environment?
-    for (auto GP : OrigSig->getGenericParams()) {
-      Builder.addGenericParameter(GP);
-    }
-
-    // Add all original requirements.
-    auto OrigRequirements = OrigSig->getRequirements();
-    auto Source = RequirementSource(RequirementSource::Explicit, SourceLoc());
-    for (auto &Req : OrigRequirements) {
-      Builder.addRequirement(Req, Source);
-    }
-#endif
-
-#if 1
-    // For each substitution with a concrete type as a replacement,
-    // add a new concrete type equality requirement.
-    for (auto &entry : InterfaceSubs.getMap()) {
-      if (!entry.second->getCanonicalType()->hasArchetype()) {
-        auto CanTy = entry.first->getCanonicalType();
-        auto OutTy = !CanTy->hasTypeParameter() ? OrigF->mapTypeOutOfContext(CanTy) : CanTy;
-        //auto InTy = OrigF->mapTypeIntoContext(CanTy);
-
-        Builder.addSameTypeRequirementToConcrete(
-            Builder.resolveArchetype(OutTy),
-            entry.second->getCanonicalType(),
-            RequirementSource(RequirementSource::Explicit, SourceLoc()));
-
-        //Builder.addSameTypeRequirementToConcrete(
-        //    Builder.resolveArchetype(InTy),
-        //    entry.second->getCanonicalType(),
-        //    RequirementSource(RequirementSource::Explicit, SourceLoc()));
-      }
-    }
-#endif
-    // TODO: Minimize the generic signature?
-    // I.e. if a given generic parameter is only use in a form T == concrete_type and nowhere else,
-    // simply remove it.
-    Builder.finalize(SourceLoc(), false);
-    //Builder.minimize();
-    auto NewGenSig = Builder.getGenericSignature()->getCanonicalSignature();
-    NewGenSig->dump();
-
-    // Now, check for each generic parameter if it is only used by same concrete type requirements.
-    // If this is the case, it can be removed.
-    // Walk over the set of requirements and collect information about genric parameters
-    // that only occur in the first type of a same concrete-type type requirement.
-    // These generics params are the ones that can be eliminated.
-    // TODO: Create the substitution remapping at the same time?
-    auto NewRequirements = NewGenSig->getRequirements();
-    llvm::DenseSet<Type> AliveGenericParams;
-    auto RememberAliveGenericParams = [&AliveGenericParams] (Type ty) {
-      if (isa<GenericTypeParamType>(ty.getPointer()))
-        AliveGenericParams.insert(ty);
-    };
-
-    auto FindReferenceToAliveGenericParam = [&AliveGenericParams] (Type ty) -> bool {
-      return AliveGenericParams.count(ty) > 0;
-    };
-
-    llvm::dbgs() << "Generic signature requirements:";
-    for (auto &Req : NewRequirements) {
-      llvm::dbgs() << "\nRequirement kind: " << (int)Req.getKind()
-                   << "\n for type: ";
-      Req.getFirstType().dump();
-      llvm::dbgs() << "Requirement:\n";
-      Req.dump();
-      auto First = Req.getFirstType();
-      switch (Req.getKind()) {
-      case RequirementKind::WitnessMarker:
-        continue;
-      case RequirementKind::SameType: {
-        auto Second = Req.getSecondType();
-        if (!Second->getCanonicalType()->hasArchetype())
-          continue;
-        // Keep alive any generic parameter referenced in First.
-        First.visit(RememberAliveGenericParams);
-      }
-      case RequirementKind::Conformance:
-      case RequirementKind::Superclass: {
-        auto Second = Req.getSecondType();
-        // Keep alive any generic parameter referenced in First and Second.
-        First.visit(RememberAliveGenericParams);
-        Second.visit(RememberAliveGenericParams);
-      }
-      }
-    }
-
-    // Dump the set of used generic parameter types.
-    if (!AliveGenericParams.empty()) {
-      llvm::dbgs() << "Alive generic parameters:\n";
-      for (auto Ty : AliveGenericParams) {
-        Ty.dump();
-      }
-    }
-
-    // Create a new generic signature which only contains those generic
-    // parameter types which are alive.
-    {
-      ArchetypeBuilder Builder(*OrigF->getModule().getSwiftModule(),
-                               OrigF->getModule().getASTContext().Diags);
-      for (auto GP : NewGenSig->getGenericParams()) {
-        if (!AliveGenericParams.count(GP))
-          continue;
-        Builder.addGenericParameter(GP);
-      }
-
-      // Add all original requirements.
-      auto NewGenSigRequirements = NewGenSig->getRequirements();
-      auto Source = RequirementSource(RequirementSource::Explicit, SourceLoc());
-      for (auto &Req : NewGenSigRequirements) {
-        auto First = Req.getFirstType();
-        // Check if the first type refers to any alive generic parameter type.
-        if (!First.findIf(FindReferenceToAliveGenericParam))
-          continue;
-        // Skip any requirements for the dead generic parameter types.
-        Builder.addRequirement(Req, Source);
-      }
-
-      Builder.finalize(SourceLoc(), false);
-      // Builder.minimize();
-      llvm::dbgs() << "Final minimized generic signature:\n";
-      SubstGenSig = Builder.getGenericSignature()->getCanonicalSignature();
-      SubstGenSig->dump();
-      GenericEnv = Builder.getGenericEnvironment();
-
-      // Form a new substitutions list.
-      // To do that:
-      // - get a list of requirements from the original generic signature.
-      // - if it is one of the requirements which require a substitution and its generic param type is alive
-      //   then keep the substitution, otherwise remove it
-      unsigned SubIdx = 0;
-      Type currentReplacement;
-      SmallVector<Substitution, 4> NewSubs;
-
-      for (const auto &req : OrigSig->getRequirements()) {
-        auto depTy = req.getFirstType()->getCanonicalType();
-
-        switch (req.getKind()) {
-        case RequirementKind::Conformance: {
-          break;
-        }
-
-        case RequirementKind::Superclass:
-          // Superclass requirements aren't recorded in substitutions.
-          break;
-
-        case RequirementKind::SameType:
-          // Same-type requirements aren't recorded in substitutions.
-          break;
-
-        case RequirementKind::WitnessMarker:
-          // Each witness marker starts a new substitution.
-          currentReplacement = req.getFirstType();
-          if (currentReplacement.findIf(FindReferenceToAliveGenericParam)) {
-            // Copy the substitution.
-            NewSubs.push_back(ParamSubs[SubIdx]);
-          }
-          SubIdx++;
-          break;
-        }
-      }
-
-      // Allocate a new substitution list.
-      MutableArrayRef<Substitution> SpecializedSubs = OrigF->getModule().getASTContext()
-                               .template Allocate<Substitution>(NewSubs.size());
-      memcpy(SpecializedSubs.data(), &NewSubs[0],
-             sizeof(Substitution) * NewSubs.size());
-      SpecializedParamSubs = SpecializedSubs;
-    }
-
-#endif
-
-    // There are some unbound substitutions.
-    auto ForwardingSubs = OrigF->getForwardingSubstitutions();
-    NewInterfaceSubs = InterfaceSubs;
-    FinalInterfaceSubs = &NewInterfaceSubs;
-    // Remap unbound generic params to themselves.
-    for (auto &entry : InterfaceSubs.getMap()) {
-      if (entry.second->getCanonicalType()->hasArchetype()) {
-        auto CanTy = entry.first->getCanonicalType();
-#if 0
-        // NewInterfaceSubs.removeType(entry.first);
-        auto CanTy = entry.first->getCanonicalType();
-        NewInterfaceSubs.replaceSubstitution(
-            CanTy,
-            (CanTy->hasArchetype() || isa<GenericTypeParamType>(CanTy))
-                //? OrigF->mapTypeOutOfContext(entry.first->getCanonicalType())
-                ? OrigF->mapTypeIntoContext(CanTy)
-                : CanTy);
-#endif
-        // Do not substitute this type.
-        NewInterfaceSubs.removeType(CanTy);
-      } else {
-        //NewInterfaceSubs.addSubstitution(entry.first->getCanonicalType(), entry.second);
-      }
-    }
-
-    MutableArrayRef<Substitution> AdjustedSubs =
-        OrigF->getModule().getASTContext().template Allocate<Substitution>(
-            ParamSubs.size());
-    for (unsigned idx = 0, e = ParamSubs.size(); idx < e; ++idx) {
-      if (ParamSubs[idx].getReplacement()->hasArchetype()) {
-        AdjustedSubs[idx] = ForwardingSubs[idx];
-        continue;
-      }
-      AdjustedSubs[idx] = ParamSubs[idx];
-    }
-    AdjustedParamSubs = AdjustedSubs;
-  }
-
-
-#if 0
-  // We do not support partial specialization.
-  if (hasUnboundGenericTypes(InterfaceSubs.getMap())) {
-    DEBUG(llvm::dbgs() <<
-          "    Cannot specialize with unbound interface substitutions.\n");
-    DEBUG(for (auto Sub : ParamSubs) {
-            Sub.dump();
-          });
-    return;
-  }
-#endif
 
   if (hasDynamicSelfTypes(InterfaceSubs.getMap())) {
     DEBUG(llvm::dbgs() << "    Cannot specialize with dynamic self.\n");
@@ -553,57 +319,170 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     }
   }
 
-  SILModule &M = OrigF->getModule();
-  Module *SM = M.getSwiftModule();
+  auto OrigSig = OrigF->getLoweredFunctionType()->getGenericSignature();
+  GenericSignature *SubstGenSig = OrigSig;
+  SubstitutionMap AdjustedCloningInterfaceSubs = InterfaceSubs;
+  if (HasUnboundGenericParams) {
+    // Try to form a new generic signature based on the old one.
+    ArchetypeBuilder Builder(*SM, M.getASTContext().Diags);
+
+    // First, add the old generic signature.
+    // FIXME: It does not preserve references to the declarations of generic
+    // parameters known in the original generic environment. Instead, it
+    // just copies the GenericTypeParameterTypes and requirements.
+    Builder.addGenericSignature(OrigSig, nullptr);
+
+    // For each substitution with a concrete type as a replacement,
+    // add a new concrete type equality requirement.
+    for (auto &entry : InterfaceSubs.getMap()) {
+      if (!entry.second->getCanonicalType()->hasArchetype()) {
+        auto CanTy = entry.first->getCanonicalType();
+        auto OutTy = CanTy;
+
+        Builder.addSameTypeRequirementToConcrete(
+            Builder.resolveArchetype(OutTy),
+            entry.second->getCanonicalType(),
+            RequirementSource(RequirementSource::Explicit, SourceLoc()));
+      }
+    }
+
+    SubstGenSig = Builder.getGenericSignature()->getCanonicalSignature();
+    GenericEnv = Builder.getGenericEnvironment();
+
+    llvm::dbgs() << "Created the new generic signature: \n";
+    SubstGenSig->dump();
+
+    AdjustedInterfaceSubs = InterfaceSubs;
+    FinalInterfaceSubs = &AdjustedInterfaceSubs;
+
+    // If an archetype is mapped to a type containing an archetype, then
+    // map it to itself.
+    for (auto &entry : InterfaceSubs.getMap()) {
+      if (entry.second->getCanonicalType()->hasArchetype()) {
+        auto CanTy = entry.first->getCanonicalType();
+        // Remap to the generic type parameter type to itself.
+        AdjustedInterfaceSubs.replaceSubstitution(
+            CanTy, CanTy);
+        AdjustedCloningInterfaceSubs.replaceSubstitution(
+            CanTy, GenericEnv->mapTypeIntoContext(SM, CanTy));
+        //AdjustedInterfaceSubs.replaceSubstitution(
+        //    CanTy, GenericEnv->mapTypeIntoContext(SM, CanTy));
+        //NewInterfaceSubs.removeType(CanTy);
+      } else {
+        // Remap to the concrete types. But it is in the map already.
+      }
+    }
+
+    // Create a new list of substitutions.
+    SmallVector<Substitution, 8> AdjustedSubsVector;
+    SmallVector<Substitution, 8> AdjustedCloningSubsVector;
+    SmallVector<Substitution, 8> SpecializedSubsVector;
+
+    // First, get a substitution map from the original signature.
+    // It is based on the substitution list from the apply site.
+    auto ParamMap = OrigSig->getSubstitutionMap(ParamSubs);
+    // Then, use this map to form a list of substitutions for the new generic signature.
+    // This new list may contain less elements, because generic parameter types
+    // with concrete type equality conformances do not need a substitution.
+    SubstGenSig->getSubstitutions(*SM, ParamMap, SpecializedSubsVector);
+
+    // Form a list of substitutions for the old generic signature.
+    OrigSig->getSubstitutions(*SM, AdjustedInterfaceSubs, AdjustedSubsVector);
+    OrigSig->getSubstitutions(*SM, AdjustedCloningInterfaceSubs, AdjustedCloningSubsVector);
+
+    MutableArrayRef<Substitution> SpecializedSubs =
+        OrigF->getModule().getASTContext().AllocateCopy(SpecializedSubsVector);
+
+    MutableArrayRef<Substitution> AdjustedSubs =
+        OrigF->getModule().getASTContext().AllocateCopy(AdjustedSubsVector);
+
+    MutableArrayRef<Substitution> AdjustedCloningSubs =
+        OrigF->getModule().getASTContext().AllocateCopy(AdjustedCloningSubsVector);
+
+    AdjustedParamSubs = AdjustedSubs;
+    AdjustedCloningParamSubs = AdjustedCloningSubs;
+    SpecializedParamSubs = SpecializedSubs;
+  }
 
   // Find out how the function type looks like after applying the provided
   // substitutions.
-  SubstitutedType = SILType::substFuncType(M, SM, FinalInterfaceSubs->getMap(),
-                                           OrigF->getLoweredFunctionType(),
-                                           /*dropGenerics = */ !HasUnboundGenericParams);
+  auto OrigFnTy = OrigF->getLoweredFunctionType();
 
-  auto MappedSubstitutedType = SubstitutedType;
-  auto FinalSubstitutedType = SubstitutedType;
-
-  if (HasUnboundGenericParams) {
-    // If generic signature was not dropped, then it still has the same number
-    // of generic parameters as the origF's lowered function type. But the
-    // actual signature of the partially specialized function should contain
-    // only generic parameters for those generic typw parameters which were not
-    // substituted by concrete types.
-
-    // Create a new substituted type, which the updated signature.
+  if (true || HasUnboundGenericParams) {
     Optional<SILResultInfo> ErrorResult;
-    if (SubstitutedType->hasErrorResult())
-      ErrorResult = SubstitutedType->getErrorResult();
+    // Create a new substituted type with the updated signature.
+    if (OrigFnTy->hasErrorResult())
+      ErrorResult = OrigFnTy->getErrorResult();
+#if 0
+    SubstitutedType = SILType::substFuncType(
+        M, SM, FinalInterfaceSubs->getMap(), OrigFnTy,
+        /*dropGenerics = */ !HasUnboundGenericParams);
+#else
+    // Explicitly subst generic types in the parameters 
+    // and results.
+    // TODO: Can it be done in one go instead of doing it
+    // parameter-by-parameter?
+    SmallVector<SILParameterInfo, 8> SubstParams;
+    SubstParams.reserve(OrigFnTy->getParameters().size());
+    for (auto &OrigParam : OrigFnTy->getParameters()) {
+      SubstParams.push_back(
+          SILParameterInfo(OrigParam.getType()
+                               .subst(SM, FinalInterfaceSubs->getMap(),
+                                      SubstFlags::AllowLoweredTypes)
+                               ->getCanonicalType(),
+                           OrigParam.getConvention()));
+    }
+    SmallVector<SILResultInfo, 8> SubstResults;
+    SubstResults.reserve(OrigFnTy->getNumAllResults());
+    for (auto OrigResult : OrigFnTy->getAllResults()) {
+      SubstResults.push_back(
+          SILResultInfo(OrigResult.getType()
+                            .subst(SM, FinalInterfaceSubs->getMap(),
+                                   SubstFlags::AllowLoweredTypes)
+                            ->getCanonicalType(),
+                        OrigResult.getConvention()));
+    }
 
-    FinalSubstitutedType = SILFunctionType::get(
-        SubstGenSig, SubstitutedType->getExtInfo(),
-        SubstitutedType->getCalleeConvention(),
-        SubstitutedType->getParameters(), SubstitutedType->getAllResults(),
-        ErrorResult, M.getASTContext());
-    // MappedSubstitutedType =
-    // dyn_cast<SILFunctionType>(OrigF->mapTypeIntoContext(MappedSubstitutedType)->getCanonicalType());
-    // MappedSubstitutedType = SILType::substFuncType(M, SM,
-    // FinalInterfaceSubs->getMap(), SubstitutedType, false);
+    auto SubstErrorResult = OrigFnTy->getOptionalErrorResult();
+
+    if (!HasUnboundGenericParams)
+      SubstGenSig = nullptr;
+
+    // FIXME: This does not replace the generic parameter types in the function
+    // type even if they are known to have a concrete type due to type
+    // equality requirements. This is why we explicitly substitute them in the
+    // code above.
+    SubstitutedType = SILFunctionType::get(
+        SubstGenSig, OrigFnTy->getExtInfo(), OrigFnTy->getCalleeConvention(),
+        //OrigFnTy->getParameters(), OrigFnTy->getAllResults(), ErrorResult,
+        SubstParams, SubstResults, SubstErrorResult,
+        M.getASTContext());
+#endif
+#if 0
+    // Replace the generic parameter types known to have a concrete type.
+    // Leave any unbound generic parameters as is.
+    SubstitutedType = SILType::substFuncType(
+        M, SM, FinalInterfaceSubs->getMap(), SubstitutedType,
+        /*dropGenerics = */ !HasUnboundGenericParams);
+#endif
+  } else {
+    SubstitutedType = SILType::substFuncType(
+        M, SM, FinalInterfaceSubs->getMap(), OrigF->getLoweredFunctionType(),
+        /*dropGenerics = */ !HasUnboundGenericParams);
   }
 
-  NumResults = FinalSubstitutedType->getNumIndirectResults();
-  Conversions.resize(NumResults + FinalSubstitutedType->getParameters().size());
-  auto HasGenericTypeParamType = [] (Type ty) {
-    return isa<GenericTypeParamType>(ty.getPointer());
-  };
+  NumResults = SubstitutedType->getNumIndirectResults();
+  Conversions.resize(NumResults + SubstitutedType->getParameters().size());
 
-  // TODO: isLoadable checks assert for generic types currently.
-  if (FinalSubstitutedType->getNumDirectResults() == 0) {
+  if (SubstitutedType->getNumDirectResults() == 0) {
     // The original function has no direct result yet. Try to convert the first
     // indirect result to a direct result.
     // TODO: We could also convert multiple indirect results by returning a
     // tuple type and created tuple_extract instructions at the call site.
     unsigned IdxForResult = 0;
-    for (SILResultInfo RI : FinalSubstitutedType->getIndirectResults()) {
+    for (SILResultInfo RI : SubstitutedType->getIndirectResults()) {
       assert(RI.isIndirect());
-      if (RI.getSILType().getSwiftRValueType()->getCanonicalType().findIf(HasGenericTypeParamType))
+      if (RI.getSILType().hasTypeParameter())
         continue;
       if (RI.getSILType().isLoadable(M) && !RI.getType()->isVoid()) {
         Conversions.set(IdxForResult);
@@ -614,8 +493,8 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
   }
   // Try to convert indirect incoming parameters to direct parameters.
   unsigned IdxForParam = NumResults;
-  for (SILParameterInfo PI : FinalSubstitutedType->getParameters()) {
-    if (PI.getSILType().getSwiftRValueType()->getCanonicalType().findIf(HasGenericTypeParamType))
+  for (SILParameterInfo PI : SubstitutedType->getParameters()) {
+    if (PI.getSILType().hasTypeParameter())
       continue;
     if (PI.getSILType().isLoadable(M) &&
         PI.getConvention() == ParameterConvention::Indirect_In) {
@@ -623,7 +502,7 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     }
     ++IdxForParam;
   }
-  SpecializedType = createSpecializedType(FinalSubstitutedType, M);
+  SpecializedType = createSpecializedType(SubstitutedType, M);
 }
 
 // Convert the substituted function type into a specialized function type based
@@ -659,8 +538,9 @@ createSpecializedType(CanSILFunctionType SubstFTy, SILModule &M) const {
       SILType SILParamTy = SILType::getPrimitiveObjectType(PI.getType());
       // Indirect parameters are passed as owned, so we also need to pass the
       // direct parameter as owned (except it's a trivial type).
-      auto C = (SILParamTy.isTrivial(M) ? ParameterConvention::Direct_Unowned :
-                ParameterConvention::Direct_Owned);
+      auto C = ((!SILParamTy.hasTypeParameter() && SILParamTy.isTrivial(M))
+                    ? ParameterConvention::Direct_Unowned
+                    : ParameterConvention::Direct_Owned);
       SpecializedParams.push_back(SILParameterInfo(PI.getType(), C));
     } else {
       // No conversion: re-use the original parameter info.
@@ -697,10 +577,14 @@ GenericFuncSpecializer::GenericFuncSpecializer(SILFunction *GenericFunc,
     auto NewF = createFunctionWithSubstitutions(GenericFunc, ParamSubs);
   }
 #endif
-
+  //auto FnTy = ReInfo.getSubstitutedType()->isPolymorphic() ? ReInfo.getSubstitutedType(): CanSILFunctionType();
+  auto FnTy = CanSILFunctionType();
   Mangle::Mangler Mangler;
   GenericSpecializationMangler GenericMangler(Mangler, GenericFunc,
-                                              ReInfo.getAdjustedParamSubstitutions(), Fragile);
+                                              FnTy,
+                                              // ReInfo.getSpecializedSubstitutions(),
+                                              ReInfo.getAdjustedParamSubstitutions(),
+                                              Fragile);
   GenericMangler.mangle();
   ClonedName = Mangler.finalize();
 
@@ -738,7 +622,7 @@ SILFunction *GenericFuncSpecializer::tryCreateSpecialization() {
   // Create a new function.
   SILFunction *SpecializedF = GenericCloner::cloneFunction(
       GenericFunc, Fragile, ReInfo,
-      ReInfo.getAdjustedParamSubstitutions(),
+      ReInfo.getAdjustedCloningParamSubstitutions(),
       ReInfo.getSpecializedSubstitutions(),
       ClonedName);
 
@@ -817,9 +701,20 @@ static ApplySite replaceWithSpecializedCallee(ApplySite AI,
     return NewTAI;
   }
   if (auto *A = dyn_cast<ApplyInst>(AI)) {
+    // Create a substituted callee type.
     auto CanFnTy = dyn_cast<SILFunctionType>(Callee->getType().getSwiftRValueType()->getCanonicalType());
-    auto *NewAI = Builder.createApply(Loc, Callee, Callee->getType(), CanFnTy->getSILResult(), Subs,
-                                      Arguments, A->isNonThrowing());
+    auto CalleeGenTy = CanFnTy;
+    if (!Subs.empty()) {
+      // FIXME: This operation does not substitute the archetypes for those generic types, which have
+      // concrete type equality requirements. And it does not allow for providing any susbtitutions
+      // for them, because the type equality requirements are present.
+      CalleeGenTy = CanFnTy->substGenericArgs(
+          AI.getModule(), AI.getModule().getSwiftModule(),
+          ReInfo.getSpecializedSubstitutions());
+    }
+    auto *NewAI = Builder.createApply(
+        Loc, Callee, SILType::getPrimitiveObjectType(CalleeGenTy),
+        CalleeGenTy->getSILResult(), Subs, Arguments, A->isNonThrowing());
     if (StoreResultTo) {
       // Store the direct result to the original result address.
       fixUsedVoidType(A, Loc, Builder);

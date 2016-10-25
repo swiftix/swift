@@ -68,9 +68,13 @@ class ReabstractionInfo {
 
   // Adjusted set of substitutions.
   ArrayRef<Substitution> AdjustedParamSubs;
-
+  // Adjusted set of substitutions for cloning.
+  ArrayRef<Substitution> AdjustedCloningParamSubs;
   // Set of substitutions.
   ArrayRef<Substitution> ParamSubs;
+
+  // Adjusted map of substitutions.
+  SubstitutionMap AdjustedInterfaceSubs;
 
 public:
   /// Constructs the ReabstractionInfo for generic function \p Orig with
@@ -140,6 +144,10 @@ public:
   ArrayRef<Substitution> getSpecializedSubstitutions() const { return SpecializedParamSubs; }
 
   ArrayRef<Substitution> getAdjustedParamSubstitutions() const { return AdjustedParamSubs; }
+
+  ArrayRef<Substitution> getAdjustedCloningParamSubstitutions() const { return AdjustedCloningParamSubs; }
+
+  const SubstitutionMap &getAdjustedInterfaceSubs() const { return AdjustedInterfaceSubs; }
 
   ArrayRef<Substitution> getParamSubstitutions() const { return ParamSubs; }
 

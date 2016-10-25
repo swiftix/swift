@@ -45,9 +45,10 @@ using namespace Mangle;
 //===----------------------------------------------------------------------===//
 
 static void mangleSubstitution(Mangler &M, Substitution Sub) {
-  if (Sub.getReplacement()->hasArchetype()) {
+  if (Sub.getReplacement()->hasArchetype() ||
+      Sub.getReplacement()->hasTypeParameter()) {
     // It is a partial specialization.
-    M.append("_PS");
+    M.append("PS");
     return;
   }
   M.mangleType(Sub.getReplacement()->getCanonicalType(), 0);
@@ -61,7 +62,7 @@ static void mangleSubstitution(Mangler &M, Substitution Sub) {
 void GenericSpecializationMangler::mangleSpecialization() {
   Mangler &M = getMangler();
 
-  SILFunctionType *FTy = Function->getLoweredFunctionType();
+  SILFunctionType *FTy = CanSILFnTy ? CanSILFnTy : Function->getLoweredFunctionType();
   CanGenericSignature Sig = FTy->getGenericSignature();
 
   unsigned idx = 0;
