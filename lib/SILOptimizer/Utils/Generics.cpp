@@ -242,7 +242,7 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
 
     // FIXME: This does not replace the generic parameter types in the function
     // type even if they are known to have a concrete type due to type
-    // equality requirements. This is why we explicitly substitute them in the
+    // equality requirements. This is why we explicitly substituted them in the
     // code above.
     SubstitutedType = SILFunctionType::get(
         SubstGenSig, OrigFnTy->getExtInfo(), OrigFnTy->getCalleeConvention(),
@@ -365,9 +365,17 @@ GenericFuncSpecializer::GenericFuncSpecializer(SILFunction *GenericFunc,
 
   auto FnTy = CanSILFunctionType();
   Mangle::Mangler Mangler;
+  // TODO: Use the SILFunctionType of the substituted function type for the mangling.
+  // Encode this whole type. What would be the name length increase? Do we need to
+  // go for a shorter way of encoding the type/substitutionss?
+  // If we go for encoding the SILFunctionType, we don't need the
+  // AdjustedParamSubstitutions anymore, because the SILFunctionType type would contain
+  // all we need in form of equal type constraints.
   GenericSpecializationMangler GenericMangler(Mangler, GenericFunc,
                                               FnTy,
-                                              // ReInfo.getSpecializedSubstitutions(),
+                                              // Use adjusted substitutions, where
+                                              // substitutions with generic replacements
+                                              // are replaced by archetypes.
                                               ReInfo.getAdjustedParamSubstitutions(),
                                               Fragile);
   GenericMangler.mangle();
