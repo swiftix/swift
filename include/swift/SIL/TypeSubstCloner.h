@@ -42,7 +42,7 @@ class TypeSubstCloner : public SILClonerWithScopes<ImplClass> {
   void computeSubsMap() {
     if (auto *env = Original.getGenericEnvironment()) {
       auto sig = Original.getLoweredFunctionType()->getGenericSignature();
-      SubsMap = env->getSubstitutionMap(SwiftMod, sig, ApplySubs);
+      SubsMap = env->getSubstitutionMap(SwiftMod, sig, OrigApplySubs);
     }
   }
 
@@ -69,7 +69,8 @@ public:
     : SILClonerWithScopes<ImplClass>(To, OpenedArchetypesTracker, Inlining),
       SwiftMod(From.getModule().getSwiftModule()),
       Original(From),
-      ApplySubs(ApplySubs),
+      OrigApplySubs(ApplySubs),
+      NewApplySubs(ApplySubs),
       Inlining(Inlining) {
     computeSubsMap();
   }
@@ -81,11 +82,40 @@ public:
     : SILClonerWithScopes<ImplClass>(To, Inlining),
       SwiftMod(From.getModule().getSwiftModule()),
       Original(From),
-      ApplySubs(ApplySubs),
+      OrigApplySubs(ApplySubs),
+      NewApplySubs(ApplySubs),
       Inlining(Inlining) {
     computeSubsMap();
   }
 
+  TypeSubstCloner(SILFunction &To,
+                  SILFunction &From,
+                  ArrayRef<Substitution> ApplySubs,
+                  ArrayRef<Substitution> NewApplySubs,
+                  SILOpenedArchetypesTracker &OpenedArchetypesTracker,
+                  bool Inlining = false)
+    : SILClonerWithScopes<ImplClass>(To, OpenedArchetypesTracker, Inlining),
+      SwiftMod(From.getModule().getSwiftModule()),
+      Original(From),
+      OrigApplySubs(ApplySubs),
+      NewApplySubs(NewApplySubs),
+      Inlining(Inlining) {
+    computeSubsMap();
+  }
+
+  TypeSubstCloner(SILFunction &To,
+                  SILFunction &From,
+                  ArrayRef<Substitution> ApplySubs,
+                  ArrayRef<Substitution> NewApplySubs,
+                  bool Inlining = false)
+    : SILClonerWithScopes<ImplClass>(To, Inlining),
+      SwiftMod(From.getModule().getSwiftModule()),
+      Original(From),
+      OrigApplySubs(ApplySubs),
+      NewApplySubs(NewApplySubs),
+      Inlining(Inlining) {
+    computeSubsMap();
+  }
 
 protected:
   SILType remapType(SILType Ty) {
@@ -155,7 +185,7 @@ protected:
     if (!Inlining) {
       FunctionRefInst *FRI = dyn_cast<FunctionRefInst>(CalleeVal);
       if (FRI && FRI->getReferencedFunction() == Inst->getFunction() &&
-          Inst->getSubstitutions() == this->ApplySubs) {
+          Inst->getSubstitutions() == this->OrigApplySubs) {
         FRI = Builder.createFunctionRef(getOpLocation(Inst->getLoc()),
                                         &Builder.getFunction());
         ApplyInst *NAI =
@@ -292,8 +322,10 @@ protected:
   SubstitutionMap SubsMap;
   /// The original function to specialize.
   SILFunction &Original;
-  /// The substitutions used at the call site.
-  ArrayRef<Substitution> ApplySubs;
+  /// The original substitutions used at the call site.
+  ArrayRef<Substitution> OrigApplySubs;
+  /// The new substitutions used at the call site.
+  ArrayRef<Substitution> NewApplySubs;
   /// True, if used for inlining.
   bool Inlining;
 };
