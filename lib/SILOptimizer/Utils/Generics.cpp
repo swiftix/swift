@@ -72,6 +72,25 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     InterfaceSubs = OrigF->getLoweredFunctionType()->getGenericSignature()
       ->getSubstitutionMap(ParamSubs);
 
+  // Perform some checks to see if we need to bail.
+  if (hasDynamicSelfTypes(InterfaceSubs.getMap())) {
+    DEBUG(llvm::dbgs() << "    Cannot specialize with dynamic self.\n");
+    return;
+  }
+
+  // Check if the substitution contains any generic types that are too deep.
+  // If this is the case, bail to avoid the explosion in the number of 
+  // generated specializations.
+  for (auto Sub : ParamSubs) {
+    auto Replacement = Sub.getReplacement();
+    if (Replacement.findIf([](Type ty) -> bool {
+          return getBoundGenericDepth(ty) >= BoundGenericDepthThreshold;
+        })) {
+      DEBUG(llvm::dbgs() << "    Cannot specialize because the generic type is too deep.\n");
+      return;
+    }
+  }
+
   bool HasConcreteGenericParams = false;
   bool HasUnboundGenericParams = false;
   for (auto &entry : InterfaceSubs.getMap()) {
@@ -90,23 +109,6 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
             Sub.dump();
           });
     return;
-  }
-
-  if (hasDynamicSelfTypes(InterfaceSubs.getMap())) {
-    DEBUG(llvm::dbgs() << "    Cannot specialize with dynamic self.\n");
-    return;
-  }
-
-  // Check if the substitution contains any generic types that are too deep.
-  // If this is the case, bail to avoid the explosion in the number of 
-  // generated specializations.
-  for (auto Sub : ParamSubs) {
-    auto Replacement = Sub.getReplacement();
-    if (Replacement.findIf([](Type ty) -> bool {
-          return getBoundGenericDepth(ty) >= BoundGenericDepthThreshold;
-        })) {
-      return;
-    }
   }
 
   auto OrigSig = OrigF->getLoweredFunctionType()->getGenericSignature();
