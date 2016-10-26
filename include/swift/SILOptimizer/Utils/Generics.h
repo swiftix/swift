@@ -60,21 +60,45 @@ class ReabstractionInfo {
   /// SubstitutedType.
   CanSILFunctionType SpecializedType;
 
-  /// The generic environment to be used.
-  GenericEnvironment *GenericEnv;
+  /// The generic environment to be used by the specialization.
+  GenericEnvironment *SpecializedGenericEnv;
 
-  // Specialized set of substitutions.
-  ArrayRef<Substitution> SpecializedParamSubs;
+  /// The generic signature of the specializaiton.
+  /// It is nullptr if the specialization is not polymorphic.
+  GenericSignature *SpecializedGenSig;
 
-  // Adjusted set of substitutions.
-  ArrayRef<Substitution> AdjustedParamSubs;
-  // Adjusted set of substitutions for cloning.
-  ArrayRef<Substitution> AdjustedCloningParamSubs;
-  // Set of substitutions.
+  // Set of the original substitutions used by the caller's
+  // apply instruction. It uses the contextual types of
+  // the caller.
   ArrayRef<Substitution> ParamSubs;
 
-  // Adjusted map of substitutions.
+  // Specialized set of substitutions to be used by the caller
+  // when it calls a specialized function. It uses contextual
+  // types of the caller.
+  ArrayRef<Substitution> SpecializedParamSubs;
+
+  // The adjusted set of substitutions for the caller's apply
+  // instruction. It is for the original generic signature.
+  // It uses the contextual types of the caller.
+  // This set of substitutions is needed only for mangling,
+  // if mangling uses a substitution-based approach for
+  // encoding the specialized function's name.
+  ArrayRef<Substitution> AdjustedParamSubs;
+
+  // Adjusted set of substitutions to be used by the cloner.
+  // It maps to the contextual types of the specialized function
+  // being generated.
+  ArrayRef<Substitution> AdjustedCloningParamSubs;
+
+  // Map of substitutions used to create a new function type
+  // for the specialized function. It maps to interface types
+  // of the new generic environment.
   SubstitutionMap AdjustedInterfaceSubs;
+
+  /// Create a new substituted type with the updated signature.
+  CanSILFunctionType createSubstitutedType(SILFunction *OrigF,
+                                           const TypeSubstitutionMap &SubstMap,
+                                           bool HasUnboundGenericParams);
 
 public:
   /// Constructs the ReabstractionInfo for generic function \p Orig with
@@ -139,9 +163,9 @@ public:
   /// possible.
   CanSILFunctionType getSpecializedType() const { return SpecializedType; }
 
-  GenericEnvironment *getGenericEnvironment() const { return GenericEnv; }
+  GenericEnvironment *getSpecializedGenericEnvironment() const { return SpecializedGenericEnv; }
 
-  ArrayRef<Substitution> getSpecializedSubstitutions() const { return SpecializedParamSubs; }
+  ArrayRef<Substitution> getSpecializedParamSubstitutions() const { return SpecializedParamSubs; }
 
   ArrayRef<Substitution> getAdjustedParamSubstitutions() const { return AdjustedParamSubs; }
 
@@ -191,6 +215,10 @@ public:
       SpecializedF = tryCreateSpecialization();
 
     return SpecializedF;
+  }
+
+  StringRef getClonedName() {
+    return ClonedName;
   }
 };
 

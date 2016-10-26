@@ -62,7 +62,15 @@ static void mangleSubstitution(Mangler &M, Substitution Sub) {
 void GenericSpecializationMangler::mangleSpecialization() {
   Mangler &M = getMangler();
 
-  SILFunctionType *FTy = CanSILFnTy ? CanSILFnTy : Function->getLoweredFunctionType();
+#if 1
+  // TODO: Try to prodice a shorter representation.
+  // It is sufficient to only mangle the substitutions of the "primary"
+  // dependent types. As all other dependent types are just derived from the
+  // primary types, this will give us unique symbol names.
+  SILFunctionType *FTy = CanSILFnTy;
+  M.mangleType(FTy, 0);
+#else
+  SILFunctionType *FTy = Function->getLoweredFunctionType();
   CanGenericSignature Sig = FTy->getGenericSignature();
 
   unsigned idx = 0;
@@ -77,6 +85,7 @@ void GenericSpecializationMangler::mangleSpecialization() {
     ++idx;
   }
   assert(idx == Subs.size() && "subs not parallel to dependent types");
+#endif
 }
 
 //===----------------------------------------------------------------------===//
