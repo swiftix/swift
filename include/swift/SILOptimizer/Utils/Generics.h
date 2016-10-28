@@ -93,7 +93,7 @@ class ReabstractionInfo {
   // Map of substitutions used to create a new function type
   // for the specialized function. It maps to interface types
   // of the new generic environment.
-  SubstitutionMap AdjustedInterfaceSubs;
+  SubstitutionMap AdjustedInterfaceSubsMap;
 
   /// Create a new substituted type with the updated signature.
   CanSILFunctionType createSubstitutedType(SILFunction *OrigF,
@@ -171,7 +171,7 @@ public:
 
   ArrayRef<Substitution> getAdjustedCloningParamSubstitutions() const { return AdjustedCloningParamSubs; }
 
-  const SubstitutionMap &getAdjustedInterfaceSubs() const { return AdjustedInterfaceSubs; }
+  const SubstitutionMap &getAdjustedInterfaceSubsMap() const { return AdjustedInterfaceSubsMap; }
 
   ArrayRef<Substitution> getParamSubstitutions() const { return ParamSubs; }
 
