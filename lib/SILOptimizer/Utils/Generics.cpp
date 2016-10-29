@@ -305,17 +305,13 @@ ReabstractionInfo::createSubstitutedType(SILFunction *OrigF,
   auto SM = M.getSwiftModule();
   auto OrigFnTy = OrigF->getLoweredFunctionType();
 
-  if (!HasUnboundGenericParams)
-    return SILType::substFuncType(M, SM, SubstMap, OrigFnTy,
-                                  /*dropGenerics = */ true);
-
   // First substitute concrete types into the existing function type.
-  // The generic signature of the returned function type is the same
-  // as the one of the existing function type.
   auto FnTy = SILType::substFuncType(M, SM, SubstMap, OrigFnTy,
-                                     /*dropGenerics = */ false);
+                                     /*dropGenerics = */ true);
+  if (!HasUnboundGenericParams)
+    return FnTy;
 
-  // Now exchange the generic signature.
+  // Use the new specialized generic signature.
   auto NewFnTy = SILFunctionType::get(
       SpecializedGenSig, FnTy->getExtInfo(), FnTy->getCalleeConvention(),
       FnTy->getParameters(), FnTy->getAllResults(),
