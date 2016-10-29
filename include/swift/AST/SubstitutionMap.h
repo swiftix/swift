@@ -61,12 +61,20 @@ public:
 
   void addSubstitution(CanType type, Type replacement);
 
-  void replaceSubstitution(CanType type, Type replacement);
+  const llvm::DenseMap<TypeBase *, ArrayRef<ProtocolConformanceRef>> &getConformanceMap() const {
+    return conformanceMap;
+  }
+
+  const llvm::DenseMap<TypeBase *, SmallVector<ParentType, 1>> &getParentMap() const {
+    return parentMap;
+  }
 
   void addConformances(CanType type, ArrayRef<ProtocolConformanceRef> conformances);
 
   void addParent(CanType type, CanType parent,
                  AssociatedTypeDecl *assocType);
+
+  void dump() const;
 };
 
 } // end namespace swift

@@ -47,9 +47,24 @@ static unsigned getBoundGenericDepth(Type t) {
 // ReabstractionInfo
 // =============================================================================
 
+/// Copy an entry from one substitution map into the other substitution map.
+void copySubstitutionMapEntry(Type Ty, SubstitutionMap &From, SubstitutionMap &To) {
+  auto CanTy = Ty->getCanonicalType();
+  auto SubstTy = From.getMap().lookup(CanTy.getPointer());
+  To.addSubstitution(CanTy, SubstTy);
+  auto Parents = From.getParentMap().lookup(CanTy.getPointer());
+  for (auto &Parent : Parents) {
+    To.addParent(CanTy, Parent.first, Parent.second);
+  }
+  auto Conformances = From.getConformances(CanTy);
+  if (!Conformances.empty())
+    To.addConformances(CanTy, Conformances);
+}
+
 // Initialize SpecializedType iff the specialization is allowed.
 ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
                                      ArrayRef<Substitution> Subs) {
+  StringRef FnName = OrigF->getName();
   if (!OrigF->shouldOptimize()) {
     DEBUG(llvm::dbgs() << "    Cannot specialize function " << OrigF->getName()
                        << " marked to be excluded from optimizations.\n");
@@ -96,6 +111,10 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
   bool HasConcreteGenericParams = false;
   bool HasUnboundGenericParams = false;
   for (auto &entry : InterfaceSubs.getMap()) {
+    // Check only the substitutions for the generic parameter types.
+    // Ignore any dependent types, etc.
+    if (!isa<GenericTypeParamType>(entry.first))
+      continue;
     if (entry.second->getCanonicalType()->hasArchetype()) {
       HasUnboundGenericParams = true;
       continue;
@@ -113,20 +132,18 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     return;
   }
 
-  auto OrigGenSig = OrigF->getLoweredFunctionType()->getGenericSignature();
-  auto OrigGenericEnv = OrigF->getGenericEnvironment();
-  SpecializedGenSig = OrigGenSig;
+  // We need a generic environment for the partial specialization.
+  if (HasUnboundGenericParams && !OrigF->getGenericEnvironment())
+    return;
 
-  SubstitutionMap AdjustedCloningSubs = InterfaceSubs;
-  // Adjusted substitution map for the caller, which maps
-  // generic parameters to the contextual types. It is used
-  // to create an adjusted set of substitutions for the
-  // caller's apply instruction which will invoke the specialized
-  // function.
-  SubstitutionMap AdjustedParamSubsMap = InterfaceSubs;
-  AdjustedInterfaceSubsMap = InterfaceSubs;
+  if (!HasUnboundGenericParams)
+    AdjustedInterfaceSubsMap = InterfaceSubs;
 
   if (HasUnboundGenericParams) {
+    auto OrigGenSig = OrigF->getLoweredFunctionType()->getGenericSignature();
+    auto OrigGenericEnv = OrigF->getGenericEnvironment();
+    SpecializedGenSig = OrigGenSig;
+
     // Try to form a new generic signature based on the old one.
     ArchetypeBuilder Builder(*SM, M.getASTContext().Diags);
 
@@ -171,27 +188,137 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     }
     llvm::dbgs() << "\n";
 
+    SubstitutionMap AdjustedCloningSubs;
+
+    // Adjusted substitution map for the caller, which maps
+    // generic parameters to the contextual types. It is used
+    // to create an adjusted set of substitutions for the
+    // caller's apply instruction which will invoke the specialized
+    // function.
+    SubstitutionMap AdjustedParamSubsMap;
+
+
     // If an archetype is mapped to a type containing an archetype, then
     // map it to itself.
-    for (auto &entry : InterfaceSubs.getMap()) {
+    auto &InterfaceSubsMap = InterfaceSubs.getMap();
+    auto &InterfaceParentMap = InterfaceSubs.getParentMap();
+    auto &InterfaceConformanceMap = InterfaceSubs.getConformanceMap();
+    // Get the fowarding substitutions inside the specialized function.
+    auto ForwardingSubs = SpecializedGenericEnv->getForwardingSubstitutions(
+        SM, SpecializedGenSig);
+    // Get the map corresponding to the fowarding substitutions inside the
+    // specialized function. It uses interface types as keys.
+    auto ForwardingInterfaceSubsMap =
+        SpecializedGenSig->getSubstitutionMap(ForwardingSubs);
+    // Get the map corresponding to the fowarding subs. It uses contextual types.
+    //auto ForwardingInterfaceSubsMap = SpecializedGenericEnv->getSubstitutionMap(
+    //    SM, SpecializedGenSig, ForwardingSubs);
+
+    auto ConcreteTypeDumper = [](Type Ty, StringRef Prefix) {
+      if (!(isa<ArchetypeType>(Ty->getCanonicalType()) ||
+            Ty->isAnyExistentialType() ||
+            isa<GenericTypeParamType>(Ty->getCanonicalType()))) {
+        llvm::dbgs() << "Concrete type " << Prefix <<  " : " << Ty << "\n";
+      }
+    };
+
+    auto CheckConcreteConformances =
+        [](Type Ty, ArrayRef<ProtocolConformanceRef> Conformances,
+           StringRef Prefix) {
+          if (!(isa<ArchetypeType>(Ty->getCanonicalType()) ||
+                Ty->isAnyExistentialType() ||
+                isa<GenericTypeParamType>(Ty->getCanonicalType()))) {
+            for (unsigned idx = 0, e = Conformances.size(); idx < e; ++idx) {
+              if (!Conformances[idx].isConcrete()) {
+                llvm::dbgs() << "Conformance should be concrete:\n";
+                Conformances[idx].dump();
+              }
+              //assert(Conformances[idx].isConcrete());
+
+              // assert(CalleeSideConformances[idx].isConcrete() ==
+              // CallerSideConformances[idx].isConcrete());
+              // assert(CalleeSideConformances[idx].isAbstract() ==
+              // CallerSideConformances[idx].isAbstract());
+            }
+          }
+        };
+
+    // Create new substitution maps. Simply copy the mappings for those types
+    // which are mapped to concrete types in the original list of substitutions.
+    // For all other types, remap them to the their contextual types.
+    for (auto &entry : InterfaceSubsMap) {
+      auto CanTy = entry.first->getCanonicalType();
       if (entry.second->getCanonicalType()->hasArchetype()) {
-        auto CanTy = entry.first->getCanonicalType();
+        Type Ty;
+
         // Map generic parameter type to an interface type in the
         // old generic environment.
-        AdjustedInterfaceSubsMap.replaceSubstitution(
-            CanTy, OrigGenericEnv->mapTypeOutOfContext(SM, CanTy));
+        Ty = OrigGenericEnv->mapTypeOutOfContext(SM, CanTy)->getCanonicalType();
+        AdjustedInterfaceSubsMap.addSubstitution(CanTy, Ty);
+        ConcreteTypeDumper(Ty, "1");
+
         // Map generic parameter type to a contextual type in the
         // old generic environment.
-        AdjustedParamSubsMap.replaceSubstitution(
-            CanTy, OrigGenericEnv->mapTypeIntoContext(SM, CanTy));
+        Ty = OrigGenericEnv->mapTypeIntoContext(SM, CanTy)->getCanonicalType();
+        AdjustedParamSubsMap.addSubstitution(
+            CanTy, Ty);
+        ConcreteTypeDumper(Ty, "2");
+
         // Map generic parameter type to a contextual type in the
         // new generic environment. This will be used by the cloner.
-        AdjustedCloningSubs.replaceSubstitution(
-            CanTy, SpecializedGenericEnv->mapTypeIntoContext(SM, CanTy));
+        Ty = SpecializedGenericEnv->mapTypeIntoContext(SM, CanTy)->getCanonicalType();
+        AdjustedCloningSubs.addSubstitution(CanTy, Ty);
+        ConcreteTypeDumper(Ty, "3");
+
+        // Copy conformances.
+
+        // Conformances used for this generic parameter on the caller side.
+        auto CallerSideConformances =
+            InterfaceConformanceMap.lookup(CanTy.getPointer());
+        AdjustedInterfaceSubsMap.addConformances(CanTy, CallerSideConformances);
+        Ty = AdjustedInterfaceSubsMap.getMap().lookup(CanTy.getPointer());
+        CheckConcreteConformances(Ty, CallerSideConformances, "Concrete1");
+
+        AdjustedParamSubsMap.addConformances(CanTy, CallerSideConformances);
+        Ty = AdjustedParamSubsMap.getMap().lookup(CanTy.getPointer());
+        CheckConcreteConformances(Ty, CallerSideConformances, "Concrete2");
+
+        // Conformances used for this generic parameter inside the callee, i.e.
+        // inside specialization.
+        auto CalleeSideConformances =
+            ForwardingInterfaceSubsMap.getConformanceMap().lookup(
+                CanTy.getPointer());
+        assert(CallerSideConformances.size() == CalleeSideConformances.size());
+
+        AdjustedCloningSubs.addConformances(CanTy, CalleeSideConformances);
+        Ty = AdjustedCloningSubs.getMap().lookup(CanTy.getPointer());
+        CheckConcreteConformances(Ty, CalleeSideConformances, "Concrete3");
+
+        // Copy parents.
+        auto Parents = InterfaceParentMap.lookup(CanTy.getPointer());
+        for (auto &Parent : Parents) {
+          AdjustedInterfaceSubsMap.addParent(CanTy, Parent.first, Parent.second);
+          AdjustedCloningSubs.addParent(CanTy, Parent.first, Parent.second);
+          AdjustedParamSubsMap.addParent(CanTy, Parent.first, Parent.second);
+        }
+
       } else {
-        // Remap to the concrete types. But it is in the map already.
+        // Copy entries if a replacement is a concrete type.
+        copySubstitutionMapEntry(CanTy, InterfaceSubs, AdjustedInterfaceSubsMap);
+        copySubstitutionMapEntry(CanTy, InterfaceSubs, AdjustedParamSubsMap);
+        copySubstitutionMapEntry(CanTy, InterfaceSubs, AdjustedCloningSubs);
       }
     }
+
+#if 0
+    // Dump the maps
+    llvm::errs() << "\n\n*AdjustedInterfaceSubsMap\n";
+    AdjustedInterfaceSubsMap.dump();
+    llvm::errs() << "\n\n*AdjustedParamSubsMap\n";
+    AdjustedParamSubsMap.dump();
+    llvm::errs() << "\n\n*AdjustedCloningMap\n";
+    AdjustedCloningSubs.dump();
+#endif
 
     // Create a new list of substitutions.
     SmallVector<Substitution, 8> AdjustedSubsVector;
@@ -761,7 +888,7 @@ void swift::trySpecializeApplyOfGeneric(
   if (F->isFragile() && RefF->isFragile())
     Fragile = IsFragile;
 
-  ReabstractionInfo ReInfo(RefF, Apply.getSubstitutions());
+  ReabstractionInfo ReInfo(Apply, RefF, Apply.getSubstitutions());
   if (!ReInfo.getSpecializedType())
     return;
 

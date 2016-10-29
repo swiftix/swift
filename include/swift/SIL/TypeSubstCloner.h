@@ -211,21 +211,23 @@ protected:
 
   void visitWitnessMethodInst(WitnessMethodInst *Inst) {
     // Specialize the Self substitution of the witness_method.
-    auto sub = Inst->getSelfSubstitution();
-    sub = sub.subst(Inst->getModule().getSwiftModule(), SubsMap);
+    auto oldSub = Inst->getSelfSubstitution();
+    auto sub = oldSub.subst(Inst->getModule().getSwiftModule(), SubsMap);
 
     assert(sub.getConformances().size() == 1 &&
            "didn't get conformance from substitution?!");
 
+    auto OldConformance = oldSub.getConformances()[0];
     auto Conformance = sub.getConformances()[0];
+    (void)OldConformance;
 
     auto newLookupType = getOpASTType(Inst->getLookupType());
     if (Conformance.isConcrete()) {
       CanType Ty = Conformance.getConcrete()->getType()->getCanonicalType();
 
       if (Ty != newLookupType) {
-        //assert(Ty->isExactSuperclassOf(newLookupType, nullptr) &&
-        //       "Should only create upcasts for sub class.");
+        assert(Ty->isExactSuperclassOf(newLookupType, nullptr) &&
+               "Should only create upcasts for sub class.");
 
         // We use the super class as the new look up type.
         newLookupType = Ty;
