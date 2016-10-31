@@ -1097,6 +1097,17 @@ static bool isComparisonKnownTrue(BuiltinInst *Builtin, InductionInfo &IndVar) {
                                     m_Specific(IndVar.End)));
 }
 
+/// Based on the induction variable information this comparison is known to be
+/// false.
+static bool isComparisonKnownFalse(BuiltinInst *Builtin, InductionInfo &IndVar) {
+  if (!IndVar.IsOverflowCheckInserted ||
+      IndVar.Cmp != BuiltinValueKind::ICMP_EQ)
+    return false;
+  return match(Builtin,
+               m_ApplyInst(BuiltinValueKind::ICMP_SLT, m_Specific(IndVar.HeaderVal),
+                           m_Specific(IndVar.Start)));
+}
+
 /// Analyse the loop for arrays that are not modified and perform dominator tree
 /// based redundant bounds check removal.
 static bool hoistBoundsChecks(SILLoop *Loop, DominanceInfo *DT, SILLoopInfo *LI,
@@ -1197,6 +1208,14 @@ static bool hoistBoundsChecks(SILLoop *Loop, DominanceInfo *DT, SILLoopInfo *LI,
                 TrueVal = SILValue(B.createIntegerLiteral(
                     Builtin->getLoc(), Builtin->getType(), -1));
               Builtin->replaceAllUsesWith(TrueVal);
+              Changed = true;
+              continue;
+            }
+            if (isComparisonKnownFalse(Builtin, *IV)) {
+              if (!FalseVal)
+                FalseVal = SILValue(B.createIntegerLiteral(
+                    Builtin->getLoc(), Builtin->getType(), 0));
+              Builtin->replaceAllUsesWith(FalseVal);
               Changed = true;
               continue;
             }
