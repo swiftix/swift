@@ -88,6 +88,10 @@ bool UsePrespecialized::replaceByPrespecialized(SILFunction &F) {
     if (Subs.empty())
       continue;
 
+    // Bail if any generic type parameters are unbound.
+    if (hasUnboundGenericTypes(Subs))
+      continue;
+
     ReabstractionInfo ReInfo(ReferencedF, Subs);
 
     auto SpecType = ReInfo.getSpecializedType();
@@ -99,20 +103,17 @@ bool UsePrespecialized::replaceByPrespecialized(SILFunction &F) {
     if (SpecType->hasArchetype())
       continue;
 
-    // Bail if any generic types parameters of the concrete type
-    // are unbound.
-    if (hasUnboundGenericTypes(Subs))
-      continue;
-
     // Create a name of the specialization.
     std::string ClonedName;
     {
       Mangle::Mangler Mangler;
-      GenericSpecializationMangler GenericMangler(Mangler, ReferencedF, Subs,
-                                                  ReferencedF->isFragile());
-      NewMangling::GenericSpecializationMangler NewGenericMangler(ReferencedF,
-                                              Subs, ReferencedF->isFragile(),
-                                              /*isReAbstracted*/ true);
+      GenericSpecializationMangler GenericMangler(
+          Mangler, ReferencedF, ReferencedF->getLoweredFunctionType(),
+          ReferencedF->isFragile());
+      NewMangling::GenericSpecializationMangler NewGenericMangler(
+          ReferencedF, ReferencedF->getLoweredFunctionType(),
+          ReferencedF->isFragile(),
+          /*isReAbstracted*/ true);
       GenericMangler.mangle();
       std::string Old = Mangler.finalize();
       std::string New = NewGenericMangler.mangle();
