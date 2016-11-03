@@ -60,6 +60,32 @@ class ReabstractionInfo {
   /// SubstitutedType.
   CanSILFunctionType SpecializedType;
 
+  /// The generic environment to be used by the specialization.
+  GenericEnvironment *SpecializedGenericEnv;
+
+  /// The generic signature of the specializaiton.
+  /// It is nullptr if the specialization is not polymorphic.
+  GenericSignature *SpecializedGenSig;
+
+  // Set of the original substitutions used by the caller's
+  // apply instruction.
+  ArrayRef<Substitution> OriginalParamSubs;
+
+  // Set of substitutions to be used by the caller
+  // when it calls a specialized function.
+  ArrayRef<Substitution> CallerParamSubs;
+
+  // Set of substitutions to be used by the cloner during cloning.
+  // It maps to concrete types for any types which were replaced by
+  // concrete types in the original substitution list. All other
+  // types are replaced by their respective contextual types.
+  ArrayRef<Substitution> ClonerParamSubs;
+
+  /// Create a new substituted type with the updated signature.
+  CanSILFunctionType createSubstitutedType(SILFunction *OrigF,
+                                           const TypeSubstitutionMap &SubstMap,
+                                           bool HasUnboundGenericParams);
+
 public:
   /// Constructs the ReabstractionInfo for generic function \p Orig with
   /// substitutions \p ParamSubs.
@@ -123,6 +149,22 @@ public:
   /// possible.
   CanSILFunctionType getSpecializedType() const { return SpecializedType; }
 
+  GenericEnvironment *getSpecializedGenericEnvironment() const {
+    return SpecializedGenericEnv;
+  }
+
+  ArrayRef<Substitution> getCallerParamSubstitutions() const {
+    return CallerParamSubs;
+  }
+
+  ArrayRef<Substitution> getClonerParamSubstitutions() const {
+    return ClonerParamSubs;
+  }
+
+  ArrayRef<Substitution> getOriginalParamSubstitutions() const {
+    return OriginalParamSubs;
+  }
+
   /// Create a specialized function type for a specific substituted type \p
   /// SubstFTy by applying the re-abstractions.
   CanSILFunctionType createSpecializedType(CanSILFunctionType SubstFTy,
@@ -163,6 +205,10 @@ public:
       SpecializedF = tryCreateSpecialization();
 
     return SpecializedF;
+  }
+
+  StringRef getClonedName() {
+    return ClonedName;
   }
 };
 
