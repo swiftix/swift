@@ -119,3 +119,25 @@ addParent(CanType type, CanType parent, AssociatedTypeDecl *assocType) {
   assert(type && parent && assocType);
   parentMap[type.getPointer()].push_back(std::make_pair(parent, assocType));
 }
+
+void SubstitutionMap::dump() const {
+  llvm::errs() << "\nSubstitution map:\n";
+  for (auto pair : getMap()) {
+    llvm::errs() << "\n\nOriginal type:\n";
+    pair.first->dump();
+    llvm::errs() << "Substituted type:\n";
+    pair.second->dump();
+    llvm::errs() << "Conformances:\n";
+    auto Conformances = getConformances(pair.first->getCanonicalType());
+    for (auto C : Conformances) {
+      C.dump();
+      llvm::errs() << "\n";
+    }
+    llvm::errs() << "Parents:\n";
+    auto Parents = getParentMap().lookup(pair.first->getCanonicalType().getPointer());
+    for (auto Parent : Parents) {
+      Parent.first.dump();
+      Parent.second->dump();
+    }
+  }
+}

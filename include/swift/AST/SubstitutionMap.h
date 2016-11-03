@@ -71,10 +71,12 @@ public:
 
   void addParent(CanType type, CanType parent,
                  AssociatedTypeDecl *assocType);
-  
+
   bool empty() const {
     return subMap.empty();
   }
+
+  void dump() const LLVM_ATTRIBUTE_USED;
 };
 
 } // end namespace swift
