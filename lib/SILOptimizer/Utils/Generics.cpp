@@ -189,12 +189,12 @@ GenericFuncSpecializer::GenericFuncSpecializer(SILFunction *GenericFunc,
 
   Mangle::Mangler Mangler;
   GenericSpecializationMangler OldGenericMangler(Mangler, GenericFunc,
-                                              ParamSubs, Fragile);
+                                              ReInfo.getSpecializedType(), Fragile);
   OldGenericMangler.mangle();
   std::string Old = Mangler.finalize();
 
   NewMangling::GenericSpecializationMangler NewGenericMangler(GenericFunc,
-                          ParamSubs, Fragile, /*isReAbstracted*/ true);
+                          ReInfo.getSpecializedType(), Fragile, /*isReAbstracted*/ true);
   std::string New = NewGenericMangler.mangle();
   ClonedName = NewMangling::selectMangling(Old, New);
 
@@ -359,7 +359,7 @@ static SILFunction *createReabstractionThunk(const ReabstractionInfo &ReInfo,
   {
     Mangle::Mangler M;
     GenericSpecializationMangler OldMangler(M, OrigF,
-                              OrigPAI->getSubstitutions(), Fragile,
+                              ReInfo.getSubstitutedType(), Fragile,
                               GenericSpecializationMangler::NotReabstracted);
     OldMangler.mangle();
     std::string Old = M.finalize();

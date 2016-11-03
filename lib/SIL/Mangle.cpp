@@ -44,33 +44,16 @@ using namespace Mangle;
 //                           Generic Specialization
 //===----------------------------------------------------------------------===//
 
-static void mangleSubstitution(Mangler &M, Substitution Sub) {
-  M.mangleType(Sub.getReplacement()->getCanonicalType(), 0);
-  for (auto C : Sub.getConformances()) {
-    if (C.isAbstract())
-      return;
-    M.mangleProtocolConformance(C.getConcrete());
-  }
-}
-
 void GenericSpecializationMangler::mangleSpecialization() {
   Mangler &M = getMangler();
 
-  SILFunctionType *FTy = Function->getLoweredFunctionType();
-  CanGenericSignature Sig = FTy->getGenericSignature();
-
-  unsigned idx = 0;
-  for (Type DepType : Sig->getAllDependentTypes()) {
-    // It is sufficient to only mangle the substitutions of the "primary"
-    // dependent types. As all other dependent types are just derived from the
-    // primary types, this will give us unique symbol names.
-    if (DepType->is<GenericTypeParamType>()) {
-      mangleSubstitution(M, Subs[idx]);
-      M.append('_');
-    }
-    ++idx;
-  }
-  assert(idx == Subs.size() && "subs not parallel to dependent types");
+  // TODO: Try to produce a shorter representation.
+  // It is sufficient to only mangle the substitutions of the "primary"
+  // dependent types. As all other dependent types are just derived from the
+  // primary types, this will give us unique symbol names.
+  SILFunctionType *FTy = CanSILFnTy;
+  M.mangleType(FTy, 0);
+  M.append("_");
 }
 
 //===----------------------------------------------------------------------===//

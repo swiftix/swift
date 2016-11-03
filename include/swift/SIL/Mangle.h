@@ -104,6 +104,8 @@ template <typename SubType>
 class SpecializationMangler : public SpecializationManglerBase {
   SubType *asImpl() { return static_cast<SubType *>(this); }
 public:
+  CanSILFunctionType CanSILFnTy;
+
   Mangle::Mangler &getMangler() const { return M; }
 
   ~SpecializationMangler() = default;
@@ -128,6 +130,13 @@ protected:
                         Mangle::Mangler &M, IsFragile_t Fragile,
                         SILFunction *F)
       : SpecializationManglerBase(K, P, M, Fragile, F) {}
+
+  SpecializationMangler(SpecializationKind K, SpecializationPass P,
+                        Mangle::Mangler &M, IsFragile_t Fragile,
+                        SILFunction *F, CanSILFunctionType CanSILFnTy)
+      : SpecializationManglerBase(K, P, M, Fragile, F), CanSILFnTy(CanSILFnTy) {
+  }
+
 };
 
 class GenericSpecializationMangler :
@@ -144,15 +153,17 @@ public:
     NotReabstracted
   };
 
-  GenericSpecializationMangler(Mangle::Mangler &M, SILFunction *F,
-                               ArrayRef<Substitution> Subs,
+  GenericSpecializationMangler(Mangle::Mangler &M,
+                               SILFunction *F,
+                               CanSILFunctionType CanSILFnTy,
                                IsFragile_t Fragile,
                                ReAbstractionMode isReAbstracted = ReAbstracted)
     : SpecializationMangler(isReAbstracted == ReAbstracted ?
                               SpecializationKind::Generic :
                               SpecializationKind::NotReAbstractedGeneric,
                             SpecializationPass::GenericSpecializer,
-                            M, Fragile, F), Subs(Subs) {}
+                            M, Fragile, F, CanSILFnTy) {}
+
 
 private:
   void mangleSpecialization();
