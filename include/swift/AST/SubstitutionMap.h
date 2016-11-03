@@ -71,6 +71,8 @@ public:
 
   void addParent(CanType type, CanType parent,
                  AssociatedTypeDecl *assocType);
+
+  void dump() const LLVM_ATTRIBUTE_USED;
 };
 
 } // end namespace swift
