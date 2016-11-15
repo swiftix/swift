@@ -52,8 +52,8 @@ class ReabstractionInfo {
   /// The first NumResults bits in Conversions refer to indirect out-parameters.
   unsigned NumResults;
 
-  /// The function type after applying the substitutions of the original
-  /// apply site.
+  /// The function type after applying the substitutions used to call the
+  /// specialized function.
   CanSILFunctionType SubstitutedType;
 
   /// The function type after applying the re-abstractions on the
@@ -67,24 +67,39 @@ class ReabstractionInfo {
   /// It is nullptr if the specialization is not polymorphic.
   GenericSignature *SpecializedGenSig;
 
-  // Set of the original substitutions used by the caller's
-  // apply instruction.
+  // Set of the substitutions used by the caller's apply instruction before
+  // any transformations performed by the generic specializer.
+  // It uses archetypes.
   ArrayRef<Substitution> OriginalParamSubs;
 
-  // Set of substitutions to be used by the caller
-  // when it calls a specialized function.
+  // Set of substitutions to be used by the caller's apply when it calls a
+  // specialized function.
+  // It uses archetypes.
   ArrayRef<Substitution> CallerParamSubs;
 
   // Set of substitutions to be used by the cloner during cloning.
   // It maps to concrete types for any types which were replaced by
-  // concrete types in the original substitution list. All other
-  // types are replaced by their respective contextual types.
+  // concrete types in the caller's apply substitution list. All other
+  // types are replaced by their respective archetypes.
   ArrayRef<Substitution> ClonerParamSubs;
 
-  /// Create a new substituted type with the updated signature.
+  // Reference to the original generic non-specialized function.
+  SILFunction *OriginalF;
+
+  // Set if a specialized function has unbound generic parameters.
+  bool HasUnboundGenericParams;
+
+  // Substitutions to be used for creating a new function type
+  // for the specialized function.
+  // It uses interface types.
+  SubstitutionMap CallerInterfaceSubs;
+
+  // Create a new substituted type with the updated signature.
   CanSILFunctionType createSubstitutedType(SILFunction *OrigF,
                                            const TypeSubstitutionMap &SubstMap,
                                            bool HasUnboundGenericParams);
+
+  void createSubstitutedAndSpecializedTypes();
 
 public:
   /// Constructs the ReabstractionInfo for generic function \p Orig with
@@ -92,6 +107,12 @@ public:
   /// If specialization is not possible getSpecializedType() will return an
   /// invalid type.
   ReabstractionInfo(SILFunction *Orig, ArrayRef<Substitution> ParamSubs);
+
+  /// Constructs the ReabstractionInfo for generic function \p Orig with
+  /// additional requirements.
+  /// If specialization is not possible getSpecializedType() will return an
+  /// invalid type.
+  ReabstractionInfo(SILFunction *Orig, ArrayRef<Requirement> Requirements);
 
   /// Does the \p ArgIdx refer to an indirect out-parameter?
   bool isResultIndex(unsigned ArgIdx) const {
@@ -169,6 +190,12 @@ public:
   /// SubstFTy by applying the re-abstractions.
   CanSILFunctionType createSpecializedType(CanSILFunctionType SubstFTy,
                                            SILModule &M) const;
+
+  SILFunction *getNonSpecializedFunction() const {
+    return OriginalF;
+  }
+
+
 };
 
 /// Helper class for specializing a generic function given a list of
