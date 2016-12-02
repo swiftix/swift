@@ -92,7 +92,7 @@ bool UsePrespecialized::replaceByPrespecialized(SILFunction &F) {
     if (hasUnboundGenericTypes(Subs))
       continue;
 
-    ReabstractionInfo ReInfo(ReferencedF, Subs);
+    ReabstractionInfo ReInfo(AI, ReferencedF, Subs);
 
     auto SpecType = ReInfo.getSpecializedType();
     if (!SpecType)

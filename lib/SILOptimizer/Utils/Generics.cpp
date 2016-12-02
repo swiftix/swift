@@ -21,6 +21,15 @@
 
 using namespace swift;
 
+// If set to false, fully concrete substitutions use the same code path
+// as partial specializations, which eliminates a need to special case
+// the full specialization.
+// Currently it is disabled, because ArchetypeBuidler cannot properly
+// handle same-type requirements to concrete types in certain cases, which
+// occur in the stdlib.
+// rdar://29333056
+static bool ShortcutFullSpecialization = true;
+
 // Max depth of a bound generic which can be processed by the generic
 // specializer.
 // E.g. the depth of Array<Array<Array<T>>> is 3.
@@ -48,38 +57,152 @@ static unsigned getBoundGenericDepth(Type t) {
 // ReabstractionInfo
 // =============================================================================
 
-/// Copy an entry from one substitution map into the other substitution map.
-void copySubstitutionMapEntry(Type Ty, SubstitutionMap &From,
-                              SubstitutionMap &To,
-                              bool SkipSubstIfExists = false,
-                              Type Replacement = Type()) {
+/// Prepares the ReabstractionInfo object for further processing and checks
+/// if the current function can be specialized at all.
+/// Returns false, if the current function cannot be specialized.
+/// Returns true otherwise.
+bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *OrigF,
+                                        ArrayRef<Substitution> ParamSubs) {
+  if (!OrigF->shouldOptimize()) {
+    DEBUG(llvm::dbgs() << "    Cannot specialize function " << OrigF->getName()
+                       << " marked to be excluded from optimizations.\n");
+    return false;
+  }
+
+  SpecializedGenericEnv = nullptr;
+  OriginalParamSubs = ParamSubs;
+  CallerParamSubs = {};
+  ClonerParamSubs = ParamSubs;
+
+  OriginalF = OrigF;
+  this->Apply = Apply;
+
+  SubstitutionMap InterfaceSubs;
+
+  // Get the original substitution map.
+  if (OrigF->getLoweredFunctionType()->getGenericSignature())
+    InterfaceSubs = OrigF->getLoweredFunctionType()->getGenericSignature()
+      ->getSubstitutionMap(ParamSubs);
+
+  // Perform some checks to see if we need to bail.
+  if (hasDynamicSelfTypes(InterfaceSubs.getMap())) {
+    DEBUG(llvm::dbgs() << "    Cannot specialize with dynamic self.\n");
+    return false;
+  }
+
+  // Check if the substitution contains any generic types that are too deep.
+  // If this is the case, bail to avoid the explosion in the number of 
+  // generated specializations.
+  for (auto Sub : ParamSubs) {
+    auto Replacement = Sub.getReplacement();
+    if (Replacement.findIf([](Type ty) -> bool {
+          return getBoundGenericDepth(ty) >= BoundGenericDepthThreshold;
+        })) {
+      DEBUG(llvm::dbgs()
+            << "    Cannot specialize because the generic type is too deep.\n");
+      return false;
+    }
+  }
+
+  // Check if we have substitutions which replace generic type parameters with
+  // concrete types or unbound generic types.
+  bool HasConcreteGenericParams = false;
+  HasUnboundGenericParams = false;
+  for (auto &entry : InterfaceSubs.getMap()) {
+    // Check only the substitutions for the generic parameters.
+    // Ignore any dependent types, etc.
+    if (!isa<GenericTypeParamType>(entry.first))
+      continue;
+    if (entry.second->getCanonicalType()->hasArchetype()) {
+      HasUnboundGenericParams = true;
+      continue;
+    }
+    HasConcreteGenericParams = true;
+  }
+
+  if (!HasConcreteGenericParams) {
+    // All substititions are unbound.
+    DEBUG(llvm::dbgs() <<
+          "    Cannot specialize with all unbound interface substitutions.\n");
+    DEBUG(for (auto Sub : ParamSubs) {
+            Sub.dump();
+          });
+    return false;
+  }
+
+  // We need a generic environment for the partial specialization.
+  if (HasUnboundGenericParams && !OrigF->getGenericEnvironment())
+    return false;
+
+  return true;
+}
+
+
+static void dumpConformances(Type Ty, SubstitutionMap &From, StringRef Title,
+                             Type ReplTy, SILModule &SILMod) {
+  llvm::dbgs() << "\n\n" << Title << "\n";
+  llvm::dbgs() << "for type:\n";
+  Ty.dump();
+  llvm::dbgs() << "for replacement:\n";
+  ReplTy->getCanonicalType().dump();
+  llvm::dbgs() << "---------------------\n";
   auto CanTy = Ty->getCanonicalType();
-  if (!SkipSubstIfExists || !To.getMap().lookup(CanTy.getPointer())) {
-    auto SubstTy =
-        (Replacement) ? Replacement : From.getMap().lookup(CanTy.getPointer());
-    To.addSubstitution(CanTy, SubstTy);
+  auto Conformances = From.getConformances(CanTy);
+  for (auto C : Conformances) {
+    C.dump();
   }
-  auto Parents = From.getParentMap().lookup(CanTy.getPointer());
-  for (auto &Parent : Parents) {
-    To.addParent(CanTy, Parent.first, Parent.second);
-  }
+  llvm::dbgs() << "---------------------\n\n";
+}
+
+/// Copy conformances for a given type from one substitution map into the the
+/// other.
+static void copyConformances(Type Ty, SubstitutionMap &From,
+                            SubstitutionMap &To) {
+  auto CanTy = Ty->getCanonicalType();
   auto Conformances = From.getConformances(CanTy);
   if (!Conformances.empty())
     To.addConformances(CanTy, Conformances);
 }
 
+static void copyParents(Type Ty, SubstitutionMap &From, SubstitutionMap &To) {
+  auto CanTy = Ty->getCanonicalType();
+  auto Parents = From.getParentMap().lookup(CanTy.getPointer());
+  for (auto &Parent : Parents) {
+    To.addParent(CanTy, Parent.first, Parent.second);
+  }
+}
+
+/// Copy an entry from one substitution map into the other substitution map.
+static void copySubstitutionMapEntry(Type Ty, SubstitutionMap &From,
+                                     SubstitutionMap &To,
+                                     bool SkipSubstIfExists = false,
+                                     Type Replacement = nullptr) {
+  auto CanTy = Ty->getCanonicalType();
+  if (isa<SubstitutableType>(CanTy)) {
+    auto SubTy = cast<SubstitutableType>(CanTy);
+    if (!SkipSubstIfExists || !To.getMap().lookup(SubTy)) {
+      auto SubstTy = (Replacement) ? Replacement : From.getMap().lookup(SubTy);
+      To.addSubstitution(CanTy, SubstTy);
+    }
+  }
+  copyParents(Ty, From, To);
+  copyConformances(Ty, From, To);
+}
+
 void ReabstractionInfo::createSubstitutedAndSpecializedTypes() {
   auto &M = OriginalF->getModule();
 
-  if (!HasUnboundGenericParams) {
-    SpecializedGenSig = nullptr;
+  if (ShortcutFullSpecialization && !HasUnboundGenericParams) {
+    SpecializedGenericSig = nullptr;
     SpecializedGenericEnv = nullptr;
   }
 
   // Find out how the function type looks like after applying the provided
   // substitutions.
-  SubstitutedType = createSubstitutedType(
-      OriginalF, CallerInterfaceSubs.getMap(), HasUnboundGenericParams);
+  if (!SubstitutedType) {
+    SubstitutedType = createSubstitutedType(
+        OriginalF, CallerInterfaceSubs.getMap(), HasUnboundGenericParams);
+  }
   assert(!SubstitutedType->hasArchetype() &&
          "Substituted function type should not contain archetypes");
 
@@ -122,20 +245,22 @@ void ReabstractionInfo::createSubstitutedAndSpecializedTypes() {
   SpecializedType = createSpecializedType(SubstitutedType, M);
 }
 
-// Initialize SpecializedType iff the specialization is allowed.
-ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
-                                     ArrayRef<Substitution> ParamSubs) {
-  if (!OrigF->shouldOptimize()) {
-    DEBUG(llvm::dbgs() << "    Cannot specialize function " << OrigF->getName()
-                       << " marked to be excluded from optimizations.\n");
-    return;
-  }
-  SpecializedGenericEnv = nullptr;
-  OriginalParamSubs = ParamSubs;
-  CallerParamSubs = ParamSubs;
-  ClonerParamSubs = ParamSubs;
+// This approach does not try to create a new generic signature with
+// a different number of generic type parameters. Instead, it simply
+// builds a new signature based on the old one and adds same type
+// requirements for those generic type parameters that are concrete
+// according to the partial substitution. This way, the signature
+// has exactly the same generic parameter types, just with more
+// requirements. It is much easier to create than using the other
+// approach, because it does not require any complex re-mappings
+// of generic types and archetypes.
 
-  OriginalF = OrigF;
+// Initialize SpecializedType iff the specialization is allowed.
+ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *OrigF,
+                                     ArrayRef<Substitution> ParamSubs) {
+  if (!prepareAndCheck(Apply, OrigF, ParamSubs))
+    return;
+
   SILModule &M = OrigF->getModule();
   Module *SM = M.getSwiftModule();
   auto &Ctx = M.getASTContext();
@@ -147,74 +272,45 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     InterfaceSubs = OrigF->getLoweredFunctionType()->getGenericSignature()
       ->getSubstitutionMap(ParamSubs);
 
-  // Perform some checks to see if we need to bail.
-  if (hasDynamicSelfTypes(InterfaceSubs.getMap())) {
-    DEBUG(llvm::dbgs() << "    Cannot specialize with dynamic self.\n");
-    return;
-  }
+  //if (HasUnboundGenericParams)
+  //  return;
 
-  // Check if the substitution contains any generic types that are too deep.
-  // If this is the case, bail to avoid the explosion in the number of 
-  // generated specializations.
-  for (auto Sub : ParamSubs) {
-    auto Replacement = Sub.getReplacement();
-    if (Replacement.findIf([](Type ty) -> bool {
-          return getBoundGenericDepth(ty) >= BoundGenericDepthThreshold;
-        })) {
-      DEBUG(llvm::dbgs()
-            << "    Cannot specialize because the generic type is too deep.\n");
-      return;
-    }
-  }
-
-  // Check if we have substitutions which replace generic type parameters with
-  // concrete types or unbound generic types.
-  bool HasConcreteGenericParams = false;
-  HasUnboundGenericParams = false;
-  for (auto &entry : InterfaceSubs.getMap()) {
-    // Check only the substitutions for the generic parameters.
-    // Ignore any dependent types, etc.
-    if (!isa<GenericTypeParamType>(entry.first))
-      continue;
-    if (entry.second->getCanonicalType()->hasArchetype()) {
-      HasUnboundGenericParams = true;
-      continue;
-    }
-    HasConcreteGenericParams = true;
-  }
-
-  if (!HasConcreteGenericParams) {
-    // All substititions are unbound.
-    DEBUG(llvm::dbgs() <<
-          "    Cannot specialize with all unbound interface substitutions.\n");
-    DEBUG(for (auto Sub : ParamSubs) {
-            Sub.dump();
-          });
-    return;
-  }
-
-  // We need a generic environment for the partial specialization.
-  if (HasUnboundGenericParams && !OrigF->getGenericEnvironment())
-    return;
-
-  // Substitutions to be used to create a new function type for the
-  // specialized function. If the the original substitution list mapped
-  // a given generic parameter to a concrete type, then do the same.
-  // Map all other generic parameters to themselves.
-  if (!HasUnboundGenericParams)
+  if (ShortcutFullSpecialization && !HasUnboundGenericParams) {
     CallerInterfaceSubs = InterfaceSubs;
+  }
 
-  if (HasUnboundGenericParams) {
-    auto OrigGenSig = OrigF->getLoweredFunctionType()->getGenericSignature();
+  // The overall approach for partial specializations is as follows:
+  // - Form a new generic signature by starting with the old one and
+  // adding new same-type requirements for all generic parameters
+  // which are substituted by the concrete types in the apply instruction.
+  // - Form two new substitution maps: one to be used by the apply instruction,
+  // which will invoke a specialized function, and the other one to be used
+  // by the SIL function cloner, when it clones the original generic function
+  // into a partially specialized function.
+  //
+  // Current approach has some limitations: It does not support a partial
+  // specialization if a generic type is substituted by a non-concrete type,
+  // containing some unbound generic parameters. The reason for this limitation
+  // is that it would require an additional implementation complexity, because
+  // the usage of generic parameters in the replacement may require a creation
+  // of a new generic signature for a different set of generic parameters than
+  // in the original generic function. This would make the re-mapping of
+  // generic parameters rather complex.
+  // If we see a need for this more general form of partial specializaiton, we
+  // may support it in the future.
+  if (!ShortcutFullSpecialization || HasUnboundGenericParams) {
+    auto OrigGenericSig = OrigF->getLoweredFunctionType()->getGenericSignature();
     auto OrigGenericEnv = OrigF->getGenericEnvironment();
-    SpecializedGenSig = OrigGenSig;
+    SpecializedGenericSig = OrigGenericSig;
 
     // Form a new generic signature based on the old one.
-    ArchetypeBuilder Builder(*SM, M.getASTContext().Diags);
+    ArchetypeBuilder Builder(*SM);
 
     // First, add the old generic signature.
-    Builder.addGenericSignature(OrigGenSig, nullptr);
+    Builder.addGenericSignature(OrigGenericSig, nullptr);
 
+    //llvm::dbgs() << "\n\nInterfaceMap:\n\n";
+    //InterfaceSubs.dump();
     // Checks if a given generic parameter type or a dependent type
     // is mapped to a non-concrete type, i.e. a type that has
     // archetypes. For dependent types, it also checks that its
@@ -228,7 +324,7 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
     // ensures that we do not try to handle these failing cases for now.
     auto IsNonConcreteReplacementType =
         [&InterfaceSubs](CanType Ty, Type DefaultReplacementTy) -> bool {
-      if (DefaultReplacementTy->getCanonicalType()->hasArchetype())
+      if ( DefaultReplacementTy && DefaultReplacementTy->getCanonicalType()->hasArchetype())
         return true;
       auto BaseTy = Ty;
       while (auto DepTy = dyn_cast<DependentMemberType>(BaseTy)) {
@@ -236,9 +332,18 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
       };
       assert(isa<GenericTypeParamType>(BaseTy));
       return InterfaceSubs.getMap()
-          .lookup(BaseTy.getPointer())
+          .lookup(cast<SubstitutableType>(BaseTy->getCanonicalType()))
           ->getCanonicalType()
           ->hasArchetype();
+    };
+
+    auto GetBaseGenericTypeParamType = [](CanType Ty) -> GenericTypeParamType * {
+      auto BaseTy = Ty;
+      while (auto DepTy = dyn_cast<DependentMemberType>(BaseTy)) {
+        BaseTy = DepTy->getBase()->getCanonicalType();
+      };
+      assert(isa<GenericTypeParamType>(BaseTy));
+      return cast<GenericTypeParamType>(BaseTy);
     };
 
     // For each substitution with a concrete type as a replacement,
@@ -248,41 +353,72 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
       auto IsNonConcreteReplacement =
           IsNonConcreteReplacementType(CanTy, entry.second);
       if (!IsNonConcreteReplacement) {
+        // If it is a dependent type and its parent generic
+        // parameter type is concrete, no need to add
+        // a requirement for the depdendent type as it can be derived from the
+        // parent generic parameter requirements.
+        if (!isa<GenericTypeParamType>(CanTy)) {
+          auto BaseGP = GetBaseGenericTypeParamType(CanTy);
+          if (!InterfaceSubs.getMap().lookup(BaseGP)->hasArchetype())
+            continue;
+        }
+
         auto CanTy = entry.first->getCanonicalType();
         auto OutTy = CanTy;
-        auto EqualTy = entry.second;
+        auto EqualTy = entry.second->getCanonicalType();
         // TODO: For pre-specializations we need to add a different kind of a
         // requirement, e.g. that the type conforms to TrivialTypeOfSizeN or
         // to RefCountedObject.
-        Builder.addSameTypeRequirementToConcrete(
-            Builder.resolveArchetype(OutTy), EqualTy->getCanonicalType(),
-            RequirementSource(RequirementSource::Explicit, SourceLoc()));
+        {
+          if (Builder.addSameTypeRequirement(
+              OutTy, EqualTy->getCanonicalType(),
+              RequirementSource(RequirementSource::Explicit, SourceLoc()))) {
+            // Bail if this requirement cannot be added;
+            // llvm_unreachable("An impossible requirement?");
+            return;
+          }
+        }
       }
     }
 
     // Remember the new generic signature.
-    SpecializedGenSig = Builder.getGenericSignature()->getCanonicalSignature();
+    //SpecializedGenericSig = Builder.getGenericSignature()->getCanonicalSignature();
     // Remember the new generic environment.
-    SpecializedGenericEnv = Builder.getGenericEnvironment(SpecializedGenSig);
+    //SpecializedGenericEnv = Builder.getGenericEnvironment(SpecializedGenericSig);
+
+    auto GenPair = Builder.getGenericSignatureAndEnvironment();
+    SpecializedGenericSig = GenPair.first->getCanonicalSignature();
+    SpecializedGenericEnv = GenPair.second;
+
+#if 1
+    if (ShortcutFullSpecialization && !HasUnboundGenericParams) {
+      createSubstitutedAndSpecializedTypes();
+      return;
+    }
+#endif
 
     // Substitution map to be used by the cloner.
     SubstitutionMap ClonerSubsMap;
 
     auto &InterfaceSubsMap = InterfaceSubs.getMap();
-    auto &InterfaceParentMap = InterfaceSubs.getParentMap();
     auto ForwardingSubs = SpecializedGenericEnv->getForwardingSubstitutions(SM);
     auto ForwardingInterfaceSubsMap =
-        SpecializedGenSig->getSubstitutionMap(ForwardingSubs);
+        SpecializedGenericSig->getSubstitutionMap(ForwardingSubs);
 
     // Create new substitution maps. Simply copy the mappings for those types
     // which are mapped to concrete types in the original list of substitutions.
     // And if a generic parameter is mapped to a non-concrete type in the original
     // substitutions, simply map it to a corresponding archetype, i.e. do the
     // same what a forwarding substitution does.
-    for (auto &entry : InterfaceSubsMap) {
-      auto CanTy = entry.first->getCanonicalType();
+    for (auto &entry : OrigGenericSig->getAllDependentTypes()) {
+      //auto CanTy = entry.first->getCanonicalType();
+      auto CanTy = entry->getCanonicalType();
+      auto ST = dyn_cast<SubstitutableType>(CanTy);
+      if (!ST || !isa<GenericTypeParamType>(ST))
+        continue;
+      auto Repl = ST ? InterfaceSubsMap.lookup(ST) : CanType();
       auto IsNonConcreteReplacement =
-          IsNonConcreteReplacementType(CanTy, entry.second);
+          IsNonConcreteReplacementType(CanTy, Repl);
       if (IsNonConcreteReplacement) {
         Type Ty;
 
@@ -299,23 +435,16 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
         // Copy conformances.
 
         // Conformances used for this generic parameter on the caller side.
-        auto CallerSideConformances = InterfaceSubs.getConformances(CanTy);
-        CallerInterfaceSubs.addConformances(CanTy, CallerSideConformances);
+        copyConformances(CanTy, InterfaceSubs, CallerInterfaceSubs);
 
         // Conformances used for this generic parameter inside the callee, i.e.
         // inside specialization. They should be the same as for forwarding
         // substitutions.
-        auto CalleeSideConformances =
-            ForwardingInterfaceSubsMap.getConformances(CanTy);
-
-        ClonerSubsMap.addConformances(CanTy, CalleeSideConformances);
+        copyConformances(CanTy, ForwardingInterfaceSubsMap, ClonerSubsMap);
 
         // Copy parents.
-        auto Parents = InterfaceParentMap.lookup(CanTy.getPointer());
-        for (auto &Parent : Parents) {
-          CallerInterfaceSubs.addParent(CanTy, Parent.first, Parent.second);
-          ClonerSubsMap.addParent(CanTy, Parent.first, Parent.second);
-        }
+        copyParents(CanTy, InterfaceSubs, CallerInterfaceSubs);
+        copyParents(CanTy, InterfaceSubs, ClonerSubsMap);
       } else {
         // Copy entries if a replacement is a concrete type.
         copySubstitutionMapEntry(CanTy, InterfaceSubs, CallerInterfaceSubs);
@@ -323,23 +452,56 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
       }
     }
 
+    // Now copy conformances for dependent types.
+    // TODO: Merge this loop with the previous one? It is safe, because
+    // dependent types are processed after generic parameter types.
+    for (auto &entry : OrigGenericSig->getAllDependentTypes()) {
+      auto CanTy = entry->getCanonicalType();
+      auto DT = dyn_cast<DependentMemberType>(CanTy);
+      if (!DT)
+        continue;
+
+      // Find its parent generic parameter type.
+      auto BaseGP = GetBaseGenericTypeParamType(DT);
+
+      // Get a substitution for the base generic parameter type.
+      auto Repl = ClonerSubsMap.getMap().lookup(BaseGP);
+
+      if(IsNonConcreteReplacementType(BaseGP->getCanonicalType(), Repl)) {
+        // Copy conformances for dependent types of generic parameter
+        // types which are not substituted by concrete types.
+
+        // Conformances used for this generic parameter on the caller side.
+        copyConformances(CanTy, InterfaceSubs, CallerInterfaceSubs);
+
+        copyConformances(CanTy, ForwardingInterfaceSubsMap, ClonerSubsMap);
+        continue;
+      }
+
+      // Copy conformances for dependent types of generic parameter
+      // types which are substituted by concrete types.
+      copyConformances(CanTy, InterfaceSubs, CallerInterfaceSubs);
+      copyConformances(CanTy, InterfaceSubs, ClonerSubsMap);
+    }
+
+
     // Create new substitutions lists for the caller and for the cloner.
     SmallVector<Substitution, 8> ClonerSubsVector;
     SmallVector<Substitution, 8> CallerSubsVector;
 
     // First, get a substitution map from the original signature.
     // It is based on the substitution list from the apply site.
-    auto ParamMap = OrigGenSig->getSubstitutionMap(ParamSubs);
+    auto ParamMap = OrigGenericSig->getSubstitutionMap(ParamSubs);
     // Then, use this map to form a list of substitutions for calling the
     // specialized function.
     // This new substitution list may contain less elements than the original one,
     // because generic parameter types with concrete type equality requirements
     // do not need a substitution.
-    SpecializedGenSig->getSubstitutions(*SM, ParamMap, CallerSubsVector);
+    SpecializedGenericSig->getSubstitutions(*SM, ParamMap, CallerSubsVector);
 
     // Form a substitution list to be used by the cloner when it clones the
     // body of the original function.
-    OrigGenSig->getSubstitutions(*SM, ClonerSubsMap, ClonerSubsVector);
+    OrigGenericSig->getSubstitutions(*SM, ClonerSubsMap, ClonerSubsVector);
 
     CallerParamSubs = Ctx.AllocateCopy(CallerSubsVector);
     ClonerParamSubs = Ctx.AllocateCopy(ClonerSubsVector);
@@ -360,12 +522,15 @@ ReabstractionInfo::createSubstitutedType(SILFunction *OrigF,
   // First substitute concrete types into the existing function type.
   auto FnTy = SILType::substFuncType(M, SM, SubstMap, OrigFnTy,
                                      /*dropGenerics = */ true);
-  if (!HasUnboundGenericParams)
+  if (ShortcutFullSpecialization && !HasUnboundGenericParams)
     return FnTy;
+  //if (!HasUnboundGenericParams)
+  //  return FnTy;
+
 
   // Use the new specialized generic signature.
   auto NewFnTy = SILFunctionType::get(
-      SpecializedGenSig, FnTy->getExtInfo(), FnTy->getCalleeConvention(),
+      SpecializedGenericSig, FnTy->getExtInfo(), FnTy->getCalleeConvention(),
       FnTy->getParameters(), FnTy->getAllResults(),
       FnTy->getOptionalErrorResult(), M.getASTContext());
 
@@ -655,7 +820,8 @@ getCalleeSubstFunctionType(SILValue Callee, const ReabstractionInfo &ReInfo) {
       dyn_cast<SILFunctionType>(Callee->getType().getSwiftRValueType());
   auto CalleeSubstFnTy = CanFnTy;
 
-  if (ReInfo.getSpecializedType()->isPolymorphic()) {
+  if (ReInfo.getSpecializedType()->isPolymorphic() &&
+      !ReInfo.getCallerParamSubstitutions().empty()) {
     CalleeSubstFnTy = CanFnTy->substGenericArgs(
         ReInfo.getNonSpecializedFunction()->getModule(),
         ReInfo.getNonSpecializedFunction()->getModule().getSwiftModule(),
@@ -916,7 +1082,7 @@ void swift::trySpecializeApplyOfGeneric(
   if (F->isFragile() && RefF->isFragile())
     Fragile = IsFragile;
 
-  ReabstractionInfo ReInfo(RefF, Apply.getSubstitutions());
+  ReabstractionInfo ReInfo(Apply, RefF, Apply.getSubstitutions());
   if (!ReInfo.getSpecializedType())
     return;
 
@@ -1224,4 +1390,3 @@ SILFunction *swift::lookupPrespecializedSymbol(SILModule &M,
 
   return Specialization;
 }
-
