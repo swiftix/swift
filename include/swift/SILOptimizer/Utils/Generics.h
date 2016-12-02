@@ -65,7 +65,7 @@ class ReabstractionInfo {
 
   /// The generic signature of the specializaiton.
   /// It is nullptr if the specialization is not polymorphic.
-  GenericSignature *SpecializedGenSig;
+  GenericSignature *SpecializedGenericSig;
 
   // Set of the substitutions used by the caller's apply instruction before
   // any transformations performed by the generic specializer.
@@ -86,6 +86,9 @@ class ReabstractionInfo {
   // Reference to the original generic non-specialized function.
   SILFunction *OriginalF;
 
+  // The apply site which invokes the generic function.
+  ApplySite Apply;
+
   // Set if a specialized function has unbound generic parameters.
   bool HasUnboundGenericParams;
 
@@ -100,13 +103,16 @@ class ReabstractionInfo {
                                            bool HasUnboundGenericParams);
 
   void createSubstitutedAndSpecializedTypes();
+  bool prepareAndCheck(ApplySite Apply, SILFunction *OrigF,
+                       ArrayRef<Substitution> ParamSubs);
 
 public:
   /// Constructs the ReabstractionInfo for generic function \p Orig with
   /// substitutions \p ParamSubs.
   /// If specialization is not possible getSpecializedType() will return an
   /// invalid type.
-  ReabstractionInfo(SILFunction *Orig, ArrayRef<Substitution> ParamSubs);
+  ReabstractionInfo(ApplySite Apply, SILFunction *Orig, ArrayRef<Substitution> ParamSubs);
+  void ReabstractionInfo1(ApplySite Apply, SILFunction *Orig, ArrayRef<Substitution> ParamSubs);
 
   /// Constructs the ReabstractionInfo for generic function \p Orig with
   /// additional requirements.
@@ -201,6 +207,9 @@ public:
   // Map SIL type into a context of the specialized function.
   SILType mapTypeIntoContext(SILType type) const;
 
+  SILModule &getModule() const {
+    return OriginalF->getModule();
+  }
 };
 
 /// Helper class for specializing a generic function given a list of
