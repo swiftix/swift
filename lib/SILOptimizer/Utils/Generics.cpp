@@ -375,6 +375,104 @@ ReabstractionInfo::createSubstitutedType(SILFunction *OrigF,
   return NewFnTy;
 }
 
+namespace {
+template<typename SubstFn>
+struct SubstDependentSILType
+  : CanTypeVisitor<SubstDependentSILType<SubstFn>, CanType>
+{
+  SILModule &M;
+  SubstFn Subst;
+
+  SubstDependentSILType(SILModule &M, SubstFn Subst)
+    : M(M), Subst(std::move(Subst))
+  {}
+
+  using super = CanTypeVisitor<SubstDependentSILType<SubstFn>, CanType>;
+  using super::visit;
+
+  CanType visitDependentMemberType(CanDependentMemberType t) {
+    // If a dependent member type appears in lowered position, we need to lower
+    // its context substitution against the associated type's abstraction
+    // pattern.
+    CanType astTy = Subst(t);
+    auto origTy = swift::Lowering::AbstractionPattern::getOpaque();
+
+    return M.Types.getLoweredType(origTy, astTy)
+      .getSwiftRValueType();
+  }
+
+  CanType visitTupleType(CanTupleType t) {
+    // Dependent members can appear in lowered position inside tuples.
+
+    SmallVector<TupleTypeElt, 4> elements;
+
+    for (auto &elt : t->getElements())
+      elements.push_back(elt.getWithType(visit(CanType(elt.getType()))));
+
+    return TupleType::get(elements, t->getASTContext())
+      ->getCanonicalType();
+  }
+
+  CanType visitSILFunctionType(CanSILFunctionType t) {
+    // Dependent members can appear in lowered position inside SIL functions.
+
+    SmallVector<SILParameterInfo, 4> params;
+    for (auto &param : t->getParameters())
+      params.push_back(param.map([&](CanType pt) -> CanType {
+        return visit(pt);
+      }));
+
+    SmallVector<SILResultInfo, 4> results;
+    for (auto &result : t->getAllResults())
+      results.push_back(result.map([&](CanType pt) -> CanType {
+        return visit(pt);
+      }));
+
+    Optional<SILResultInfo> errorResult;
+    if (t->hasErrorResult()) {
+      errorResult = t->getErrorResult().map([&](CanType elt) -> CanType {
+          return visit(elt);
+      });
+    }
+
+    return SILFunctionType::get(t->getGenericSignature(),
+                                t->getExtInfo(),
+                                t->getCalleeConvention(),
+                                params, results, errorResult,
+                                t->getASTContext());
+  }
+
+  CanType visitType(CanType t) {
+    // Other types get substituted into context normally.
+    return Subst(t);
+  }
+};
+
+
+template<typename SubstFn>
+static SILType doSubstDependentSILType(SILModule &M,
+                                SubstFn Subst,
+                                SILType t) {
+  CanType result = SubstDependentSILType<SubstFn>(M, std::move(Subst))
+    .visit(t.getSwiftRValueType());
+  return SILType::getPrimitiveType(result, t.getCategory());
+}
+
+}
+
+Type ReabstractionInfo::mapTypeIntoContext(Type type) const {
+  return ArchetypeBuilder::mapTypeIntoContext(getModule().getSwiftModule(),
+                                              getSpecializedGenericEnvironment(),
+                                              type);
+}
+
+SILType ReabstractionInfo::mapTypeIntoContext(SILType type) const {
+  return doSubstDependentSILType(getModule(),
+    [&](CanType t) { return mapTypeIntoContext(t)->getCanonicalType(); },
+    type);
+}
+
+
 // Convert the substituted function type into a specialized function type based
 // on the ReabstractionInfo.
 CanSILFunctionType ReabstractionInfo::
@@ -392,8 +490,9 @@ createSpecializedType(CanSILFunctionType SubstFTy, SILModule &M) const {
         SILType SILResTy = SILType::getPrimitiveObjectType(RI.getType());
         // Indirect results are passed as owned, so we also need to pass the
         // direct result as owned (except it's a trivial type).
-        auto C = (SILResTy.isTrivial(M) ? ResultConvention::Unowned :
-                  ResultConvention::Owned);
+        auto C = (mapTypeIntoContext(SILResTy).isTrivial(M)
+                      ? ResultConvention::Unowned
+                      : ResultConvention::Owned);
         SpecializedResults.push_back(SILResultInfo(RI.getType(), C));
       } else {
         // No conversion: re-use the original result info.
@@ -408,9 +507,9 @@ createSpecializedType(CanSILFunctionType SubstFTy, SILModule &M) const {
       SILType SILParamTy = SILType::getPrimitiveObjectType(PI.getType());
       // Indirect parameters are passed as owned, so we also need to pass the
       // direct parameter as owned (except it's a trivial type).
-      auto C = ((!SILParamTy.hasTypeParameter() && SILParamTy.isTrivial(M))
+      auto C = mapTypeIntoContext(SILParamTy).isTrivial(M)
                     ? ParameterConvention::Direct_Unowned
-                    : ParameterConvention::Direct_Owned);
+                    : ParameterConvention::Direct_Owned;
       SpecializedParams.push_back(SILParameterInfo(PI.getType(), C));
     } else {
       // No conversion: re-use the original parameter info.
