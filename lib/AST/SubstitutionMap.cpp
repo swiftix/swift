@@ -90,6 +90,7 @@ SubstitutionMap::lookupConformance(CanType type,
 
 void SubstitutionMap::
 addSubstitution(CanType type, Type replacement) {
+  assert(replacement);
   auto result = subMap.insert(std::make_pair(type->castTo<SubstitutableType>(),
                                              replacement));
   assert(result.second);
@@ -127,17 +128,30 @@ void SubstitutionMap::dump() const {
     pair.first->dump();
     llvm::errs() << "Substituted type:\n";
     pair.second->dump();
-    llvm::errs() << "Conformances:\n";
-    auto Conformances = getConformances(pair.first->getCanonicalType());
-    for (auto C : Conformances) {
+  }
+
+  llvm::errs() << "Conformances:\n";
+  for (auto &pair : conformanceMap) {
+    llvm::errs() << "\n\type:\n";
+    pair.first->dump();
+    llvm::errs() << "Conformance of this type:\n";
+    for (auto &C : pair.second) {
+      llvm::errs() << "Conformance:\n";
       C.dump();
-      llvm::errs() << "\n";
     }
-    llvm::errs() << "Parents:\n";
-    auto Parents = getParentMap().lookup(pair.first->getCanonicalType().getPointer());
-    for (auto Parent : Parents) {
-      Parent.first.dump();
-      Parent.second->dump();
+  }
+
+  llvm::errs() << "Parents:\n";
+  for (auto &pair : getParentMap()) {
+    llvm::errs() << "\n\type:\n";
+    pair.first->dump();
+    llvm::errs() << "Parents of this type:\n";
+    for (auto &P : pair.second) {
+      llvm::errs() << "Parent:\n";
+      llvm::errs() << "Type:\n";
+      P.first.dump();
+      llvm::errs() << "Decl:\n";
+      P.second->dump();
     }
   }
 }
