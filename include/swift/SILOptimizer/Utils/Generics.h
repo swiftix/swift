@@ -195,6 +195,11 @@ public:
     return OriginalF;
   }
 
+  // Map type into a context of the specialized function.
+  Type mapTypeIntoContext(Type type) const;
+
+  // Map SIL type into a context of the specialized function.
+  SILType mapTypeIntoContext(SILType type) const;
 
 };
 
