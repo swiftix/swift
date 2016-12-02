@@ -46,13 +46,25 @@ using namespace Mangle;
 
 void GenericSpecializationMangler::mangleSpecialization() {
   Mangler &M = getMangler();
-
-  // TODO: Try to produce a shorter representation.
-  // It is sufficient to only mangle the substitutions of the "primary"
-  // dependent types. As all other dependent types are just derived from the
-  // primary types, this will give us unique symbol names.
   SILFunctionType *FTy = CanSILFnTy;
+  // If the only change to the generic signature during specialization is
+  // addition of new same-type requirements, which happens in case of a
+  // full specialization, it would be enough to mangle only the substitutions.
+  //
+  // If the types of function arguments have not changed, but some new
+  // conformances were added to the generic parameters, e.g. in case of
+  // a pre-specialization, then it would be enough to mangle only the new
+  // generic signature.
+  //
+  // If the types of function arguments have changed as a result of a partial
+  // specialization, we need to mangle the entire new function type.
+
+  //auto Sig = FTy->getGenericSignature();
+  //if (Sig)
+  //  M.mangleGenericSignature(Sig);
+  //else
   M.mangleType(FTy, 0);
+  //assert(Sig);
   M.append("_");
 }
 
