@@ -22,6 +22,7 @@
 #include "swift/AST/SubstitutionMap.h"
 #include "swift/AST/Types.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/Support/Debug.h"
 
 using namespace swift;
 
@@ -40,6 +41,34 @@ Substitution::Substitution(Type Replacement,
   // The replacement type must be materializable.
   assert(Replacement->isMaterializable()
          && "cannot substitute with a non-materializable type");
+#if 1
+  // NOTE: This is for debugging only. Use it to debug the
+  // partial specialization implementation inspired by DougG's approach.
+  if (Replacement->hasArchetype()) {
+    bool hasConcreteConformances = false;
+    // None of the conformances should be concrete.
+    for (auto C : Conformance) {
+      if (C.isConcrete()) {
+        auto *ConcreteC = C.getConcrete();
+        if (ConcreteC->getType()->getCanonicalType()->hasTypeParameter() &&
+            Replacement->getCanonicalType()->hasArchetype())
+          continue;
+        if (ConcreteC->getType()->getCanonicalType() ==
+            Replacement->getCanonicalType())
+          continue;
+        if (ConcreteC->getInterfaceType()->getCanonicalType() ==
+            Replacement->getCanonicalType())
+          continue;
+        llvm::dbgs() << "Bad substitution:\n";
+        this->dump();
+        llvm::dbgs() << "Conformance should not be concrete:\n";
+        C.dump();
+        hasConcreteConformances = true;
+      }
+    }
+    assert(!hasConcreteConformances && "There should be no concrete conformances");
+  }
+#endif
 }
 
 Substitution Substitution::subst(Module *module,
