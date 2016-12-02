@@ -266,6 +266,115 @@ static Type substConcreteTypesForDependentTypes(ModuleDecl &SM,
 }
 
 #if 1
+void remapRequirements(
+    GenericSignature *Sig,
+    SubstitutionMap &CalleeInterfaceToSpecializedInterfaceMap,
+    ArchetypeBuilder &Builder, Module *SM) {
+  // Next, add each of the requirements (mapped from the requirement's
+  // interface types into the specialized interface type parameters).
+  RequirementSource source(RequirementSource::Explicit, SourceLoc());
+
+  for (auto &reqReq : Sig->getRequirements()) {
+    SubstitutableType *FirstTy =
+        dyn_cast<SubstitutableType>(reqReq.getFirstType()->getCanonicalType());
+    assert(
+        (!FirstTy ||
+         CalleeInterfaceToSpecializedInterfaceMap.getMap().lookup(FirstTy)) &&
+        "Type should be mapped");
+
+    switch (reqReq.getKind()) {
+    case RequirementKind::Conformance: {
+      // Substitute the constrained types.
+      auto first = substConcreteTypesForDependentTypes(
+          *SM, CalleeInterfaceToSpecializedInterfaceMap,
+          reqReq.getFirstType()->getCanonicalType());
+      if (!first->isTypeParameter())
+        break;
+
+      Builder.addRequirement(Requirement(RequirementKind::Conformance, first,
+                                         reqReq.getSecondType()),
+                             source);
+      break;
+    }
+
+    case RequirementKind::Superclass: {
+      // Substitute the constrained types.
+      auto first = substConcreteTypesForDependentTypes(
+          *SM, CalleeInterfaceToSpecializedInterfaceMap,
+          reqReq.getFirstType()->getCanonicalType());
+      auto second = substConcreteTypesForDependentTypes(
+          *SM, CalleeInterfaceToSpecializedInterfaceMap,
+          reqReq.getSecondType()->getCanonicalType());
+
+      if (!first->isTypeParameter())
+        break;
+
+      Builder.addRequirement(
+          Requirement(RequirementKind::Superclass, first, second), source);
+      break;
+    }
+
+    case RequirementKind::SameType: {
+      // Substitute the constrained types.
+      auto first = substConcreteTypesForDependentTypes(
+          *SM, CalleeInterfaceToSpecializedInterfaceMap,
+          reqReq.getFirstType()->getCanonicalType());
+      auto second = substConcreteTypesForDependentTypes(
+          *SM, CalleeInterfaceToSpecializedInterfaceMap,
+          reqReq.getSecondType()->getCanonicalType());
+
+      if (!first->isTypeParameter()) {
+        if (!second->isTypeParameter())
+          break;
+        std::swap(first, second);
+      }
+
+      Builder.addRequirement(
+          Requirement(RequirementKind::SameType, first, second), source);
+      break;
+    }
+    }
+  }
+}
+
+ArrayRef<ProtocolConformanceRef>
+remapConformances(ArrayRef<ProtocolConformanceRef> Conformances, Type SubstTy,
+                  SILModule &SILMod) {
+  auto &Ctx = SILMod.getASTContext();
+  auto SM = SILMod.getSwiftModule();
+  SmallVector<ProtocolConformanceRef, 1> SubstConformances;
+  // SmallVector<Substitution, 4> CallerArchetypeToSpecializedInterfaceSubs;
+  // CallerGenericSig->getSubstitutions(*SM,
+  //                                   CallerInterfaceToSpecializedInterfaceMap,
+  //                                   CallerArchetypeToSpecializedInterfaceSubs);
+  for (auto C : Conformances) {
+    if (C.isAbstract()) {
+      SubstConformances.push_back(C);
+      continue;
+    }
+
+    auto *ConcreteC = C.getConcrete();
+    if (!ConcreteC)
+      continue;
+
+    auto SpecializedConformance =
+        dyn_cast<SpecializedProtocolConformance>(ConcreteC);
+
+    if (SpecializedConformance &&
+        SpecializedConformance->getRootNormalConformance()
+            ->getGenericSignature()) {
+      auto ConcreteSubs = SubstTy->gatherAllSubstitutions(SM, nullptr, nullptr);
+      ConcreteC = Ctx.getSpecializedConformance(
+          SubstTy, SpecializedConformance->getRootNormalConformance(),
+          ConcreteSubs);
+    }
+
+    SubstConformances.push_back(ProtocolConformanceRef(ConcreteC));
+  }
+
+  return Ctx.AllocateCopy(SubstConformances);
+}
+
 /// Overall idea:
 /// Create a new generic signature based on the generic signature of the callee
 /// and a set of apply substitutions.
@@ -444,70 +553,8 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
 
   // Next, add each of the requirements (mapped from the requirement's
   // interface types into the specialized interface type parameters).
-  RequirementSource source(RequirementSource::Explicit, SourceLoc());
-
-  for (auto &reqReq : CalleeGenericSig->getRequirements()) {
-    SubstitutableType *FirstTy =
-        dyn_cast<SubstitutableType>(reqReq.getFirstType()->getCanonicalType());
-    assert((!FirstTy ||
-            CalleeInterfaceToSpecializedInterfaceMap.getMap().lookup(
-                FirstTy)) &&
-           "Type should be mapped");
-
-    switch (reqReq.getKind()) {
-    case RequirementKind::Conformance: {
-      // Substitute the constrained types.
-      auto first = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getFirstType()->getCanonicalType());
-      if (!first->isTypeParameter())
-        break;
-
-      Builder.addRequirement(Requirement(RequirementKind::Conformance,
-                                         first, reqReq.getSecondType()),
-                             source);
-      break;
-    }
-
-    case RequirementKind::Superclass: {
-      // Substitute the constrained types.
-     auto first = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getFirstType()->getCanonicalType());
-     auto second = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getSecondType()->getCanonicalType());
-
-      if (!first->isTypeParameter()) break;
-
-      Builder.addRequirement(Requirement(RequirementKind::Superclass,
-                                         first, second),
-                             source);
-      break;
-    }
-
-    case RequirementKind::SameType: {
-      // Substitute the constrained types.
-     auto first = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getFirstType()->getCanonicalType());
-     auto second = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getSecondType()->getCanonicalType());
-
-     if (!first->isTypeParameter()) {
-        if (!second->isTypeParameter())
-          break;
-        std::swap(first, second);
-      }
-
-      Builder.addRequirement(Requirement(RequirementKind::SameType,
-                                         first, second),
-                             source);
-      break;
-    }
-    }
-  }
+  remapRequirements(CalleeGenericSig, CalleeInterfaceToSpecializedInterfaceMap,
+                    Builder, SM);
 
   // Finalize the archetype builder.
   Builder.finalize(SourceLoc());
@@ -575,41 +622,12 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
           CanTy, SubstReplacementTy);
 
       // Now remap conformances.
-      auto Conformances = CalleeInterfaceToCallerArchetypeMap.getConformances(CanTy);
-      SmallVector<ProtocolConformanceRef, 1> SubstConformances;
-      SmallVector<Substitution, 4> CallerArchetypeToSpecializedInterfaceSubs;
-      CallerGenericSig->getSubstitutions(
-          *SM, CallerInterfaceToSpecializedInterfaceMap,
-          CallerArchetypeToSpecializedInterfaceSubs);
-      for (auto C : Conformances) {
-        if (C.isAbstract()) {
-          SubstConformances.push_back(C);
-          continue;
-        }
-
-        auto *ConcreteC = C.getConcrete();
-        if (!ConcreteC)
-          continue;
-
-        auto SpecializedConformance =
-            dyn_cast<SpecializedProtocolConformance>(ConcreteC);
-
-        if (SpecializedConformance &&
-            SpecializedConformance->getRootNormalConformance()
-                ->getGenericSignature()) {
-          auto ConcreteSubs =
-              SubstReplacementTy->gatherAllSubstitutions(SM, nullptr, nullptr);
-          ConcreteC = Ctx.getSpecializedConformance(
-              SubstReplacementTy,
-              SpecializedConformance->getRootNormalConformance(),
-              ConcreteSubs);
-        }
-
-        SubstConformances.push_back(ProtocolConformanceRef(ConcreteC));
-      }
-
+      auto Conformances =
+          CalleeInterfaceToCallerArchetypeMap.getConformances(CanTy);
+      auto MappedConformances =
+          remapConformances(Conformances, SubstReplacementTy, M);
       CalleeInterfaceToSpecializedArchetypeMap.addConformances(
-          CanTy, Ctx.AllocateCopy(SubstConformances));
+          CanTy, MappedConformances);
 
       dumpConformances(
           CanTy, CalleeInterfaceToSpecializedArchetypeMap,
