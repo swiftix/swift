@@ -1261,14 +1261,18 @@ bool ArchetypeBuilder::addSameTypeRequirementToConcrete(
     }
   }
 
+  RequirementSource nestedSource(RequirementSource::Redundant, Source.getLoc());
+
   // Recursively resolve the associated types to their concrete types.
   for (auto nested : T->getNestedTypes()) {
+    PotentialArchetype *NestedPA = nested.second.front();
+    auto &CurrentSource = (NestedPA->getRepresentative() == T) ? nestedSource : Source;
     AssociatedTypeDecl *assocType
       = nested.second.front()->getResolvedAssociatedType();
     if (auto *concreteArchetype = Concrete->getAs<ArchetypeType>()) {
       Type witnessType = concreteArchetype->getNestedType(nested.first);
       addSameTypeRequirementToConcrete(nested.second.front(), witnessType,
-                                       Source);
+                                       CurrentSource);
     } else {
       assert(conformances.count(assocType->getProtocol()) > 0
              && "missing conformance?");
@@ -1285,11 +1289,11 @@ bool ArchetypeBuilder::addSameTypeRequirementToConcrete(
       if (auto witnessPA = resolveArchetype(witnessType)) {
         addSameTypeRequirementBetweenArchetypes(nested.second.front(),
                                                 witnessPA,
-                                                Source);
+                                                CurrentSource);
       } else {
         addSameTypeRequirementToConcrete(nested.second.front(),
                                          witnessType,
-                                         Source);
+                                         CurrentSource);
       }
     }
   }
@@ -1731,7 +1735,8 @@ ArchetypeBuilder::finalize(SourceLoc loc, bool allowConcreteGenericParams) {
 
       // Don't allow a generic parameter to be equivalent to a concrete type,
       // because then we don't actually have a parameter.
-      if (rep->getConcreteType()) {
+      if (rep->getConcreteType() &&
+          !rep->getConcreteType()->hasTypeParameter()) {
         auto &Source = rep->SameTypeSource;
 
         // For auto-generated locations, we should have diagnosed the problem
@@ -2051,6 +2056,20 @@ static void collectRequirements(ArchetypeBuilder &builder,
 
     requirements.push_back(Requirement(kind, depTy, repTy));
   });
+}
+
+/// FIXME: This is a workaround for rdar://29311216.
+std::pair<GenericSignature *, GenericEnvironment *>
+ArchetypeBuilder::getGenericSignatureAndEnvironment() {
+  // This is a workaround for rdar://29311216.
+  // Re-importing and then generating again a generic signature produces
+  // a real minimized signature.
+  GenericSignature *sig = getGenericSignature();
+  ArchetypeBuilder Builder(Mod);
+  Builder.addGenericSignature(sig, nullptr);
+  sig = Builder.getGenericSignature();
+  auto env = Builder.getGenericEnvironment(sig);
+  return std::make_pair(sig, env);
 }
 
 GenericSignature *ArchetypeBuilder::getGenericSignature() {
