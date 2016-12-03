@@ -26,17 +26,11 @@
 
 using namespace swift;
 
-llvm::cl::opt<bool> AssumeSingleThreadedFlag(
-    "assume-single-threaded", llvm::cl::init(false),
-    llvm::cl::Hidden,
-    llvm::cl::desc(
-        "Assume that code will be executed in a single-threaded environment"));
-
 namespace {
 class AssumeSingleThreaded : public swift::SILFunctionTransform {
   /// The entry point to the transformation.
   void run() override {
-    if (!AssumeSingleThreadedFlag)
+    if (!getOptions().AssumeSingleThreaded)
       return;
     for (auto &BB : *getFunction()) {
       for (auto &I : BB) {

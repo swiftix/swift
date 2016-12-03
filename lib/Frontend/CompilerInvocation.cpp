@@ -1112,6 +1112,10 @@ static bool ParseSILArgs(SILOptions &Opts, ArgList &Args,
     }
   }
 
+  if (Args.getLastArg(OPT_AssumeSingleThreaded)) {
+    Opts.AssumeSingleThreaded = true;
+  }
+
   // Parse the assert configuration identifier.
   if (const Arg *A = Args.getLastArg(OPT_AssertConfig)) {
     StringRef Configuration = A->getValue();
