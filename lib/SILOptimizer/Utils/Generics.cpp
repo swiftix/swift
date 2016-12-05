@@ -482,6 +482,8 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
 
     SpecializedInterfaceToCallerArchetypeMap.addConformances(
         SubstGenericParamCanTy, Ctx.AllocateCopy(Conformances));
+    CallerArchetypeToSpecializedInterfaceMap.addConformances(
+        CallerArchetype, Ctx.AllocateCopy(Conformances));
 
     // TODO: Copy caller substitution map into CallerInterfaceToSpecializedInterfaceMap,
     // but replace the mapping for CallerGenericParam?
@@ -553,6 +555,8 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
 
   // Next, add each of the requirements (mapped from the requirement's
   // interface types into the specialized interface type parameters).
+  // TODO: Do we need to add requirements of the caller's archetypes, which
+  // stem from the caller's generic signature?
   remapRequirements(CalleeGenericSig, CalleeInterfaceToSpecializedInterfaceMap,
                     Builder, SM);
 
