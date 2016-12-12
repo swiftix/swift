@@ -2076,7 +2076,7 @@ ArchetypeBuilder::getGenericSignatureAndEnvironment() {
   // a real minimized signature.
   GenericSignature *sig = getGenericSignature();
   ArchetypeBuilder Builder(Mod);
-  Builder.addGenericSignature(sig, nullptr);
+  Builder.addGenericSignature(sig);
   sig = Builder.getGenericSignature();
   auto env = Builder.getGenericEnvironment(sig);
   return std::make_pair(sig, env);
