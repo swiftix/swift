@@ -70,6 +70,7 @@ bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *OrigF,
   }
 
   SpecializedGenericEnv = nullptr;
+  SpecializedGenericSig = nullptr;
   OriginalParamSubs = ParamSubs;
   CallerParamSubs = {};
   ClonerParamSubs = ParamSubs;
@@ -140,6 +141,7 @@ bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *OrigF,
 
 static void dumpConformances(Type Ty, SubstitutionMap &From, StringRef Title,
                              Type ReplTy, SILModule &SILMod) {
+  return;
   llvm::dbgs() << "\n\n" << Title << "\n";
   llvm::dbgs() << "for type:\n";
   Ty.dump();
@@ -267,27 +269,41 @@ static Type substConcreteTypesForDependentTypes(ModuleDecl &SM,
 
 #if 1
 void remapRequirements(
-    GenericSignature *Sig,
-    SubstitutionMap &CalleeInterfaceToSpecializedInterfaceMap,
-    ArchetypeBuilder &Builder, Module *SM) {
+    GenericSignature *GenSig,
+    GenericEnvironment *GenEnv,
+    SubstitutionMap &SubstMap,
+    bool ResolveArchetypes,
+    ArchetypeBuilder &Builder,
+    Module *SM) {
+  if (!GenSig)
+    return;
+
+  auto *SigBuilder = SM->getASTContext().getOrCreateArchetypeBuilder(
+      GenSig->getCanonicalSignature(), SM);
+
   // Next, add each of the requirements (mapped from the requirement's
   // interface types into the specialized interface type parameters).
   RequirementSource source(RequirementSource::Explicit, SourceLoc());
 
-  for (auto &reqReq : Sig->getRequirements()) {
+  // Add requirements derived from the caller signature for the
+  // caller's archetypes mapped to the specialized signature.
+  for (auto &reqReq : GenSig->getRequirements()) {
     SubstitutableType *FirstTy =
         dyn_cast<SubstitutableType>(reqReq.getFirstType()->getCanonicalType());
-    assert(
-        (!FirstTy ||
-         CalleeInterfaceToSpecializedInterfaceMap.getMap().lookup(FirstTy)) &&
-        "Type should be mapped");
+    //assert((!FirstTy || SubstMap.getMap().lookup(FirstTy)) &&
+    //       "Type should be mapped");
+
+    // If this generic parameter is not mapped, no need to handle its requirements.
+    if (FirstTy && !SubstMap.getMap().lookup(FirstTy)) {
+      assert(!isa<SubstitutableType>(reqReq.getSecondType()->getCanonicalType()));
+      continue;
+    }
 
     switch (reqReq.getKind()) {
     case RequirementKind::Conformance: {
       // Substitute the constrained types.
       auto first = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getFirstType()->getCanonicalType());
+          *SM, SubstMap, reqReq.getFirstType()->getCanonicalType());
       if (!first->isTypeParameter())
         break;
 
@@ -300,11 +316,9 @@ void remapRequirements(
     case RequirementKind::Superclass: {
       // Substitute the constrained types.
       auto first = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getFirstType()->getCanonicalType());
+          *SM, SubstMap, reqReq.getFirstType()->getCanonicalType());
       auto second = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getSecondType()->getCanonicalType());
+          *SM, SubstMap, reqReq.getSecondType()->getCanonicalType());
 
       if (!first->isTypeParameter())
         break;
@@ -315,13 +329,23 @@ void remapRequirements(
     }
 
     case RequirementKind::SameType: {
+      if (SigBuilder->resolveArchetype(reqReq.getFirstType()) ==
+              SigBuilder->resolveArchetype(reqReq.getSecondType()))
+        continue;
+#if 1
+      if (ResolveArchetypes && ArchetypeBuilder::mapTypeIntoContext(SM, GenEnv,
+                                               reqReq.getFirstType())
+              ->getCanonicalType() ==
+          ArchetypeBuilder::mapTypeIntoContext(SM, GenEnv,
+                                               reqReq.getSecondType())
+              ->getCanonicalType())
+        continue;
+#endif
       // Substitute the constrained types.
       auto first = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getFirstType()->getCanonicalType());
+          *SM, SubstMap, reqReq.getFirstType()->getCanonicalType());
       auto second = substConcreteTypesForDependentTypes(
-          *SM, CalleeInterfaceToSpecializedInterfaceMap,
-          reqReq.getSecondType()->getCanonicalType());
+          *SM, SubstMap, reqReq.getSecondType()->getCanonicalType());
 
       if (!first->isTypeParameter()) {
         if (!second->isTypeParameter())
@@ -340,39 +364,33 @@ void remapRequirements(
 ArrayRef<ProtocolConformanceRef>
 remapConformances(ArrayRef<ProtocolConformanceRef> Conformances, Type SubstTy,
                   SILModule &SILMod) {
+  if (Conformances.empty())
+    return {};
+
   auto &Ctx = SILMod.getASTContext();
-  auto SM = SILMod.getSwiftModule();
   SmallVector<ProtocolConformanceRef, 1> SubstConformances;
-  // SmallVector<Substitution, 4> CallerArchetypeToSpecializedInterfaceSubs;
-  // CallerGenericSig->getSubstitutions(*SM,
-  //                                   CallerInterfaceToSpecializedInterfaceMap,
-  //                                   CallerArchetypeToSpecializedInterfaceSubs);
   for (auto C : Conformances) {
-    if (C.isAbstract()) {
-      SubstConformances.push_back(C);
-      continue;
-    }
-
-    auto *ConcreteC = C.getConcrete();
-    if (!ConcreteC)
-      continue;
-
-    auto SpecializedConformance =
-        dyn_cast<SpecializedProtocolConformance>(ConcreteC);
-
-    if (SpecializedConformance &&
-        SpecializedConformance->getRootNormalConformance()
-            ->getGenericSignature()) {
-      auto ConcreteSubs = SubstTy->gatherAllSubstitutions(SM, nullptr, nullptr);
-      ConcreteC = Ctx.getSpecializedConformance(
-          SubstTy, SpecializedConformance->getRootNormalConformance(),
-          ConcreteSubs);
-    }
-
-    SubstConformances.push_back(ProtocolConformanceRef(ConcreteC));
+    auto SubstC = C.subst(SILMod.getSwiftModule(), SubstTy);
+    SubstConformances.push_back(SubstC);
   }
 
   return Ctx.AllocateCopy(SubstConformances);
+}
+
+/// Compute the cost of a generic signature. The cost
+/// is defined as a sum of the number of generic parameters
+/// and the number of required conformances.
+unsigned getGenericSignatureCost(GenericSignature *Sig) {
+  if (!Sig)
+    return 0;
+  Sig = Sig->getCanonicalSignature();
+  unsigned Cost = 0;
+  Cost += Sig->getGenericParams().size();
+  for (auto Req: Sig->getRequirements()) {
+    if (Req.getKind() == RequirementKind::Conformance)
+      ++Cost;
+  }
+  return Cost;
 }
 
 /// Overall idea:
@@ -383,8 +401,8 @@ remapConformances(ArrayRef<ProtocolConformanceRef> Conformances, Type SubstTy,
 /// archetypes used in the apply's substitutions. It should also have all the
 /// requirements derived from the generic signature of the callee.
 ///
-/// This function also forms the substitution map for the cloner. It maos
-/// from interface types of the callee function to the archtypes of the
+/// This function also forms the substitution map for the cloner. It maps
+/// from interface types of the callee function to the archetypes of the
 /// specialized function.
 ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
                                      ArrayRef<Substitution> ParamSubs) {
@@ -403,6 +421,7 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
   // Callee is the generic function being called by the apply instruction.
   auto CalleeFnTy = CalleeF->getLoweredFunctionType();
   auto CalleeGenericSig = CalleeFnTy->getGenericSignature();
+  auto CalleeGenericEnv = CalleeF->getGenericEnvironment();
 
   // Maps callee's interface types to caller's contextual types.
   auto CalleeInterfaceToCallerArchetypeMap =
@@ -426,7 +445,7 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
   // because both define the capabilities of the requirement.
 
   ArchetypeBuilder Builder(*SM);
-  // Set of newly crated generic type parameters.
+  // Set of newly created generic type parameters.
   SmallVector<GenericTypeParamType*, 4> AllGenericParams;
 
   // Archetypes used in the substitutions of an apply instructions.
@@ -434,15 +453,21 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
   // invokes a generic function that is being specialized.
   llvm::SmallSetVector<CanType, 8> UsedCallerArchetypes;
 
+  // TODO: If a replacement is an archetype or a dependent type
+  // of an archetype, then it does not make sense to substitute
+  // it into the signature of the specialized function, because
+  // it does not provide any benefits.
+
   // Collect all used archetypes from all the substitutions.
   for (auto Sub : ParamSubs) {
     auto Replacement = Sub.getReplacement()->getCanonicalType();
-    if (!Replacement->hasArchetype() && !Replacement->hasTypeParameter())
+    if (!Replacement->hasArchetype())
       continue;
     // Add used generic parameters/archetypes.
     Replacement.visit([&](Type Ty) {
       if (Ty->is<ArchetypeType>()) {
-        UsedCallerArchetypes.insert(Ty->getCanonicalType());
+        UsedCallerArchetypes.insert(
+            Ty->getAs<ArchetypeType>()->getPrimary()->getCanonicalType());
       }
     });
   }
@@ -525,7 +550,7 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
       copyConformances(CanTy, CallerForwardingSubsMap,
                        CallerInterfaceToSpecializedInterfaceMap);
     }
-    CallerInterfaceToSpecializedInterfaceMap.dump();
+    //CallerInterfaceToSpecializedInterfaceMap.dump();
   }
 #endif
 
@@ -541,9 +566,12 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
   auto SpecializedSubstFnTy = CalleeFnTy->substGenericArgs(M, SM, NewParamSubs);
 
   // Copy entries for the generic type parameters mapped to concrete types.
-  for (auto Pair : CalleeInterfaceToCallerArchetypeMap.getMap()) {
-    auto CanTy = Pair.first->getCanonicalType();
-    auto ReplacementTy = Pair.second->getCanonicalType();
+  for (auto GP : CalleeGenericSig->getGenericParams()) {
+    auto CanTy = GP->getCanonicalType();
+    auto Replacement = CalleeInterfaceToCallerArchetypeMap.getMap().lookup(GP);
+    if (!Replacement)
+      continue;
+    auto ReplacementTy = Replacement->getCanonicalType();
     // Map the replacement to the interface type of the specialization.
     CanType SpecializedReplacementTy =
         ReplacementTy.subst(CallerArchetypeToSpecializedInterfaceMap)
@@ -557,38 +585,40 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
   // interface types into the specialized interface type parameters).
   // TODO: Do we need to add requirements of the caller's archetypes, which
   // stem from the caller's generic signature?
-  remapRequirements(CalleeGenericSig, CalleeInterfaceToSpecializedInterfaceMap,
-                    Builder, SM);
+  remapRequirements(CallerGenericSig, CallerGenericEnv,
+                    CallerInterfaceToSpecializedInterfaceMap, true, Builder,
+                    SM);
+
+  remapRequirements(CalleeGenericSig, CalleeGenericEnv,
+                    CalleeInterfaceToSpecializedInterfaceMap, false, Builder,
+                    SM);
 
   // Finalize the archetype builder.
   Builder.finalize(SourceLoc());
 
   if (!AllGenericParams.empty()) {
     // Produce the generic signature and environment.
-    SpecializedGenericSig = Builder.getGenericSignature();
+    SpecializedGenericSig = Builder.getGenericSignature()->getCanonicalSignature();
     SpecializedGenericEnv =
         Builder.getGenericEnvironment(SpecializedGenericSig);
+  }
 
+#if 0
+  // Specialize only if the new function would be less costly in terms
+  // of a dynamic invocation.
+  if (getGenericSignatureCost(SpecializedGenericSig) >=
+      getGenericSignatureCost(CalleeGenericSig)) {
+    return;
+  }
+#endif
+
+
+  if (SpecializedGenericSig) {
+#if 0
     llvm::dbgs() << "Specialized signature is:\n";
     SpecializedGenericSig->dump();
     llvm::dbgs() << "\n";
-
-    // Form a substitution map to be used by the cloner.
-    auto IsNonConcreteReplacementType =
-        [&CalleeInterfaceToCallerArchetypeMap](CanType Ty, Type DefaultReplacementTy) -> bool {
-      if (DefaultReplacementTy &&
-          DefaultReplacementTy->getCanonicalType()->hasArchetype())
-        return true;
-      auto BaseTy = Ty;
-      while (auto DepTy = dyn_cast<DependentMemberType>(BaseTy)) {
-        BaseTy = DepTy->getBase()->getCanonicalType();
-      };
-      assert(isa<GenericTypeParamType>(BaseTy));
-      return CalleeInterfaceToCallerArchetypeMap.getMap()
-          .lookup(cast<SubstitutableType>(BaseTy->getCanonicalType()))
-          ->getCanonicalType()
-          ->hasArchetype();
-    };
+#endif
 
     auto GetBaseGenericTypeParamType =
         [](CanType Ty) -> GenericTypeParamType * {
@@ -598,6 +628,20 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
       };
       assert(isa<GenericTypeParamType>(BaseTy));
       return cast<GenericTypeParamType>(BaseTy);
+    };
+
+    // Form a substitution map to be used by the cloner.
+    auto IsNonConcreteReplacementType = [&CalleeInterfaceToCallerArchetypeMap,
+                                         &GetBaseGenericTypeParamType](
+        CanType Ty, Type DefaultReplacementTy) -> bool {
+      if (DefaultReplacementTy &&
+          DefaultReplacementTy->getCanonicalType()->hasArchetype())
+        return true;
+      auto BaseGP = GetBaseGenericTypeParamType(Ty);
+      return CalleeInterfaceToCallerArchetypeMap.getMap()
+          .lookup(cast<SubstitutableType>(BaseGP->getCanonicalType()))
+          ->getCanonicalType()
+          ->hasArchetype();
     };
 
     // Create the updated SubstitutionMap to be used by the cloner.
@@ -635,7 +679,7 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
 
       dumpConformances(
           CanTy, CalleeInterfaceToSpecializedArchetypeMap,
-          "Copying archettype conformances from CalleeInterfaceToCallerArchetypeMap (1)",
+          "Copying archetype conformances from CalleeInterfaceToCallerArchetypeMap (1)",
           SubstReplacementTy, M);
 
 #if 0
@@ -706,12 +750,46 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
       SpecializedSubstFnTy->getAllResults(),
       SpecializedSubstFnTy->getOptionalErrorResult(), Ctx);
 
+  assert(!SubstitutedType->hasArchetype() &&
+         "Function type should not contain archetypes");
+
   SmallVector<Substitution, 8> ClonerSubsVector;
+
+  auto lookupConformanceFn =
+      [&](CanType original, Type replacement,
+          ProtocolType *protoType) -> ProtocolConformanceRef {
+#if 0
+    llvm::dbgs() << "\n\nLookup Conformances:\n" 
+                 << "Original: ";
+    original.dump();
+    llvm::dbgs() << "Replacement:\n";
+    replacement.dump();
+    llvm::dbgs() << "Prototype: " << protoType->getCanonicalType() << "\n";
+#endif
+    auto C =  SM->lookupConformance(replacement, protoType->getDecl(), nullptr);
+    assert(C.hasValue());
+    return C.getValue();
+
+    if (!replacement->hasTypeParameter() && !replacement->hasArchetype()) {
+      // It is a concrete type.
+      auto nominal = replacement->getNominalOrBoundGenericNominal();
+      assert(nominal);
+      SmallVector<ProtocolConformance *, 2> conformances;
+      nominal->lookupConformance(SM, protoType->getDecl(), conformances);
+      assert(conformances.size() == 1);
+      return ProtocolConformanceRef(conformances.front());
+    }
+    // TODO: Create conformances on demand?
+    return ProtocolConformanceRef(protoType->getDecl());
+    //return *CalleeInterfaceToSpecializedArchetypeMap.lookupConformance(
+    //    original, protoType->getDecl());
+  };
 
   // Form a substitution list to be used by the cloner when it clones the
   // body of the original function.
   CalleeGenericSig->getSubstitutions(
-      *SM, CalleeInterfaceToSpecializedArchetypeMap, ClonerSubsVector);
+      *SM, CalleeInterfaceToSpecializedArchetypeMap.getMap(),
+      lookupConformanceFn, ClonerSubsVector);
 
   ClonerParamSubs = Ctx.AllocateCopy(ClonerSubsVector);
 
@@ -727,6 +805,13 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *CalleeF,
   }
 
   createSubstitutedAndSpecializedTypes();
+
+  if (SpecializedGenericSig) {
+    llvm::dbgs() << "Partially specialized types for function: " << OriginalF->getName() << "\n\n";
+    llvm::dbgs() << "Original generic function type: " << CalleeFnTy << "\n"
+                 << "Specialized generic function type: " << SpecializedType
+                 << "\n\n";
+  }
 }
 
 #else
@@ -1205,11 +1290,14 @@ GenericFuncSpecializer::GenericFuncSpecializer(SILFunction *GenericFunc,
                                                  Fragile);
   OldGenericMangler.mangle();
   std::string Old = Mangler.finalize();
-
+#if 0
   NewMangling::GenericSpecializationMangler NewGenericMangler(
       GenericFunc, FnTy, Fragile, /*isReAbstracted*/ true);
   std::string New = NewGenericMangler.mangle();
   ClonedName = NewMangling::selectMangling(Old, New);
+#else
+  ClonedName = Old;
+#endif
 
   DEBUG(llvm::dbgs() << "    Specialized function " << ClonedName << '\n');
 }
@@ -1425,12 +1513,15 @@ static SILFunction *createReabstractionThunk(const ReabstractionInfo &ReInfo,
         GenericSpecializationMangler::NotReabstracted);
     OldMangler.mangle();
     std::string Old = M.finalize();
-
+#if 0
     NewMangling::GenericSpecializationMangler NewMangler(
         OrigF, ReInfo.getSubstitutedType(), Fragile,
         /*isReAbstracted*/ false);
     std::string New = NewMangler.mangle();
     ThunkName = NewMangling::selectMangling(Old, New);
+#else
+    ThunkName = Old;
+#endif
   }
 
   auto Loc = RegularLocation::getAutoGeneratedLocation();
