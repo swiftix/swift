@@ -45,12 +45,20 @@ protected:
   llvm::SmallVector<char, 32> ArgOpStorage;
   llvm::raw_svector_ostream ArgOpBuffer;
 
+  CanSILFunctionType CanSILFnTy;
 protected:
   SpecializationMangler(SpecializationPass P, IsFragile_t Fragile,
                         SILFunction *F)
       : Pass(P), Fragile(Fragile), Function(F), ArgOpBuffer(ArgOpStorage) {}
 
+  SpecializationMangler(SpecializationPass P, IsFragile_t Fragile,
+                        SILFunction *F, CanSILFunctionType CanSILFnTy)
+      : Pass(P), Fragile(Fragile), Function(F), ArgOpBuffer(ArgOpStorage),
+        CanSILFnTy(CanSILFnTy) {}
+
+
   SILFunction *getFunction() const { return Function; }
+  CanSILFunctionType getSILFunctionType() const { return CanSILFnTy; }
 
   void beginMangling();
 
@@ -71,12 +79,11 @@ public:
 
   bool isReAbstracted;
 
-  GenericSpecializationMangler(SILFunction *F,
-                               ArrayRef<Substitution> Subs,
-                               IsFragile_t Fragile,
-                               bool isReAbstracted)
-    : SpecializationMangler(SpecializationPass::GenericSpecializer, Fragile, F),
-      Subs(Subs), isReAbstracted(isReAbstracted) {}
+  GenericSpecializationMangler(SILFunction *F, CanSILFunctionType CanSILFnTy,
+                               IsFragile_t Fragile, bool isReAbstracted)
+      : SpecializationMangler(SpecializationPass::GenericSpecializer, Fragile,
+                              F, CanSILFnTy),
+        isReAbstracted(isReAbstracted) {}
 
   std::string mangle();
 };

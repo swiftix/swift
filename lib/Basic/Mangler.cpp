@@ -154,6 +154,7 @@ void Mangler::recordOpStatImpl(StringRef op, size_t OldPos) {
 
 std::string NewMangling::selectMangling(const std::string &Old,
                                           const std::string &New) {
+#if 0
 #ifndef NDEBUG
 #ifdef CHECK_MANGLING_AGAINST_OLD
 
@@ -210,7 +211,7 @@ std::string NewMangling::selectMangling(const std::string &Old,
     totalNewSize += NewSize;
   }
 #endif // NDEBUG
-
+#endif
   return useNewMangling() ? New : Old;
 }
 
