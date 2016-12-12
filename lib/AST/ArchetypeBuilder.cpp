@@ -922,6 +922,8 @@ bool ArchetypeBuilder::addConformanceRequirement(PotentialArchetype *PAT,
 bool ArchetypeBuilder::addSuperclassRequirement(PotentialArchetype *T,
                                                 Type Superclass,
                                                 RequirementSource Source) {
+  assert(!Superclass->hasArchetype());
+
   T = T->getRepresentative();
 
   // Make sure the concrete type fulfills the superclass requirement
@@ -1212,6 +1214,8 @@ bool ArchetypeBuilder::addSameTypeRequirementToConcrete(
        PotentialArchetype *T,
        Type Concrete,
        RequirementSource Source) {
+  assert(!Concrete->hasArchetype());
+
   // Operate on the representative.
   T = T->getRepresentative();
   
@@ -1303,6 +1307,10 @@ bool ArchetypeBuilder::addSameTypeRequirementToConcrete(
                                                                
 bool ArchetypeBuilder::addSameTypeRequirement(Type Reqt1, Type Reqt2,
                                               RequirementSource Source) {
+
+  assert(!Reqt1->hasArchetype());
+  assert(!Reqt2->hasArchetype());
+
   // Find the potential archetypes.
   PotentialArchetype *T1 = resolveArchetype(Reqt1);
   PotentialArchetype *T2 = resolveArchetype(Reqt2);
@@ -1489,6 +1497,8 @@ bool ArchetypeBuilder::addRequirement(const RequirementRepr &Req) {
 
 void ArchetypeBuilder::addRequirement(const Requirement &req, 
                                       RequirementSource source) {
+  assert(!req.getFirstType()->hasArchetype());
+  assert(!req.getSecondType()->hasArchetype());
   switch (req.getKind()) {
   case RequirementKind::Superclass: {
     PotentialArchetype *pa = resolveArchetype(req.getFirstType());
