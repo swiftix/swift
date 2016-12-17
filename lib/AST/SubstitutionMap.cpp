@@ -14,6 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "swift/AST/ASTContext.h"
 #include "swift/AST/SubstitutionMap.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/ProtocolConformance.h"

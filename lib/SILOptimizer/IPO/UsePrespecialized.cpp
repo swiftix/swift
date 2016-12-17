@@ -94,10 +94,10 @@ bool UsePrespecialized::replaceByPrespecialized(SILFunction &F) {
 
     ReabstractionInfo ReInfo(AI, ReferencedF, Subs);
 
-    auto SpecType = ReInfo.getSpecializedType();
-    if (!SpecType)
+    if (!ReInfo.canBeSpecialized())
       continue;
 
+    auto SpecType = ReInfo.getSpecializedType();
     // Bail if any generic types parameters of the concrete type
     // are unbound.
     if (SpecType->hasArchetype())
@@ -108,11 +108,10 @@ bool UsePrespecialized::replaceByPrespecialized(SILFunction &F) {
     {
       Mangle::Mangler Mangler;
       GenericSpecializationMangler GenericMangler(
-          Mangler, ReferencedF, ReferencedF->getLoweredFunctionType(),
+          Mangler, ReferencedF, Subs, ReferencedF->getLoweredFunctionType(),
           ReferencedF->isFragile());
       NewMangling::GenericSpecializationMangler NewGenericMangler(
-          ReferencedF, ReferencedF->getLoweredFunctionType(),
-          ReferencedF->isFragile(),
+          ReferencedF, Subs, ReferencedF->isFragile(),
           /*isReAbstracted*/ true);
       GenericMangler.mangle();
       std::string Old = Mangler.finalize();

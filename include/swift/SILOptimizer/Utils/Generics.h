@@ -63,7 +63,7 @@ class ReabstractionInfo {
   /// The generic environment to be used by the specialization.
   GenericEnvironment *SpecializedGenericEnv;
 
-  /// The generic signature of the specializaiton.
+  /// The generic signature of the specialization.
   /// It is nullptr if the specialization is not polymorphic.
   GenericSignature *SpecializedGenericSig;
 
@@ -99,20 +99,26 @@ class ReabstractionInfo {
 
   // Create a new substituted type with the updated signature.
   CanSILFunctionType createSubstitutedType(SILFunction *OrigF,
-                                           const TypeSubstitutionMap &SubstMap,
+                                           const SubstitutionMap &SubstMap,
                                            bool HasUnboundGenericParams);
 
   void createSubstitutedAndSpecializedTypes();
-  bool prepareAndCheck(ApplySite Apply, SILFunction *OrigF,
+  bool prepareAndCheck(ApplySite Apply, SILFunction *Callee,
                        ArrayRef<Substitution> ParamSubs);
+  void SpecializeConcreteAndGenericSubstitutions(
+      ApplySite Apply, SILFunction *Callee, ArrayRef<Substitution> ParamSubs);
+  void SpecializeConcreteSubstitutions(ApplySite Apply, SILFunction *Callee,
+                                       ArrayRef<Substitution> ParamSubs);
 
 public:
   /// Constructs the ReabstractionInfo for generic function \p Orig with
   /// substitutions \p ParamSubs.
   /// If specialization is not possible getSpecializedType() will return an
   /// invalid type.
-  ReabstractionInfo(ApplySite Apply, SILFunction *Orig, ArrayRef<Substitution> ParamSubs);
-  void ReabstractionInfo1(ApplySite Apply, SILFunction *Orig, ArrayRef<Substitution> ParamSubs);
+  ReabstractionInfo(ApplySite Apply, SILFunction *Callee,
+                    ArrayRef<Substitution> ParamSubs);
+  void ReabstractionInfo1(ApplySite Apply, SILFunction *Callee,
+                          ArrayRef<Substitution> ParamSubs);
 
   /// Constructs the ReabstractionInfo for generic function \p Orig with
   /// additional requirements.
@@ -142,13 +148,15 @@ public:
   /// Gets the total number of original function arguments.
   unsigned getNumArguments() const { return Conversions.size(); }
 
-  /// Returns true if the \p ArgIdx'th argument is converted from an indirect
+  /// Returns true if the \p ArgIdx'th argument is converted from an
+  /// indirect
   /// result or parameter to a direct result or parameter.
   bool isArgConverted(unsigned ArgIdx) const {
     return Conversions.test(ArgIdx);
   }
 
-  /// Returns true if there are any conversions from indirect to direct values.
+  /// Returns true if there are any conversions from indirect to direct
+  /// values.
   bool hasConversions() const { return Conversions.any(); }
 
   /// Remove the arguments of a partial apply, leaving the arguments for the
@@ -162,8 +170,8 @@ public:
   /// > 0 in case of a partial_apply.
   unsigned getIndexOfFirstArg(ApplySite Apply) const {
     unsigned numArgs = Apply.getNumArguments();
-    assert(numArgs == Conversions.size() || (numArgs < Conversions.size() &&
-                                             isa<PartialApplyInst>(Apply)));
+    assert(numArgs == Conversions.size() ||
+           (numArgs < Conversions.size() && isa<PartialApplyInst>(Apply)));
     return Conversions.size() - numArgs;
   }
 
@@ -197,19 +205,18 @@ public:
   CanSILFunctionType createSpecializedType(CanSILFunctionType SubstFTy,
                                            SILModule &M) const;
 
-  SILFunction *getNonSpecializedFunction() const {
-    return OriginalF;
-  }
+  SILFunction *getNonSpecializedFunction() const { return OriginalF; }
 
-  // Map type into a context of the specialized function.
+  /// Map type into a context of the specialized function.
   Type mapTypeIntoContext(Type type) const;
 
-  // Map SIL type into a context of the specialized function.
+  /// Map SIL type into a context of the specialized function.
   SILType mapTypeIntoContext(SILType type) const;
 
-  SILModule &getModule() const {
-    return OriginalF->getModule();
-  }
+  SILModule &getModule() const { return OriginalF->getModule(); }
+
+  /// Returns true if generic specialization is possible.
+  bool canBeSpecialized();
 };
 
 /// Helper class for specializing a generic function given a list of
@@ -223,10 +230,10 @@ class GenericFuncSpecializer {
 
   SubstitutionMap ContextSubs;
   std::string ClonedName;
+
 public:
   GenericFuncSpecializer(SILFunction *GenericFunc,
-                         ArrayRef<Substitution> ParamSubs,
-                         IsFragile_t Fragile,
+                         ArrayRef<Substitution> ParamSubs, IsFragile_t Fragile,
                          const ReabstractionInfo &ReInfo);
 
   /// If we already have this specialization, reuse it.

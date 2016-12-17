@@ -202,9 +202,11 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
     return nullptr;
   }
 
+#if 0
   // We don't support this yet.
   if (AI.hasSubstitutions())
     return nullptr;
+#endif
 
   SILFunction *Caller = AI.getFunction();
 
@@ -384,6 +386,15 @@ static Optional<bool> shouldInlineGeneric(FullApplySite AI) {
   assert(!AI.getSubstitutions().empty() &&
          "Expected a generic apply");
 
+  SILFunction *Callee = AI.getReferencedFunction();
+
+#if 0
+  // Is it a generic specialization?
+  if (Callee && Callee->getName().find("_TTSg", 0) != StringRef::npos) {
+    return None;
+  }
+#endif
+
   if (!EnableSILInliningOfGenerics)
     return false;
 
@@ -393,7 +404,7 @@ static Optional<bool> shouldInlineGeneric(FullApplySite AI) {
   if (!hasUnboundGenericTypes(AI.getSubstitutions()))
     return false;
 
-  SILFunction *Callee = AI.getReferencedFunction();
+  //SILFunction *Callee = AI.getReferencedFunction();
 
   // Do not inline @_semantics functions when compiling the stdlib,
   // because they need to be preserved, so that the optimizer
@@ -407,6 +418,9 @@ static Optional<bool> shouldInlineGeneric(FullApplySite AI) {
   // AlwaysInline or transparent.
   if (Callee->getInlineStrategy() == AlwaysInline || Callee->isTransparent())
     return true;
+
+  if (!EnableSILInliningOfGenerics)
+    return false;
 
   // Only inline if we decided to inline or we are asked to inline all
   // generic functions.
@@ -424,7 +438,7 @@ decideInWarmBlock(FullApplySite AI,
     if (ShouldInlineGeneric.hasValue())
       return ShouldInlineGeneric.getValue();
 
-    return false;
+    //return false;
   }
 
   SILFunction *Callee = AI.getReferencedFunction();
@@ -445,7 +459,7 @@ bool SILPerformanceInliner::decideInColdBlock(FullApplySite AI,
     if (ShouldInlineGeneric.hasValue())
       return ShouldInlineGeneric.getValue();
 
-    return false;
+    //return false;
   }
 
   if (Callee->getInlineStrategy() == AlwaysInline)
@@ -632,6 +646,11 @@ bool SILPerformanceInliner::inlineCallsIntoFunction(SILFunction *Caller) {
     // The callee only needs to know about opened archetypes used in
     // the substitution list.
     OpenedArchetypesTracker.registerUsedOpenedArchetypes(AI.getInstruction());
+
+    if (!AI.getSubstitutions().empty()) {
+      llvm::dbgs() << "Inlining generic function: " << Callee->getName()
+                   << "\n";
+    }
 
     SILInliner Inliner(*Caller, *Callee,
                        SILInliner::InlineKind::PerformanceInline,

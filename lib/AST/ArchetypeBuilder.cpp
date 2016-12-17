@@ -1990,6 +1990,9 @@ ArchetypeBuilder::mapTypeOutOfContext(GenericEnvironment *env,
                                       Type type) {
   assert(!type->hasTypeParameter() && "already have an interface type");
 
+  if (type->isOpenedExistential())
+    return type;
+
   if (!env)
     return type.substDependentTypesWithErrorTypes();
 

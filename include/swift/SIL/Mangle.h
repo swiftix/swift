@@ -155,6 +155,7 @@ public:
 
   GenericSpecializationMangler(Mangle::Mangler &M,
                                SILFunction *F,
+                               ArrayRef<Substitution> Subs,
                                CanSILFunctionType CanSILFnTy,
                                IsFragile_t Fragile,
                                ReAbstractionMode isReAbstracted = ReAbstracted)
@@ -162,7 +163,9 @@ public:
                               SpecializationKind::Generic :
                               SpecializationKind::NotReAbstractedGeneric,
                             SpecializationPass::GenericSpecializer,
-                            M, Fragile, F, CanSILFnTy) {}
+                            M, Fragile, F, CanSILFnTy), Subs(Subs) {
+      //assert(Subs.empty() ^ (bool)CanSILFnTy);
+    }
 
 
 private:
