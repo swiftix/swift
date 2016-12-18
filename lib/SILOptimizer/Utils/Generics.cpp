@@ -50,18 +50,27 @@ public:
 
   Optional<ProtocolConformanceRef>
   operator()(CanType original, Type replacement, ProtocolType *protoType) {
-    auto C = Mod->lookupConformance(replacement, protoType->getDecl(), nullptr);
+    auto proto = protoType->getDecl();
+    auto C = Mod->lookupConformance(replacement, proto, nullptr);
     if (C.hasValue())
       return C.getValue();
 
     if (!replacement->hasTypeParameter() && !replacement->hasArchetype()) {
       // It is a concrete type.
       auto nominal = replacement->getNominalOrBoundGenericNominal();
-      assert(nominal);
-      SmallVector<ProtocolConformance *, 2> conformances;
-      nominal->lookupConformance(Mod, protoType->getDecl(), conformances);
-      assert(conformances.size() == 1);
-      return ProtocolConformanceRef(conformances.front());
+      if (nominal) {
+        SmallVector<ProtocolConformance *, 2> conformances;
+        nominal->lookupConformance(Mod, proto, conformances);
+        assert(conformances.size() == 1);
+        auto concreteSubs = replacement->gatherAllSubstitutions(
+            nominal->getModuleContext(), nullptr);
+        if (!concreteSubs.empty()) {
+          auto specialized = Mod->getASTContext().getSpecializedConformance(
+              replacement, conformances.front(), concreteSubs);
+          return ProtocolConformanceRef(specialized);
+        }
+        return ProtocolConformanceRef(conformances.front());
+      }
     }
     return ProtocolConformanceRef(protoType->getDecl());
   }
