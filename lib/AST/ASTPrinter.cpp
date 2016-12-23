@@ -248,6 +248,7 @@ struct SynthesizedExtensionAnalyzer::Implementation {
 
       switch (Kind) {
         case RequirementKind::Conformance:
+        case RequirementKind::Layout:
         case RequirementKind::Superclass:
           if (!canPossiblyConvertTo(First, Second, *DC))
             return {Result, MergeInfo};
@@ -1169,6 +1170,7 @@ static unsigned getDepthOfType(Type ty) {
 static unsigned getDepthOfRequirement(const Requirement &req) {
   switch (req.getKind()) {
   case RequirementKind::Conformance:
+  case RequirementKind::Layout:
   case RequirementKind::Superclass:
     return getDepthOfType(req.getFirstType());
 
@@ -1335,6 +1337,7 @@ void PrintAST::printRequirement(const Requirement &req) {
   printType(req.getFirstType());
   switch (req.getKind()) {
   case RequirementKind::Conformance:
+  case RequirementKind::Layout:
   case RequirementKind::Superclass:
     Printer << " : ";
     break;
@@ -4055,6 +4058,9 @@ void Requirement::dump() const {
   case RequirementKind::Conformance:
     llvm::errs() << "conforms_to: ";
     break;
+  case RequirementKind::Layout:
+    llvm::errs() << "layout: ";
+    break;
   case RequirementKind::Superclass:
     llvm::errs() << "superclass: ";
     break;
@@ -4070,6 +4076,10 @@ void Requirement::dump() const {
 
 void Requirement::print(raw_ostream &os, const PrintOptions &opts) const {
   StreamPrinter printer(os);
+  PrintAST(printer, opts).printRequirement(*this);
+}
+
+void Requirement::print(ASTPrinter &printer, const PrintOptions &opts) const {
   PrintAST(printer, opts).printRequirement(*this);
 }
 

@@ -30,6 +30,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
@@ -260,6 +261,32 @@ bool ArchetypeBuilder::PotentialArchetype::addConformance(
   auto rep = getRepresentative();
   if (rep != this)
     return rep->addConformance(proto, updateExistingSource, source, builder);
+
+  // Perform some checks for layout constraints.
+  // Skip these checks if it is a protocol declaration and let the
+  // type checker report them.
+  // FIXME: Sometimes it reports the same error for function signatures twice,
+  // because the type checker peforms two passes.
+  if (//!RootProtocol &&
+      getLayoutConstraintInfo(proto->getDeclaredType()).isKnownLayout()) {
+    // There can be only one layout constraint.
+    for (auto &ExistingConformancePair : ConformsTo) {
+      if (getLayoutConstraintInfo(
+              ExistingConformancePair.first->getDeclaredType())
+              .isKnownLayout()) {
+        builder.Diags.diagnose(
+            source.getLoc(), diag::mutiple_layout_constraints,
+            proto->getDeclaredType(),
+            ExistingConformancePair.first->getDeclaredType());
+        builder.Diags.diagnose(
+            ExistingConformancePair.second.getLoc(),
+            diag::previous_layout_constraint,
+            ExistingConformancePair.first->getDeclaredType());
+        setInvalid();
+        return false;
+      }
+    }
+  }
 
   // Check whether we already know about this conformance.
   auto known = ConformsTo.find(proto);
@@ -912,6 +939,63 @@ bool ArchetypeBuilder::addConformanceRequirement(PotentialArchetype *PAT,
   return false;
 }
 
+bool ArchetypeBuilder::addLayoutRequirement(PotentialArchetype *PAT,
+                                            ProtocolDecl *Proto,
+                                            RequirementSource Source) {
+  llvm::SmallPtrSet<ProtocolDecl *, 8> Visited;
+  return addLayoutRequirement(PAT, Proto, Source, Visited);
+}
+
+bool ArchetypeBuilder::addLayoutRequirement(PotentialArchetype *PAT,
+                                            ProtocolDecl *Proto,
+                                            RequirementSource Source,
+                               llvm::SmallPtrSetImpl<ProtocolDecl *> &Visited) {
+  // Add the requirement to the representative.
+  auto T = PAT->getRepresentative();
+
+  // Add the requirement, if we haven't done so already.
+  if (!T->addConformance(Proto, /*updateExistingSource=*/true, Source, *this))
+    return false;
+
+  RequirementSource InnerSource(RequirementSource::Redundant, Source.getLoc());
+  
+  bool inserted = Visited.insert(Proto).second;
+  assert(inserted);
+  (void) inserted;
+
+  // Add all of the inherited protocol requirements, recursively.
+  if (auto resolver = getLazyResolver())
+    resolver->resolveInheritedProtocols(Proto);
+  for (auto InheritedProto : Proto->getInheritedProtocols(getLazyResolver())) {
+    if (Visited.count(InheritedProto))
+      continue;
+    if (addConformanceRequirement(T, InheritedProto, InnerSource, Visited))
+      return true;
+  }
+
+  // Add requirements for each of the associated types.
+  // FIXME: This should use the generic signature, not walk the members.
+  for (auto Member : Proto->getMembers()) {
+    if (auto AssocType = dyn_cast<AssociatedTypeDecl>(Member)) {
+      // Add requirements placed directly on this associated type.
+      auto AssocPA = T->getNestedType(AssocType->getName(), *this);
+      if (AssocPA != T) {
+        if (addAbstractTypeParamRequirements(AssocType, AssocPA,
+                                             RequirementSource::Protocol,
+                                             Visited))
+          return true;
+      }
+
+      continue;
+    }
+
+    // FIXME: Requirement declarations.
+  }
+  
+  Visited.erase(Proto);
+  return false;
+}
+
 bool ArchetypeBuilder::addSuperclassRequirement(PotentialArchetype *T,
                                                 Type Superclass,
                                                 RequirementSource Source) {
@@ -1140,8 +1224,9 @@ bool ArchetypeBuilder::addSameTypeRequirementBetweenArchetypes(
   
   if (concrete1 && concrete2) {
     if (!concrete1->isEqual(concrete2)) {
+      StringRef Name = T1->getFullName();
       Diags.diagnose(Source.getLoc(), diag::requires_same_type_conflict,
-                     T1->getName(), concrete1, concrete2);
+                     Name, concrete1, concrete2);
       return true;
       
     }
@@ -1212,8 +1297,9 @@ bool ArchetypeBuilder::addSameTypeRequirementToConcrete(
   // problem.
   if (auto oldConcrete = T->getConcreteType()) {
     if (!oldConcrete->isEqual(Concrete)) {
+      StringRef Name = T->getFullName();
       Diags.diagnose(Source.getLoc(), diag::requires_same_type_conflict,
-                     T->getName(), oldConcrete, Concrete);
+                     Name, oldConcrete, Concrete);
       return true;
     }
     return false;
@@ -1234,6 +1320,17 @@ bool ArchetypeBuilder::addSameTypeRequirementToConcrete(
       }
 
       conformances.insert({protocol, *conformance});
+    }
+
+    // Make sure the concrete type fulfills the superclass requirement
+    // of the archetype.
+    if (T->Superclass) {
+      if (!T->Superclass->isExactSuperclassOf(Concrete, nullptr)) {
+        Diags
+            .diagnose(Source.getLoc(), diag::type_does_not_inherit,
+                      T->getRootParam(), Concrete, T->Superclass)
+            .highlight(T->SuperclassSource->getLoc());
+      }
     }
   }
   
@@ -1439,6 +1536,42 @@ bool ArchetypeBuilder::visitInherited(
 
 bool ArchetypeBuilder::addRequirement(const RequirementRepr &Req) {
   switch (Req.getKind()) {
+  case RequirementReprKind::LayoutConstraint: {
+    // FIXME: Need to do something here.
+    PotentialArchetype *PA = resolveArchetype(Req.getSubject());
+    if (!PA) {
+      // FIXME: Poor location information.
+      // FIXME: Delay diagnostic until after type validation?
+      Diags.diagnose(Req.getColonLoc(), diag::requires_not_suitable_archetype,
+                     0, Req.getSubjectLoc(), 0);
+      return true;
+    }
+
+    // Check whether this is a supertype requirement.
+    RequirementSource source(
+        RequirementSource::Explicit,
+        Req.getLayoutConstraintLoc().getSourceRange().Start);
+    if (Req.getLayoutConstraint()->getClassOrBoundGenericClass()) {
+      return addSuperclassRequirement(PA, Req.getLayoutConstraint(), source);
+    }
+
+    SmallVector<ProtocolDecl *, 4> ConformsTo;
+    if (!Req.getLayoutConstraint()->isExistentialType(ConformsTo)) {
+      // FIXME: Diagnose this failure here, rather than over in type-checking.
+      return true;
+    }
+
+#if 1
+    // FIXME: Register the layout conformance somewhere.
+    // Add each of the protocols.
+    for (auto Proto : ConformsTo)
+      if (addLayoutRequirement(PA, Proto, source))
+        return true;
+#endif
+
+    return false;
+  }
+
   case RequirementReprKind::TypeConstraint: {
     PotentialArchetype *PA = resolveArchetype(Req.getSubject());
     if (!PA) {
@@ -1493,6 +1626,25 @@ void ArchetypeBuilder::addRequirement(const Requirement &req,
   }
 
   case RequirementKind::Conformance: {
+    PotentialArchetype *pa = resolveArchetype(req.getFirstType());
+    if (!pa) return;
+
+    SmallVector<ProtocolDecl *, 4> conformsTo;
+    bool existential = req.getSecondType()->isExistentialType(conformsTo);
+    assert(existential && "Re-introducing invalid requirement");
+    (void)existential;
+
+    // Add each of the protocols.
+    for (auto proto : conformsTo) {
+      bool invalid = addConformanceRequirement(pa, proto, source);
+      assert(!invalid && "Re-introducing invalid requirement");
+      (void)invalid;
+    }
+
+    return;
+  }
+
+  case RequirementKind::Layout: {
     PotentialArchetype *pa = resolveArchetype(req.getFirstType());
     if (!pa) return;
 
@@ -1598,6 +1750,7 @@ public:
       }
 
       case RequirementKind::Superclass:
+      case RequirementKind::Layout:
       case RequirementKind::Conformance: {
         auto subjectType = req.getFirstType().subst(
                              &Builder.getModule(),
@@ -1616,6 +1769,12 @@ public:
         if (req.getKind() == RequirementKind::Conformance) {
           auto proto = req.getSecondType()->castTo<ProtocolType>();
           if (Builder.addConformanceRequirement(subjectPA, proto->getDecl(),
+                                                source)) {
+            return Action::Stop;
+          }
+        } else if (req.getKind() == RequirementKind::Layout) {
+          auto proto = req.getSecondType()->castTo<ProtocolType>();
+          if (Builder.addLayoutRequirement(subjectPA, proto->getDecl(),
                                                 source)) {
             return Action::Stop;
           }
@@ -1907,7 +2066,13 @@ void ArchetypeBuilder::enumerateRequirements(llvm::function_ref<
     // Enumerate the conformance requirements.
     for (auto proto : protocols) {
       assert(protocolSources.count(proto) == 1 && "Missing conformance?");
-      f(RequirementKind::Conformance, archetype, 
+      if (getLayoutConstraintInfo(proto->getDeclaredType()).isKnownLayout()) {
+        // Add layout protocols as layout constraints.
+        f(RequirementKind::Layout, archetype, proto->getDeclaredInterfaceType(),
+          protocolSources.find(proto)->second);
+        continue;
+      }
+      f(RequirementKind::Conformance, archetype,
         proto->getDeclaredInterfaceType(),
         protocolSources.find(proto)->second);
     }
@@ -1926,6 +2091,7 @@ void ArchetypeBuilder::dump(llvm::raw_ostream &out) {
                             RequirementSource source) {
     switch (kind) {
     case RequirementKind::Conformance:
+    case RequirementKind::Layout:
     case RequirementKind::Superclass:
       out << "\n  ";
       out << archetype->getDebugName() << " : " 
@@ -2088,4 +2254,3 @@ GenericEnvironment *ArchetypeBuilder::getGenericEnvironment(
 
   return genericEnv;
 }
-

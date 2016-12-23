@@ -366,11 +366,10 @@ void SILSerializer::writeSILFunction(const SILFunction &F, bool DeclOnly) {
 
   for (auto *SA : F.getSpecializeAttrs()) {
     unsigned specAttrAbbrCode = SILAbbrCodes[SILSpecializeAttrLayout::Code];
-
-    auto subs = SA->getSubstitutions();
-    SILSpecializeAttrLayout::emitRecord(
-      Out, ScratchRecord, specAttrAbbrCode, (unsigned)subs.size());
-    S.writeSubstitutions(subs, SILAbbrCodes);
+    SILSpecializeAttrLayout::emitRecord(Out, ScratchRecord, specAttrAbbrCode,
+                                        (unsigned)SA->isExported(),
+                                        (unsigned)SA->getSpecializationKind());
+    S.writeGenericRequirements(SA->getRequirements(), SILAbbrCodes);
   }
 
   // Write the body's context archetypes, unless we don't actually have a body.

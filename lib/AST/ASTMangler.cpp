@@ -1242,6 +1242,7 @@ void ASTMangler::appendRequirement(const Requirement &reqt) {
 
   switch (reqt.getKind()) {
     case RequirementKind::Conformance:
+    case RequirementKind::Layout:
       appendProtocolName(SecondTy->castTo<ProtocolType>()->getDecl());
       break;
     case RequirementKind::Superclass:
@@ -1256,6 +1257,8 @@ void ASTMangler::appendRequirement(const Requirement &reqt) {
       switch (reqt.getKind()) {
         case RequirementKind::Conformance:
           return appendOperator("RQ");
+        case RequirementKind::Layout:
+          return appendOperator("RL");
         case RequirementKind::Superclass:
           return appendOperator("RB");
         case RequirementKind::SameType:
@@ -1270,6 +1273,9 @@ void ASTMangler::appendRequirement(const Requirement &reqt) {
       case RequirementKind::Conformance:
         return appendOpWithGenericParamIndex(isAssocTypeAtDepth ? "RP" : "Rp",
                                              gpBase);
+      case RequirementKind::Layout:
+        return appendOpWithGenericParamIndex(isAssocTypeAtDepth ? "RM" : "Rm",
+                                             gpBase);
       case RequirementKind::Superclass:
         return appendOpWithGenericParamIndex(isAssocTypeAtDepth ? "RC" : "Rc",
                                              gpBase);
@@ -1283,6 +1289,8 @@ void ASTMangler::appendRequirement(const Requirement &reqt) {
   switch (reqt.getKind()) {
     case RequirementKind::Conformance:
       return appendOpWithGenericParamIndex("R", gpBase);
+    case RequirementKind::Layout:
+      return appendOpWithGenericParamIndex("Rl", gpBase);
     case RequirementKind::Superclass:
       return appendOpWithGenericParamIndex("Rb", gpBase);
     case RequirementKind::SameType:
@@ -1475,6 +1483,7 @@ Type ASTMangler::getDeclTypeForMangling(const ValueDecl *decl,
       for (auto &reqt : sig->getRequirements()) {
         switch (reqt.getKind()) {
         case RequirementKind::Conformance:
+        case RequirementKind::Layout:
         case RequirementKind::Superclass:
           // We don't need the requirement if the constrained type is above the
           // method depth.
