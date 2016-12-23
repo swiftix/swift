@@ -2991,9 +2991,11 @@ GenericParamList *ProtocolDecl::createGenericParams(DeclContext *dc) {
   auto &ctx = getASTContext();
   auto selfId = ctx.Id_Self;
   auto selfDecl = new (ctx) GenericTypeParamDecl(dc, selfId,
-                                                 SourceLoc(), depth, 0);
+                                                 this->getLoc(), depth, 0);
   auto protoType = ProtocolType::get(this, ctx);
-  TypeLoc selfInherited[1] = { TypeLoc::withoutLoc(protoType) };
+  //TypeLoc selfInherited[1] = { TypeLoc::withoutLoc(protoType) };
+  auto InheritedTyR = new (ctx) FixedTypeRepr(protoType, this->getLoc());
+  TypeLoc selfInherited[1] = { TypeLoc(InheritedTyR, protoType) };
   selfDecl->setInherited(ctx.AllocateCopy(selfInherited));
   selfDecl->setImplicit();
 

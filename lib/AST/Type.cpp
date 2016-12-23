@@ -645,6 +645,10 @@ ClassDecl *CanType::getClassBoundImpl(CanType type) {
   llvm_unreachable("class has no class bound!");
 }
 
+LayoutConstraintInfo CanType::getLayoutConstraintInfo() const {
+  return swift::getLayoutConstraintInfo(*this);
+}
+
 bool TypeBase::isAnyObject() {
   if (auto proto = getAs<ProtocolType>())
     return proto->getDecl()->isSpecificProtocol(KnownProtocolKind::AnyObject);
