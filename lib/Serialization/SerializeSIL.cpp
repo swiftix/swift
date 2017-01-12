@@ -1940,6 +1940,7 @@ void SILSerializer::writeSILBlock(const SILModule *SILMod) {
   registerSILAbbr<decls_block::NormalProtocolConformanceIdLayout>();
   registerSILAbbr<decls_block::ProtocolConformanceXrefLayout>();
   registerSILAbbr<decls_block::GenericRequirementLayout>();
+  registerSILAbbr<decls_block::LayoutRequirementLayout>();
 
   for (const SILGlobalVariable &g : SILMod->getSILGlobals())
     writeSILGlobalVar(g);
