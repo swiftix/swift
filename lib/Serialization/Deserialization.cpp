@@ -2349,16 +2349,23 @@ Decl *ModuleFile::getDecl(DeclID DID, Optional<DeclContext *> ForcedContext) {
       }
 
       case decls_block::Specialize_DECL_ATTR: {
-        ArrayRef<uint64_t> rawTypeIDs;
-        serialization::decls_block::SpecializeDeclAttrLayout::readRecord(
-          scratch, rawTypeIDs);
+        unsigned exported;
+        SpecializeAttr::SpecializationKind specializationKind;
+        unsigned specializationKindVal;
+        SmallVector<Requirement, 8> requirements;
 
-        SmallVector<TypeLoc, 8> typeLocs;
-        for (auto tid : rawTypeIDs)
-          typeLocs.push_back(TypeLoc::withoutLoc(getType(tid)));
+        serialization::decls_block::SpecializeDeclAttrLayout::readRecord(
+          scratch, exported, specializationKindVal);
+
+        specializationKind = specializationKindVal
+                                 ? SpecializeAttr::SpecializationKind::Partial
+                                 : SpecializeAttr::SpecializationKind::Full;
+
+        readGenericRequirements(requirements, DeclTypeCursor);
 
         Attr = SpecializeAttr::create(ctx, SourceLoc(), SourceRange(),
-                                      typeLocs);
+                                      requirements, exported != 0,
+                                      specializationKind);
         break;
       }
 
@@ -3454,9 +3461,16 @@ Decl *ModuleFile::getDecl(DeclID DID, Optional<DeclContext *> ForcedContext) {
   }
 
   // Record the attributes.
-  if (DAttrs)
+  if (DAttrs) {
     declOrOffset.get()->getAttrs().setRawAttributeChain(DAttrs);
-
+    // @_specialize attributes need to know their decl context.
+    for (auto Attr : declOrOffset.get()->getAttrs()) {
+      if (Attr->getKind() != DAK_Specialize)
+        continue;
+      reinterpret_cast<SpecializeAttr *>(Attr)->setDecl(
+          dyn_cast<AbstractFunctionDecl>(declOrOffset.get()));
+    }
+  }
   return declOrOffset;
 }
 
