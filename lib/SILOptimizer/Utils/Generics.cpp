@@ -276,7 +276,7 @@ createSpecializedType(CanSILFunctionType SubstFTy, SILModule &M) const {
 std::pair<GenericEnvironment *, GenericSignature *>
 getSignatureWithRequirements(GenericSignature *OrigGenSig,
                              GenericEnvironment *OrigGenericEnv,
-                             ArrayRef<RequirementRepr> Requirements,
+                             ArrayRef<Requirement> Requirements,
                              SILModule &M) {
   // Form a new generic signature based on the old one.
   ArchetypeBuilder Builder(M.getASTContext(),
@@ -285,10 +285,11 @@ getSignatureWithRequirements(GenericSignature *OrigGenSig,
   // First, add the old generic signature.
   Builder.addGenericSignature(OrigGenSig);
 
+  RequirementSource Source(RequirementSource::Explicit, SourceLoc());
   // For each substitution with a concrete type as a replacement,
   // add a new concrete type equality requirement.
   for (auto &Req : Requirements) {
-    Builder.addRequirement(Req);
+    Builder.addRequirement(Req, Source);
   }
 
   auto *GenericSig = Builder.getGenericSignature();
@@ -300,9 +301,9 @@ getSignatureWithRequirements(GenericSignature *OrigGenSig,
 
 /// Perform some sanity checks for the requirements
 static void
-checkSpecializationRequirements(ArrayRef<RequirementRepr> Requirements) {
+checkSpecializationRequirements(ArrayRef<Requirement> Requirements) {
   for (auto &Req : Requirements) {
-    if (Req.getKind() == RequirementReprKind::SameType) {
+    if (Req.getKind() == RequirementKind::SameType) {
       auto FirstType = Req.getFirstType();
       auto SecondType = Req.getSecondType();
       assert(FirstType && SecondType);
@@ -318,45 +319,11 @@ checkSpecializationRequirements(ArrayRef<RequirementRepr> Requirements) {
       continue;
     }
 
-    if (Req.getKind() == RequirementReprKind::LayoutConstraint) {
-      // TODO: Check that it is one of the compiler known protocols used for
-      // pre-specializations.
-      continue;
-    }
-
-    // TODO: Extend it to support TypeConstraint requirements once it is
-    // supported?
-    llvm_unreachable("Unknown type of requirement in generic specialization");
-  }
-}
-
-/// Remap Requirements to RequirementReps.
-static void convertRequirements(ArrayRef<Requirement> From,
-                                SmallVectorImpl<RequirementRepr> &To) {
-  for (auto &Req : From) {
-    if (Req.getKind() == RequirementKind::SameType) {
-      To.push_back(RequirementRepr::getSameType(
-          TypeLoc::withoutLoc(Req.getFirstType()),
-          SourceLoc(),
-          TypeLoc::withoutLoc(Req.getSecondType())));
-      continue;
-    }
-
-    if (Req.getKind() == RequirementKind::Conformance) {
-      To.push_back(RequirementRepr::getTypeConstraint(
-          TypeLoc::withoutLoc(Req.getFirstType()), SourceLoc(),
-          TypeLoc::withoutLoc(Req.getSecondType())));
-      continue;
-    }
-
     if (Req.getKind() == RequirementKind::Layout) {
-      To.push_back(RequirementRepr::getLayoutConstraint(
-          TypeLoc::withoutLoc(Req.getFirstType()), SourceLoc(),
-            LayoutConstraintLoc::withoutLoc(Req.getLayoutConstraint())));
       continue;
     }
 
-    llvm_unreachable("Unspoorted requirement kind");
+    llvm_unreachable("Unknown type of requirement in generic specialization");
   }
 }
 
@@ -387,9 +354,6 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
   SubstitutionMap ClonerArchetypeToConcreteMap;
   SubstitutionMap CallerArchetypeToConcreteMap;
 
-  SmallVector<RequirementRepr, 4> RequirementReprs;
-  convertRequirements(Requirements, RequirementReprs);
-
   for (auto &Req : Requirements) {
     if (Req.getKind() == RequirementKind::SameType) {
       // Remember that a given generic parameter is mapped
@@ -415,11 +379,11 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
   }
 
   // Perform some sanity checks for the requirements
-  checkSpecializationRequirements(RequirementReprs);
+  checkSpecializationRequirements(Requirements);
 
   std::tie(SpecializedGenericEnv, SpecializedGenericSig) =
       getSignatureWithRequirements(OrigGenericSig, OrigGenericEnv,
-                                   RequirementReprs, M);
+                                   Requirements, M);
 
   for (auto Req : SpecializedGenericSig->getRequirements()) {
     // Remember how the original contextual type is represented in
