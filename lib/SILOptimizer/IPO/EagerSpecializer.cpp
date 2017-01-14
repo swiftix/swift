@@ -630,8 +630,7 @@ emitArgumentConversion(SmallVectorImpl<SILValue> &CallArgs) {
     DEBUG(dbgs() << "  Cast generic arg: "; CastArg->print(dbgs()));
 
     if (ReInfo.isArgConverted(OrigArg->getIndex()) &&
-        !isa<ArchetypeType>(
-            CastArg->getType().getSwiftRValueType()->getCanonicalType())) {
+        !isa<ArchetypeType>(CastArg->getType().getSwiftRValueType())) {
       if (ReInfo.isResultIndex(Idx)) {
         // The result is converted from indirect to direct. We need to insert
         // a store later.
@@ -690,12 +689,11 @@ static SILFunction *eagerSpecialize(SILFunction *GenericFunc,
                    []{ dbgs() << ", "; });
         dbgs() << "> with ";
         SA.print(dbgs()); dbgs() << "\n");
-  
+
   // Create a specialized function.
-  GenericFuncSpecializer
-        //FuncSpecializer(GenericFunc, SA.getSubstitutions(),
-        FuncSpecializer(GenericFunc, ReInfo.getClonerParamSubstitutions(),
-                        GenericFunc->isFragile(), ReInfo);
+  GenericFuncSpecializer FuncSpecializer(GenericFunc,
+                                         ReInfo.getClonerParamSubstitutions(),
+                                         GenericFunc->isFragile(), ReInfo);
 
   SILFunction *NewFunc = FuncSpecializer.trySpecialization();
   if (!NewFunc)
@@ -732,7 +730,6 @@ void EagerSpecializerTransform::run() {
     // TODO: Use a decision-tree to reduce the amount of dynamic checks being
     // performed.
     for (auto *SA : F.getSpecializeAttrs()) {
-      // ReInfoVec.emplace_back(ApplySite(), &F, SA->getSubstitutions());
       auto AttrRequirements = SA->getRequirements();
       ReInfoVec.emplace_back(&F, AttrRequirements);
       auto *NewFunc = eagerSpecialize(&F, *SA, ReInfoVec.back());

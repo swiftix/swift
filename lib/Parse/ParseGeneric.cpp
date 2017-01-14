@@ -262,13 +262,12 @@ ParserStatus Parser::parseGenericWhereClause(
     if (Tok.is(tok::colon)) {
       // A conformance-requirement.
       SourceLoc ColonLoc = consumeToken();
-      Identifier TypeId;
 
       if (Tok.is(tok::identifier) &&
-          getLayoutConstraintInfo(TypeId = Context.getIdentifier(Tok.getText()),
+          getLayoutConstraintInfo(Context.getIdentifier(Tok.getText()),
                                   Context)) {
         // Parse a layout constraint.
-        auto LayoutName = TypeId;
+        auto LayoutName = Context.getIdentifier(Tok.getText());
         auto LayoutLoc = consumeToken();
         auto LayoutInfo = parseLayoutConstraint(LayoutName);
         if (!LayoutInfo.isKnownLayout()) {
