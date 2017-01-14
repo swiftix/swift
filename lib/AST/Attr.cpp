@@ -181,10 +181,10 @@ DeclAttributes::getDeprecated(const ASTContext &ctx) const {
   return conditional;
 }
 
-void DeclAttributes::dump() const {
+void DeclAttributes::dump(const Decl *D) const {
   StreamPrinter P(llvm::errs());
   PrintOptions PO = PrintOptions::printEverything();
-  print(P, PO);
+  print(P, PO, D);
 }
 
 /// Returns true if the attribute can be presented as a short form available
@@ -250,8 +250,8 @@ static void printShortFormAvailable(ArrayRef<const DeclAttribute *> Attrs,
   Printer.printNewline();
 }
 
-void DeclAttributes::print(ASTPrinter &Printer,
-                           const PrintOptions &Options) const {
+void DeclAttributes::print(ASTPrinter &Printer, const PrintOptions &Options,
+                           const Decl *D) const {
   if (!DeclAttrs)
     return;
 
@@ -286,11 +286,11 @@ void DeclAttributes::print(ASTPrinter &Printer,
   }
 
   for (auto DA : longAttributes)
-    DA->print(Printer, Options);
+    DA->print(Printer, Options, D);
   for (auto DA : attributes)
-    DA->print(Printer, Options);
+    DA->print(Printer, Options, D);
   for (auto DA : modifiers)
-    DA->print(Printer, Options);
+    DA->print(Printer, Options, D);
 }
 
 SourceLoc DeclAttributes::getStartLoc(bool forModifiers) const {
@@ -307,7 +307,8 @@ SourceLoc DeclAttributes::getStartLoc(bool forModifiers) const {
   return lastAttr ? lastAttr->getRangeWithAt().Start : SourceLoc();
 }
 
-bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options) const {
+bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options,
+                              const Decl *D) const {
 
   // Handle any attributes that are not printed at all before we make printer
   // callbacks.
@@ -451,8 +452,8 @@ bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options) 
       Printer << "where ";
     }
     std::function<Type(Type)> GetInterfaceType;
-    auto *FnDecl = attr->getDecl();
-    if (!FnDecl)
+    auto *FnDecl = dyn_cast_or_null<AbstractFunctionDecl>(D);
+    if (!FnDecl || !FnDecl->getGenericEnvironment())
       GetInterfaceType = [](Type Ty) -> Type { return Ty; };
     else {
       // Use GenericEnvironment to produce user-friendly
@@ -492,10 +493,10 @@ bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options) 
   return true;
 }
 
-void DeclAttribute::print(ASTPrinter &Printer,
-                          const PrintOptions &Options) const {
+void DeclAttribute::print(ASTPrinter &Printer, const PrintOptions &Options,
+                          const Decl *D) const {
 
-  if (!printImpl(Printer, Options))
+  if (!printImpl(Printer, Options, D))
     return; // Nothing printed.
 
   if (isLongAttribute() && Options.PrintLongAttrsOnSeparateLines)
@@ -504,9 +505,9 @@ void DeclAttribute::print(ASTPrinter &Printer,
     Printer << " ";
 }
 
-void DeclAttribute::print(llvm::raw_ostream &OS) const {
+void DeclAttribute::print(llvm::raw_ostream &OS, const Decl *D) const {
   StreamPrinter P(OS);
-  print(P, PrintOptions());
+  print(P, PrintOptions(), D);
 }
 
 unsigned DeclAttribute::getOptions(DeclAttrKind DK) {
@@ -807,7 +808,7 @@ SpecializeAttr::SpecializeAttr(SourceLoc atLoc, SourceRange range,
                                bool exported,
                                SpecializationKind kind)
     : DeclAttribute(DAK_Specialize, atLoc, range, /*Implicit=*/false),
-      F(nullptr), numRequirements(0), trailingWhereClause(clause),
+      numRequirements(0), trailingWhereClause(clause),
       kind(kind), exported(exported) {
 }
 
@@ -816,7 +817,7 @@ SpecializeAttr::SpecializeAttr(SourceLoc atLoc, SourceRange range,
                                bool exported,
                                SpecializationKind kind)
     : DeclAttribute(DAK_Specialize, atLoc, range, /*Implicit=*/false),
-      F(nullptr), numRequirements(0), kind(kind), exported(exported) {
+      numRequirements(0), kind(kind), exported(exported) {
   numRequirements = requirements.size();
   std::copy(requirements.begin(), requirements.end(), getRequirementsData());
 }

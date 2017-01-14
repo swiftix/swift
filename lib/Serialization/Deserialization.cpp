@@ -3461,16 +3461,9 @@ Decl *ModuleFile::getDecl(DeclID DID, Optional<DeclContext *> ForcedContext) {
   }
 
   // Record the attributes.
-  if (DAttrs) {
+  if (DAttrs)
     declOrOffset.get()->getAttrs().setRawAttributeChain(DAttrs);
-    // @_specialize attributes need to know their decl context.
-    for (auto Attr : declOrOffset.get()->getAttrs()) {
-      if (Attr->getKind() != DAK_Specialize)
-        continue;
-      reinterpret_cast<SpecializeAttr *>(Attr)->setDecl(
-          dyn_cast<AbstractFunctionDecl>(declOrOffset.get()));
-    }
-  }
+
   return declOrOffset;
 }
 

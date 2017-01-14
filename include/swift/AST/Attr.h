@@ -313,7 +313,8 @@ public:
 
   /// Prints this attribute (if applicable), returning `true` if anything was
   /// printed.
-  bool printImpl(ASTPrinter &Printer, const PrintOptions &Options) const;
+  bool printImpl(ASTPrinter &Printer, const PrintOptions &Options,
+                 const Decl *D = nullptr) const;
 
 public:
   DeclAttrKind getKind() const {
@@ -343,10 +344,11 @@ public:
   }
 
   /// Print the attribute to the provided ASTPrinter.
-  void print(ASTPrinter &Printer, const PrintOptions &Options) const;
+  void print(ASTPrinter &Printer, const PrintOptions &Options,
+             const Decl *D = nullptr) const;
 
   /// Print the attribute to the provided stream.
-  void print(llvm::raw_ostream &OS) const;
+  void print(llvm::raw_ostream &OS, const Decl *D = nullptr) const;
 
   /// Returns true if this attribute can appear on the specified decl.  This is
   /// controlled by the flags in Attr.def.
@@ -1039,7 +1041,6 @@ public:
   };
 
 private:
-  AbstractFunctionDecl *F;
   unsigned numRequirements;
   TrailingWhereClause *trailingWhereClause;
   SpecializationKind kind;
@@ -1097,14 +1098,6 @@ public:
   static bool classof(const DeclAttribute *DA) {
     return DA->getKind() == DAK_Specialize;
   }
-
-  AbstractFunctionDecl *getDecl() const {
-    return F;
-  }
-
-  void setDecl(AbstractFunctionDecl *FD) {
-    F = FD;
-  }
 };
 
 /// \brief Attributes that may be applied to declarations.
@@ -1154,8 +1147,9 @@ public:
   /// a declaration is deprecated on all deployment targets, or null otherwise.
   const AvailableAttr *getDeprecated(const ASTContext &ctx) const;
 
-  void dump() const;
-  void print(ASTPrinter &Printer, const PrintOptions &Options) const;
+  void dump(const Decl *D = nullptr) const;
+  void print(ASTPrinter &Printer, const PrintOptions &Options,
+             const Decl *D = nullptr) const;
 
   template <typename T, typename DERIVED>
   class iterator_base : public std::iterator<std::forward_iterator_tag, T *> {

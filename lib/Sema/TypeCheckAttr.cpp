@@ -1768,7 +1768,6 @@ void AttributeChecker::visitSpecializeAttr(SpecializeAttr *attr) {
   // Store converted requirements in the attribute so that they are
   // serialized later.
   attr->setRequirements(DC->getASTContext(), convertedRequirements);
-  attr->setDecl(FD);
 }
 
 void AttributeChecker::visitVersionedAttr(VersionedAttr *attr) {
