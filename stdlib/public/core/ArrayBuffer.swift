@@ -86,17 +86,21 @@ internal struct _ArrayBuffer<Element> : _ArrayBufferProtocol {
 
 extension _ArrayBuffer {
   /// Adopt the storage of `source`.
+  @_versioned
   internal init(_buffer source: NativeBuffer, shiftedToStartIndex: Int) {
     _sanityCheck(shiftedToStartIndex == 0, "shiftedToStartIndex must be 0")
     _storage = _ArrayBridgeStorage(native: source._storage)
   }
 
   /// `true`, if the array is native and does not need a deferred type check.
+  @_versioned
   internal var arrayPropertyIsNativeTypeChecked: Bool {
     return _isNativeTypeChecked
   }
 
   /// Returns `true` iff this buffer's storage is uniquely-referenced.
+  @_inlineable
+  @_versioned
   internal mutating func isUniquelyReferenced() -> Bool {
     if !_isClassOrObjCExistential(Element.self) {
       return _storage.isUniquelyReferenced_native_noSpareBits()
@@ -106,6 +110,8 @@ extension _ArrayBuffer {
 
   /// Returns `true` iff this buffer's storage is either
   /// uniquely-referenced or pinned.
+  @_inlineable
+  @_versioned
   internal mutating func isUniquelyReferencedOrPinned() -> Bool {
     if !_isClassOrObjCExistential(Element.self) {
       return _storage.isUniquelyReferencedOrPinned_native_noSpareBits()
@@ -125,6 +131,7 @@ extension _ArrayBuffer {
   /// `_ContiguousArrayBuffer` that can be grown in-place to allow the self
   /// buffer store minimumCapacity elements, returns that buffer.
   /// Otherwise, returns `nil`.
+  @_versioned
   internal mutating func requestUniqueMutableBackingBuffer(minimumCapacity: Int)
   -> NativeBuffer? {
     if _fastPath(isUniquelyReferenced()) {
@@ -136,10 +143,14 @@ extension _ArrayBuffer {
     return nil
   }
 
+  @_inlineable
+  @_versioned
   internal mutating func isMutableAndUniquelyReferenced() -> Bool {
     return isUniquelyReferenced()
   }
 
+  @_inlineable
+  @_versioned
   internal mutating func isMutableAndUniquelyReferencedOrPinned() -> Bool {
     return isUniquelyReferencedOrPinned()
   }
@@ -192,6 +203,7 @@ extension _ArrayBuffer {
   /// Copy the elements in `bounds` from this buffer into uninitialized
   /// memory starting at `target`.  Return a pointer "past the end" of the
   /// just-initialized memory.
+  @_versioned
   @discardableResult
   internal func _copyContents(
     subRange bounds: Range<Int>,
@@ -225,6 +237,7 @@ extension _ArrayBuffer {
 
   /// Returns a `_SliceBuffer` containing the given sub-range of elements in
   /// `bounds` from this buffer.
+  @_versioned
   internal subscript(bounds: Range<Int>) -> _SliceBuffer<Element> {
     get {
       _typeCheck(bounds)
@@ -277,6 +290,7 @@ extension _ArrayBuffer {
   /// A pointer to the first element.
   ///
   /// - Precondition: The elements are known to be stored contiguously.
+  @_inlineable
   @_versioned
   internal var firstElementAddress: UnsafeMutablePointer<Element> {
     _sanityCheck(_isNative, "must be a native buffer")
@@ -288,6 +302,8 @@ extension _ArrayBuffer {
   }
 
   /// The number of elements the buffer stores.
+  @_inlineable
+  @_versioned
   internal var count: Int {
     @inline(__always)
     get {
@@ -336,6 +352,8 @@ extension _ArrayBuffer {
   }
 
   /// The number of elements the buffer can store without reallocation.
+  @_inlineable
+  @_versioned
   internal var capacity: Int {
     return _fastPath(_isNative) ? _native.capacity : _nonNative.count
   }
@@ -427,6 +445,7 @@ extension _ArrayBuffer {
   }
   
   /// An object that keeps the elements stored in this buffer alive.
+  @_versioned
   internal var owner: AnyObject {
     return _fastPath(_isNative) ? _native._storage : _nonNative
   }
@@ -434,6 +453,7 @@ extension _ArrayBuffer {
   /// An object that keeps the elements stored in this buffer alive.
   ///
   /// - Precondition: This buffer is backed by a `_ContiguousArrayBuffer`.
+  @_versioned
   internal var nativeOwner: AnyObject {
     _sanityCheck(_isNative, "Expect a native array")
     return _native._storage
@@ -455,6 +475,7 @@ extension _ArrayBuffer {
   /// The position of the first element in a non-empty collection.
   ///
   /// In an empty collection, `startIndex == endIndex`.
+  @_versioned
   internal var startIndex: Int {
     return 0
   }
@@ -474,6 +495,7 @@ extension _ArrayBuffer {
   internal typealias Storage = _ContiguousArrayStorage<Element>
   internal typealias NativeBuffer = _ContiguousArrayBuffer<Element>
 
+  @_inlineable
   @_versioned
   internal var _isNative: Bool {
     if !_isClassOrObjCExistential(Element.self) {
@@ -495,6 +517,7 @@ extension _ArrayBuffer {
   /// Our native representation.
   ///
   /// - Precondition: `_isNative`.
+  @_inlineable
   @_versioned
   internal var _native: NativeBuffer {
     return NativeBuffer(

@@ -161,6 +161,7 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
   /// method, you must either initialize the `count` elements at the
   /// result's `.firstElementAddress` or set the result's `.count`
   /// to zero.
+  @_versioned
   internal init(
     _uninitializedCount uninitializedCount: Int,
     minimumCapacity: Int
@@ -191,12 +192,15 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
   /// 
   /// - Warning: storage may have been stack-allocated, so it's
   ///   crucial not to call, e.g., `malloc_size` on it.
+  @_versioned
   internal init(count: Int, storage: _ContiguousArrayStorage<Element>) {
     _storage = storage
 
     _initStorageHeader(count: count, capacity: count)
   }
 
+  @_inlineable
+  @_versioned
   internal init(_ storage: _ContiguousArrayStorageBase) {
     _storage = storage
   }
@@ -220,11 +224,13 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
   }
 
   /// True, if the array is native and does not need a deferred type check.
+  @_versioned
   internal var arrayPropertyIsNativeTypeChecked: Bool {
     return true
   }
 
   /// A pointer to the first element.
+  @_inlineable
   @_versioned
   internal var firstElementAddress: UnsafeMutablePointer<Element> {
     return UnsafeMutablePointer(Builtin.projectTailElems(_storage,
@@ -257,15 +263,18 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
 
   //===--- _ArrayBufferProtocol conformance -----------------------------------===//
   /// Create an empty buffer.
+  @_versioned
   internal init() {
     _storage = _emptyArrayStorage
   }
 
+  @_versioned
   internal init(_buffer buffer: _ContiguousArrayBuffer, shiftedToStartIndex: Int) {
     _sanityCheck(shiftedToStartIndex == 0, "shiftedToStartIndex must be 0")
     self = buffer
   }
 
+  @_versioned
   internal mutating func requestUniqueMutableBackingBuffer(
     minimumCapacity: Int
   ) -> _ContiguousArrayBuffer<Element>? {
@@ -275,10 +284,14 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
     return nil
   }
 
+  @_inlineable
+  @_versioned
   internal mutating func isMutableAndUniquelyReferenced() -> Bool {
     return isUniquelyReferenced()
   }
 
+  @_inlineable
+  @_versioned
   internal mutating func isMutableAndUniquelyReferencedOrPinned() -> Bool {
     return isUniquelyReferencedOrPinned()
   }
@@ -319,6 +332,7 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
   }
 
   /// The number of elements the buffer stores.
+  @_inlineable
   @_versioned
   internal var count: Int {
     get {
@@ -337,6 +351,7 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
 
   /// Traps unless the given `index` is valid for subscripting, i.e.
   /// `0 ≤ index < count`.
+  @_versioned
   @inline(__always)
   func _checkValidSubscript(_ index : Int) {
     _precondition(
@@ -346,6 +361,9 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
   }
 
   /// The number of elements the buffer can store without reallocation.
+  //@_inlineable
+  @_inlineable
+  @_versioned
   internal var capacity: Int {
     return _storage.countAndCapacity.capacity
   }
@@ -353,6 +371,7 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
   /// Copy the elements in `bounds` from this buffer into uninitialized
   /// memory starting at `target`.  Return a pointer "past the end" of the
   /// just-initialized memory.
+  @_versioned
   @discardableResult
   internal func _copyContents(
     subRange bounds: Range<Int>,
@@ -371,6 +390,7 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
 
   /// Returns a `_SliceBuffer` containing the given `bounds` of values
   /// from this buffer.
+  @_versioned
   internal subscript(bounds: Range<Int>) -> _SliceBuffer<Element> {
     get {
       return _SliceBuffer(
@@ -389,6 +409,8 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
   /// - Note: This does not mean the buffer is mutable.  Other factors
   ///   may need to be considered, such as whether the buffer could be
   ///   some immutable Cocoa container.
+  @_inlineable
+  @_versioned
   internal mutating func isUniquelyReferenced() -> Bool {
     return _isUnique(&_storage)
   }
@@ -396,6 +418,8 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
   /// Returns `true` iff this buffer's storage is either
   /// uniquely-referenced or pinned.  NOTE: this does not mean
   /// the buffer is mutable; see the comment on isUniquelyReferenced.
+  @_inlineable
+  @_versioned
   internal mutating func isUniquelyReferencedOrPinned() -> Bool {
     return _isUniqueOrPinned(&_storage)
   }
@@ -418,12 +442,15 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
 #endif
 
   /// An object that keeps the elements stored in this buffer alive.
+  @_inlineable
   @_versioned
   internal var owner: AnyObject {
     return _storage
   }
 
   /// An object that keeps the elements stored in this buffer alive.
+  @_inlineable
+  @_versioned
   internal var nativeOwner: AnyObject {
     return _storage
   }
@@ -466,6 +493,7 @@ internal struct _ContiguousArrayBuffer<Element> : _ArrayBufferProtocol {
     return true
   }
 
+  @_versioned
   internal var _storage: _ContiguousArrayStorageBase
 }
 
@@ -506,6 +534,7 @@ extension _ContiguousArrayBuffer : RandomAccessCollection {
   /// The position of the first element in a non-empty collection.
   ///
   /// In an empty collection, `startIndex == endIndex`.
+  @_versioned
   internal var startIndex: Int {
     return 0
   }

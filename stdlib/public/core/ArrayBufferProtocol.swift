@@ -129,6 +129,7 @@ internal protocol _ArrayBufferProtocol
 
 extension _ArrayBufferProtocol {
 
+  @_versioned
   internal var subscriptBaseAddress: UnsafeMutablePointer<Element> {
     return firstElementAddress
   }

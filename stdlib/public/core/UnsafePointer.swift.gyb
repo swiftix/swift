@@ -485,6 +485,7 @@ public struct ${Self}<Pointee>
   ///   - newValue: The instance to initialize this pointer's memory with.
   ///   - count: The number of consecutive copies of `newValue` to initialize.
   ///     `count` must not be negative. The default is `1`.
+  @_inlineable
   public func initialize(to newValue: Pointee, count: Int = 1) {
     // FIXME: add tests (since the `count` has been added)
     _debugPrecondition(count >= 0,

@@ -370,6 +370,7 @@ public protocol _Indexable : _IndexableBase {
 ///     }
 ///     // Prints "15.0"
 ///     // Prints "20.0"
+@_fixed_layout
 public struct IndexingIterator<
   Elements : _IndexableBase
   // FIXME(ABI)#97 (Recursive Protocol Constraints):
@@ -377,6 +378,7 @@ public struct IndexingIterator<
   // Elements : Collection
 > : IteratorProtocol, Sequence {
 
+  @_inlineable
   /// Creates an iterator over the given collection.
   public /// @testable
   init(_elements: Elements) {
@@ -408,14 +410,16 @@ public struct IndexingIterator<
   ///
   /// - Returns: The next element in the underlying sequence if a next element
   ///   exists; otherwise, `nil`.
+  @_inlineable
   public mutating func next() -> Elements._Element? {
     if _position == _elements.endIndex { return nil }
     let element = _elements[_position]
     _elements.formIndex(after: &_position)
     return element
   }
-
+  @_versioned
   internal let _elements: Elements
+  @_versioned
   internal var _position: Elements.Index
 }
 
@@ -980,6 +984,7 @@ extension _Indexable {
     i = index(after: i)
   }
 
+  @_inlineable
   public func _failEarlyRangeCheck(_ index: Index, bounds: Range<Index>) {
     // FIXME: swift-3-indexing-model: tests.
     _precondition(
@@ -990,6 +995,7 @@ extension _Indexable {
       "out of bounds: index >= endIndex")
   }
 
+  @_inlineable
   public func _failEarlyRangeCheck(_ index: Index, bounds: ClosedRange<Index>) {
     // FIXME: swift-3-indexing-model: tests.
     _precondition(
@@ -1000,6 +1006,7 @@ extension _Indexable {
       "out of bounds: index > endIndex")
   }
 
+  @_inlineable
   public func _failEarlyRangeCheck(_ range: Range<Index>, bounds: Range<Index>) {
     // FIXME: swift-3-indexing-model: tests.
     _precondition(
@@ -1211,6 +1218,7 @@ extension _Indexable {
 /// `IndexingIterator<Self>`.
 extension Collection where Iterator == IndexingIterator<Self> {
   /// Returns an iterator over the elements of the collection.
+  @inline(__always)
   public func makeIterator() -> IndexingIterator<Self> {
     return IndexingIterator(_elements: self)
   }
@@ -1283,6 +1291,7 @@ extension Collection {
   ///     // Prints "Hi ho, Silver!")
   ///
   /// - Complexity: O(1)
+  @_inlineable
   public var isEmpty: Bool {
     return startIndex == endIndex
   }
@@ -1296,6 +1305,7 @@ extension Collection {
   ///         print(firstNumber)
   ///     }
   ///     // Prints "10"
+  @_inlineable
   public var first: Iterator.Element? {
     // NB: Accessing `startIndex` may not be O(1) for some lazy collections,
     // so instead of testing `isEmpty` and then returning the first element,
@@ -1333,6 +1343,7 @@ extension Collection {
   /// - Complexity: O(1) if the collection conforms to
   ///   `RandomAccessCollection`; otherwise, O(*n*), where *n* is the length
   ///   of the collection.
+  @_inlineable
   public var count: IndexDistance {
     return distance(from: startIndex, to: endIndex)
   }

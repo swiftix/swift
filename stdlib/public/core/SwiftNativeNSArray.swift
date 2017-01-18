@@ -229,9 +229,12 @@ class _SwiftNativeNSArrayWithContiguousStorage {}
 #endif
 
 /// Base class of the heap buffer backing arrays.  
+@_versioned
 internal class _ContiguousArrayStorageBase
   : _SwiftNativeNSArrayWithContiguousStorage {
 
+  @_inlineable
+  @_versioned
   final var countAndCapacity: _ArrayBody
 
   init(_doNotCallMeBase: ()) {
