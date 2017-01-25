@@ -28,6 +28,81 @@ enum FragileFunctionKind : unsigned {
   DefaultArgument
 };
 
+bool isFragile(const ValueDecl *VD);
+bool isFragile(const DeclContext *DC);
+
+static bool isFragileWhitelistedTypeName(StringRef Name, const ValueDecl *VD) {
+  if (!VD->getDeclContext()->getParentModule()->isStdlibModule())
+    return false;
+
+  // Nested types cannot be @_inlineable or @_fixed_layout.
+  //if (VD->getDeclContext()->isTypeContext())
+  if (!VD->getDeclContext()->isModuleScopeContext())
+    return false;
+
+  return Name.contains("Array") || Name.contains("StringRefliceBuffer") ||
+         Name == "_DependenceToken" || Name == "_IgnorePointer" ||
+         Name == "AutoreleasingUnsafeMutablePointer" ||
+         // There is a bug related to the default value initializer
+         // function_ref
+         // UnsafeMutableRawBufferPointer.Iterator.(_position).(variable
+         // initialization expression)
+         Name == "UnsafeMutableRawBufferPointer" ||
+         Name == "_ClosedRangeIndexRepresentation" || Name == "LazyMapIterator";
+}
+
+static bool isFragileWhitelistedDeclName(StringRef Name, const ValueDecl *VD) {
+  if (!VD->getDeclContext()->getParentModule()->isStdlibModule())
+    return false;
+
+  return Name == "_InitializeMemoryFromCollection" ||
+         Name == "_makeSwiftNSFastEnumerationState" ||
+         Name == "_isValidArraySubscript" || Name == "_isValidArrayIndex" ||
+         Name == "_isKnownUniquelyReferencedOrPinned" ||
+         Name == "_rawPointerToString" || Name == "_stdlib_NSArray_getObjects";
+}
+
+bool isFragile(const DeclContext *DC) {
+  for (; DC; DC = DC->getParent()) {
+    if (auto VD = dyn_cast_or_null<ValueDecl>(
+            DC->getInnermostDeclarationDeclContext())) {
+      return isFragile(VD);
+      //if (isFragileWhitelistedName(VD->getNameStr()))
+      //  return ResilienceExpansion::Minimal;
+    }
+
+    if (DC->isTypeContext()) {
+      auto *NTE = DC->getAsNominalTypeOrNominalTypeExtensionContext();
+      if (NTE) {
+        auto Name = NTE->getNameStr();
+        if (isFragileWhitelistedTypeName(Name, NTE)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+bool isFragile(const ValueDecl *VD) {
+  auto *NTE = dyn_cast<NominalTypeDecl>(VD);
+  if (isa<NominalTypeDecl>(VD) || isa<ExtensionDecl>(VD)) {
+    auto Name = VD->getNameStr();
+    if (isFragileWhitelistedTypeName(Name, VD)) {
+      return true;
+    }
+  }
+
+  // If it is inside a fragile context, it is fragile.
+  if (isFragile(VD->getDeclContext()))
+    return true;
+
+  // Check if it is a whitelisted declaration.
+  if (isFragileWhitelistedDeclName(VD->getNameStr(), VD))
+    return true;
+  return false;
+}
+
 FragileFunctionKind getFragileFunctionKind(const DeclContext *DC) {
   for (; DC->isLocalContext(); DC = DC->getParent()) {
     if (auto *DAI = dyn_cast<DefaultArgumentInitializer>(DC))
@@ -59,7 +134,29 @@ FragileFunctionKind getFragileFunctionKind(const DeclContext *DC) {
           if (ASD->getAttrs().getAttribute<InlineableAttr>())
             return FragileFunctionKind::Inlineable;
     }
+    // This is a hack for benchmarking purposes. Mark all
+    // whitelisted functions as fragile. The set of whitelisted
+    // functions may include all functions from Swift.Array and all related
+    // types like ArraySlice, ArrayBuffer, etc.
+    // All Array-related types are supposed to be fragile.
+    if (isFragile(DC->getParent())) {
+#if 0
+          DeclAttributes &Attrs = AFD->getAttrs();
+          // Make this function @_inlinable
+          if (!Attrs.hasAttribute<InlineableAttr>())
+            Attrs.add(
+                SimpleDeclAttr<DAK_Inlineable>(/* IsImplicit */ true));
+          // If it is an internal function, make it also @_versioned.
+          if (AFD->getEffectiveAccess() < Accessibility::Public)
+            Attrs.add(
+                SimpleDeclAttr<DAK_Versioned>(/* IsImplicit */ true));
+#endif
+        return FragileFunctionKind::Inlineable;
+    }
   }
+
+  if (isFragile(DC))
+    return FragileFunctionKind::Inlineable;
 
   llvm_unreachable("Context is not nested inside a fragile function");
 }
@@ -68,6 +165,9 @@ void TypeChecker::diagnoseInlineableLocalType(const NominalTypeDecl *NTD) {
   auto *DC = NTD->getDeclContext();
   auto expansion = DC->getResilienceExpansion();
   if (expansion == ResilienceExpansion::Minimal) {
+    if (DC->isTypeContext())
+      return;
+    auto expansion = DC->getResilienceExpansion();
     diagnose(NTD, diag::local_type_in_inlineable_function,
              NTD->getFullName(), getFragileFunctionKind(DC));
   }
@@ -77,6 +177,26 @@ bool TypeChecker::diagnoseInlineableDeclRef(SourceLoc loc,
                                             const ValueDecl *D,
                                             const DeclContext *DC) {
   auto expansion = DC->getResilienceExpansion();
+  if (expansion == ResilienceExpansion::Minimal) {
+    if (!isa<GenericTypeParamDecl>(D) &&
+        // Protocol requirements are not versioned because there's no
+        // global entry point
+        !(isa<ProtocolDecl>(D->getDeclContext()) && isRequirement(D)) &&
+        // !isa<AssociatedTypeDecl>(D) &&
+        // FIXME: Figure out what to do with typealiases
+        !isa<TypeAliasDecl>(D) &&
+        !D->getDeclContext()->isLocalContext() &&
+        D->hasAccessibility()) {
+      if (D->getEffectiveAccess() < Accessibility::Public) {
+        diagnose(loc, diag::resilience_decl_unavailable,
+                 D->getDescriptiveKind(), D->getFullName(),
+                 D->getFormalAccess(), getFragileFunctionKind(DC));
+        diagnose(D, diag::resilience_decl_declared_here,
+                 D->getDescriptiveKind(), D->getFullName());
+        return true;
+      }
+    }
+  }
 
   // Internal declarations referenced from non-inlineable contexts are OK.
   if (expansion == ResilienceExpansion::Maximal)

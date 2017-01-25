@@ -794,6 +794,19 @@ void SILGenModule::emitConstructor(ConstructorDecl *decl) {
       PrettyStackTraceSILFunction X("silgen emitConstructor", f);
       SILGenFunction(*this, *f).emitValueConstructor(decl);
       postEmitFunction(constant, f);
+      if (decl &&
+          decl->isImplicit() &&
+          decl->getDeclContext()->getParentModule()->isStdlibModule() &&
+          decl->getDeclContext()->getInnermostTypeContext()) {
+        // If it is an auto-generated initializer inside a fixed_layout/versione
+        // type, mark it as fragile.
+        if (auto *NTD = decl->getDeclContext()
+                            ->getInnermostTypeContext()
+                            ->getDeclaredInterfaceType()
+                            ->getNominalOrBoundGenericNominal())
+          if (NTD->hasFixedLayout() || NTD->getAttrs().getAttribute<VersionedAttr>())
+            f->setFragile(IsFragile_t::IsFragile);
+      }
     });
   }
 }
@@ -981,6 +994,23 @@ emitStoredPropertyInitialization(PatternBindingDecl *pbd, unsigned i) {
     PrettyStackTraceSILFunction X("silgen emitStoredPropertyInitialization", f);
     SILGenFunction(*this, *f).emitGeneratorFunction(constant, init);
     postEmitFunction(constant, f);
+    if (constant.getDecl()
+            ->getDeclContext()
+            ->getParentModule()
+            ->isStdlibModule() &&
+        init &&
+        // init->isImplicit() &&
+        constant.getDecl()->getDeclContext()->getInnermostTypeContext()) {
+      // If it is an auto-generated initializer inside a fixed_layout/versione
+      // type, mark it as fragile.
+      if (auto *NTD = constant.getDecl()
+                          ->getDeclContext()
+                          ->getInnermostTypeContext()
+                          ->getDeclaredInterfaceType()
+                          ->getNominalOrBoundGenericNominal())
+        if (NTD->hasFixedLayout() || NTD->getAttrs().getAttribute<VersionedAttr>())
+          f->setFragile(IsFragile_t::IsFragile);
+    }
   });
 }
 

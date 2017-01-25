@@ -49,6 +49,9 @@
 
 using namespace swift;
 
+bool isFragile(const ValueDecl *VD);
+bool isFragile(const DeclContext *DC);
+
 #define DEBUG_TYPE "Serialization"
 
 STATISTIC(NumLazyGenericEnvironments,
@@ -1796,6 +1799,31 @@ static bool isVersionedInternalDecl(const ValueDecl *VD) {
     if (auto *ASD = fn->getAccessorStorageDecl())
       if (ASD->getAttrs().hasAttribute<VersionedAttr>())
         return true;
+
+  // This is a hack for benchmarking purposes. Mark all
+  // whitelisted functions as fragile. The set of whitelisted
+  // functions may include all functions from Swift.Array and all related
+  // types like ArraySlice, ArrayBuffer, etc.
+  // All Array-related types are supposed to be fragile.
+  auto *NTE = VD->getDeclContext()
+                  ->getAsNominalTypeOrNominalTypeExtensionContext();
+  if (isFragile(VD)) {
+#if 0
+          DeclAttributes &Attrs = AFD->getAttrs();
+          // Make this function @_inlinable
+          if (!Attrs.hasAttribute<InlineableAttr>())
+            Attrs.add(
+                SimpleDeclAttr<DAK_Inlineable>(/* IsImplicit */ true));
+          // If it is an internal function, make it also @_versioned.
+          if (AFD->getEffectiveAccess() < Accessibility::Public)
+            Attrs.add(
+                SimpleDeclAttr<DAK_Versioned>(/* IsImplicit */ true));
+#endif
+      return true;
+  }
+
+  if (isFragile(VD))
+    return true;
 
   return false;
 }

@@ -24,6 +24,9 @@
 #include "llvm/Support/SaveAndRestore.h"
 using namespace swift;
 
+bool isFragile(const ValueDecl *VD);
+bool isFragile(const DeclContext *DC);
+
 #define DEBUG_TYPE "Name lookup"
 
 STATISTIC(NumLazyIterableDeclContexts,
@@ -509,7 +512,32 @@ ResilienceExpansion DeclContext::getResilienceExpansion() const {
           if (ASD->getAttrs().getAttribute<InlineableAttr>())
             return ResilienceExpansion::Minimal;
     }
+
+    // This is a hack for benchmarking purposes. Mark all
+    // whitelisted functions as fragile. The set of whitelisted
+    // functions may include all functions from Swift.Array and all related
+    // types like ArraySlice, ArrayBuffer, etc.
+    // All Array-related types are supposed to be fragile.
+
+    // Nested types cannot be declafred @_fixed_layout or @_inlinable.
+    if (!dc->isModuleScopeContext() && isFragile(dc->getParent())) {
+#if 0
+          DeclAttributes &Attrs = AFD->getAttrs();
+          // Make this function @_inlinable
+          if (!Attrs.hasAttribute<InlineableAttr>())
+            Attrs.add(
+                SimpleDeclAttr<DAK_Inlineable>(/* IsImplicit */ true));
+          // If it is an internal function, make it also @_versioned.
+          if (AFD->getEffectiveAccess() < Accessibility::Public)
+            Attrs.add(
+                SimpleDeclAttr<DAK_Versioned>(/* IsImplicit */ true));
+#endif
+        return ResilienceExpansion::Minimal;
+    }
   }
+
+  if (isFragile(this))
+    return ResilienceExpansion::Minimal;
 
   return ResilienceExpansion::Maximal;
 }
