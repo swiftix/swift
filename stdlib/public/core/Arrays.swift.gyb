@@ -1819,6 +1819,8 @@ extension _ArrayBufferProtocol {
 /// A _debugPrecondition check that `i` has exactly reached the end of
 /// `s`.  This test is never used to ensure memory safety; that is
 /// always guaranteed by measuring `s` once and re-using that value.
+@_inlineable
+@_versioned
 internal func _expectEnd<C : Collection>(of s: C, is i: C.Index) {
   _debugPrecondition(
     i == s.endIndex,
@@ -1960,6 +1962,7 @@ extension _ArrayBufferProtocol {
   }
 }
 
+@_versioned
 internal protocol _PointerFunction {
   associatedtype Element
   func call(_: UnsafeMutablePointer<Element>, count: Int)
@@ -2042,7 +2045,11 @@ extension _ArrayBufferProtocol {
   }
 }
 
+@_versioned
+@_fixed_layout
 internal struct _IgnorePointer<T> : _PointerFunction {
+  @_inlineable
+  @_versioned
   internal func call(_: UnsafeMutablePointer<T>, count: Int) {
     _sanityCheck(count == 0)
   }

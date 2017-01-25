@@ -37,6 +37,8 @@ public struct Repeated<Element> : RandomAccessCollection {
 
   /// Creates an instance that contains `count` elements having the
   /// value `repeatedValue`.
+  @_versioned
+  @_inlineable
   internal init(_repeating repeatedValue: Element, count: Int) {
     _precondition(count >= 0, "Repetition count should be non-negative")
     self.count = count
@@ -47,6 +49,7 @@ public struct Repeated<Element> : RandomAccessCollection {
   ///
   /// In a `Repeated` collection, `startIndex` is always equal to zero. If the
   /// collection is empty, `startIndex` is equal to `endIndex`.
+  @_inlineable
   public var startIndex: Index {
     return 0
   }
@@ -56,6 +59,7 @@ public struct Repeated<Element> : RandomAccessCollection {
   ///
   /// In a `Repeated` collection, `endIndex` is always equal to `count`. If the
   /// collection is empty, `endIndex` is equal to `startIndex`.
+  @_inlineable
   public var endIndex: Index {
     return count
   }
@@ -65,15 +69,18 @@ public struct Repeated<Element> : RandomAccessCollection {
   /// - Parameter position: The position of the element to access. `position`
   ///   must be a valid index of the collection that is not equal to the
   ///   `endIndex` property.
+  @_inlineable
   public subscript(position: Int) -> Element {
     _precondition(position >= 0 && position < count, "Index out of range")
     return repeatedValue
   }
 
   /// The number of elements in this collection.
+  @_inlineable
   public let count: Int
 
   /// The value of every element in this collection.
+  @_inlineable
   public let repeatedValue: Element
 }
 
@@ -97,6 +104,7 @@ public struct Repeated<Element> : RandomAccessCollection {
 ///   - count: The number of times to repeat `element`.
 /// - Returns: A collection that contains `count` elements that are all
 ///   `element`.
+@_inlineable
 public func repeatElement<T>(_ element: T, count n: Int) -> Repeated<T> {
   return Repeated(_repeating: element, count: n)
 }
@@ -105,6 +113,7 @@ public func repeatElement<T>(_ element: T, count n: Int) -> Repeated<T> {
 public struct Repeat<Element> {}
 
 extension Repeated {
+  @_inlineable
   @available(*, unavailable, message: "Please use repeatElement(_:count:) function instead")
   public init(count: Int, repeatedValue: Element) {
     Builtin.unreachable()

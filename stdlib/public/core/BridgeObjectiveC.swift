@@ -527,6 +527,8 @@ public func == <Pointee>(
   return Bool(Builtin.cmp_eq_RawPointer(lhs._rawValue, rhs._rawValue))
 }
 
+@_fixed_layout
+@_versioned
 internal struct _CocoaFastEnumerationStackBuf {
   // Clang uses 16 pointers.  So do we.
   internal var _item0: UnsafeRawPointer?
@@ -551,6 +553,7 @@ internal struct _CocoaFastEnumerationStackBuf {
     return 16
   }
 
+  @_versioned
   internal init() {
     _item0 = nil
     _item1 = _item0

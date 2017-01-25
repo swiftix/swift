@@ -161,7 +161,8 @@ public struct Mirror {
     }
     return nil
   }
-  
+
+  @_versioned
   internal static func _superclassIterator<Subject>(
     _ subject: Subject, _ ancestorRepresentation: AncestorRepresentation
   ) -> () -> Mirror? {
@@ -875,6 +876,7 @@ extension String {
   ///     // Prints "(21, 30)"
   ///
   /// - SeeAlso: `String.init<Subject>(reflecting: Subject)`
+  @_inlineable
   public init<Subject>(describing instance: Subject) {
     self.init()
     _print_unlocked(instance, &self)

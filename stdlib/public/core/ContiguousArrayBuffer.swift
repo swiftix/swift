@@ -17,6 +17,7 @@ import SwiftShims
 /// initialized.  See stdlib/runtime/GlobalObjects.cpp for details.
 /// Because it's statically referenced, it requires non-lazy realization
 /// by the Objective-C runtime.
+@_versioned
 @objc_non_lazy_realization
 internal final class _EmptyArrayStorage
   : _ContiguousArrayStorageBase {
@@ -54,6 +55,8 @@ internal final class _EmptyArrayStorage
 
 /// The empty array prototype.  We use the same object for all empty
 /// `[Native]Array<Element>`s.
+@_inlineable
+@_versioned
 internal var _emptyArrayStorage : _EmptyArrayStorage {
   return Builtin.bridgeFromRawPointer(
     Builtin.addressof(&_swiftEmptyArrayStorage))
@@ -601,6 +604,8 @@ extension _ContiguousArrayBuffer {
 /// ARC loops, the extra retain, release overhead cannot be eliminated which
 /// makes assigning ranges very slow. Once this has been implemented, this code
 /// should be changed to use _UnsafePartiallyInitializedContiguousArrayBuffer.
+@_inlineable
+@_versioned
 internal func _copyCollectionToContiguousArray<
   C : Collection
 >(_ source: C) -> ContiguousArray<C.Iterator.Element>

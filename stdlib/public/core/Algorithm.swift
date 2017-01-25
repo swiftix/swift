@@ -88,10 +88,16 @@ public func max<T : Comparable>(_ x: T, _ y: T, _ z: T, _ rest: T...) -> T {
 public struct EnumeratedIterator<
   Base : IteratorProtocol
 > : IteratorProtocol, Sequence {
+  @_inlineable
+  @_versioned
   internal var _base: Base
+  @_inlineable
+  @_versioned
   internal var _count: Int
 
   /// Construct from a `Base` iterator.
+  @_inlineable
+  @_versioned
   internal init(_base: Base) {
     self._base = _base
     self._count = 0
@@ -104,6 +110,7 @@ public struct EnumeratedIterator<
   /// exists.
   ///
   /// Once `nil` has been returned, all subsequent calls return `nil`.
+  @_inlineable
   public mutating func next() -> Element? {
     guard let b = _base.next() else { return nil }
     let result = (offset: _count, element: b)
@@ -129,14 +136,19 @@ public struct EnumeratedIterator<
 ///     // Prints "0: foo"
 ///     // Prints "1: bar"
 public struct EnumeratedSequence<Base : Sequence> : Sequence {
+  @_inlineable
+  @_versioned
   internal var _base: Base
 
   /// Construct from a `Base` sequence.
+  @_inlineable
+  @_versioned
   internal init(_base: Base) {
     self._base = _base
   }
 
   /// Returns an iterator over the elements of this sequence.
+  @_inlineable
   public func makeIterator() -> EnumeratedIterator<Base.Iterator> {
     return EnumeratedIterator(_base: _base.makeIterator())
   }
