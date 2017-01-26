@@ -868,24 +868,6 @@ public:
       }
     }
 
-    // Next step: delete all dead functions.
-    for (auto FI = Module->begin(), EI = Module->end(); FI != EI;) {
-      SILFunction *F = &*FI;
-      ++FI;
-      if (!isAlive(F)) {
-        if (Module->isWholeProgram() && !IsStatic &&
-            F->hasSemanticsAttr("_dead_function"))
-          continue;
-
-        DEBUG(llvm::dbgs() << "  erase dead function " << F->getName() << "\n");
-        llvm::dbgs() << "  erase dead function " << F->getName() << "\n";
-        NumDeadFunc++;
-        DFEPass->invalidateAnalysisForDeadFunction(F,
-                                     SILAnalysis::InvalidationKind::Everything);
-        Module->eraseFunction(F);
-      }
-    }
-
     // Last step: delete all dead functions.
     auto InvalidateEverything = SILAnalysis::InvalidationKind::Everything;
     while (!DeadFunctions.empty()) {
