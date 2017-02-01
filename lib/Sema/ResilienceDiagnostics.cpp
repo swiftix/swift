@@ -32,6 +32,7 @@ bool isFragile(const ValueDecl *VD);
 bool isFragile(const DeclContext *DC);
 
 static bool isFragileWhitelistedTypeName(StringRef Name, const ValueDecl *VD) {
+  return false;
   if (!VD->getDeclContext()->getParentModule()->isStdlibModule())
     return false;
 
@@ -40,26 +41,32 @@ static bool isFragileWhitelistedTypeName(StringRef Name, const ValueDecl *VD) {
   if (!VD->getDeclContext()->isModuleScopeContext())
     return false;
 
-  return Name.contains("Array") || Name.contains("StringRefliceBuffer") ||
-         Name == "_DependenceToken" || Name == "_IgnorePointer" ||
-         Name == "AutoreleasingUnsafeMutablePointer" ||
+  // return Name.contains("Array");
+    // Name.contains("StringRefliceBuffer")
+    //Name == "_DependenceToken" || Name == "_IgnorePointer" ||
+    //     Name == "AutoreleasingUnsafeMutablePointer" ||
          // There is a bug related to the default value initializer
          // function_ref
          // UnsafeMutableRawBufferPointer.Iterator.(_position).(variable
          // initialization expression)
-         Name == "UnsafeMutableRawBufferPointer" ||
-         Name == "_ClosedRangeIndexRepresentation" || Name == "LazyMapIterator";
+         //Name == "UnsafeMutableRawBufferPointer" ||
+         // Name == "_ClosedRangeIndexRepresentation" ||
+         //Name == "LazyMapIterator";
+  return false;
 }
 
 static bool isFragileWhitelistedDeclName(StringRef Name, const ValueDecl *VD) {
   if (!VD->getDeclContext()->getParentModule()->isStdlibModule())
     return false;
 
-  return Name == "_InitializeMemoryFromCollection" ||
-         Name == "_makeSwiftNSFastEnumerationState" ||
-         Name == "_isValidArraySubscript" || Name == "_isValidArrayIndex" ||
-         Name == "_isKnownUniquelyReferencedOrPinned" ||
-         Name == "_rawPointerToString" || Name == "_stdlib_NSArray_getObjects";
+  //return //Name == "_InitializeMemoryFromCollection" ||
+         //Name == "_makeSwiftNSFastEnumerationState" ||
+         //Name == "_isValidArraySubscript" ||
+         //Name == "_isValidArrayIndex" ||
+         // Name == "_isKnownUniquelyReferencedOrPinned" ||
+         //Name == "_rawPointerToString" ||
+         //Name == "_stdlib_NSArray_getObjects";
+  return false;
 }
 
 bool isFragile(const DeclContext *DC) {
@@ -177,6 +184,7 @@ bool TypeChecker::diagnoseInlineableDeclRef(SourceLoc loc,
                                             const ValueDecl *D,
                                             const DeclContext *DC) {
   auto expansion = DC->getResilienceExpansion();
+#if 0
   if (expansion == ResilienceExpansion::Minimal) {
     if (!isa<GenericTypeParamDecl>(D) &&
         // Protocol requirements are not versioned because there's no
@@ -197,6 +205,7 @@ bool TypeChecker::diagnoseInlineableDeclRef(SourceLoc loc,
       }
     }
   }
+#endif
 
   // Internal declarations referenced from non-inlineable contexts are OK.
   if (expansion == ResilienceExpansion::Maximal)
