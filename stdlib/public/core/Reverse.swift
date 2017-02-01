@@ -45,13 +45,16 @@ extension MutableCollection where Self : BidirectionalCollection {
 /// An index that traverses the same positions as an underlying index,
 /// with inverted traversal direction.
 public struct ReversedIndex<Base : Collection> : Comparable {
+  @_inlineable
   public init(_ base: Base.Index) {
     self.base = base
   }
 
   /// The position corresponding to `self` in the underlying collection.
+  @_inlineable
   public let base: Base.Index
 
+  @_inlineable
   public static func == (
     lhs: ReversedIndex<Base>,
     rhs: ReversedIndex<Base>
@@ -59,6 +62,7 @@ public struct ReversedIndex<Base : Collection> : Comparable {
     return lhs.base == rhs.base
   }
 
+  @_inlineable
   public static func < (
     lhs: ReversedIndex<Base>,
     rhs: ReversedIndex<Base>

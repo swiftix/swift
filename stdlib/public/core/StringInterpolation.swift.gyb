@@ -94,7 +94,6 @@ extension String : _ExpressibleByStringInterpolation {
   public init(stringInterpolationSegment expr: ${Type}) {
     self = _toStringReadOnlyPrintable(expr)
   }
-% end
 }
 
 // ${'Local Variables'}:

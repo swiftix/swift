@@ -109,10 +109,16 @@ public struct AnyIterator<Element> : IteratorProtocol {
 extension AnyIterator : Sequence {}
 
 internal struct _ClosureBasedIterator<Element> : IteratorProtocol {
+  @_inlineable
+  @_versioned
   internal init(_ body: @escaping () -> Element?) {
     self._body = body
   }
+  @_inlineable
+  @_versioned
   internal func next() -> Element? { return _body() }
+  @_inlineable
+  @_versioned
   internal let _body: () -> Element?
 }
 
@@ -716,7 +722,7 @@ internal struct _ClosureBasedSequence<Iterator : IteratorProtocol>
 //@_fixed_layout
 public struct AnySequence<Element> : Sequence {
   /// Creates a new sequence that wraps and forwards operations to `base`.
-  //@_inlineable
+  @_inlineable
   public init<S : Sequence>(_ base: S)
     where
     S.Iterator.Element == Element,
@@ -728,7 +734,7 @@ public struct AnySequence<Element> : Sequence {
 
   /// Creates a sequence whose `makeIterator()` method forwards to
   /// `makeUnderlyingIterator`.
-  //@_inlineable
+  @_inlineable
   public init<I : IteratorProtocol>(
     _ makeUnderlyingIterator: @escaping () -> I
   ) where I.Element == Element {
@@ -744,7 +750,7 @@ public struct AnySequence<Element> : Sequence {
   }
 
   @_versioned
-  //@_inlineable
+  @_inlineable
   internal let _box: _AnySequenceBox<Element>
 }
 

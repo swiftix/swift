@@ -793,6 +793,7 @@ public struct Set<Element : Hashable> :
   ///   must be finite.
   /// - Returns: `true` if the set is a subset of `possibleSuperset`;
   ///   otherwise, `false`.
+  @_inlineable
   public func isSubset<S : Sequence>(of possibleSuperset: S) -> Bool
     where S.Iterator.Element == Element {
     // FIXME(performance): isEmpty fast path, here and elsewhere.
@@ -820,6 +821,7 @@ public struct Set<Element : Hashable> :
   ///   `possibleStrictSuperset` must be finite.
   /// - Returns: `true` is the set is strict subset of
   ///   `possibleStrictSuperset`; otherwise, `false`.
+  @_inlineable
   public func isStrictSubset<S : Sequence>(of possibleStrictSuperset: S) -> Bool
     where S.Iterator.Element == Element {
     // FIXME: code duplication.
@@ -842,6 +844,7 @@ public struct Set<Element : Hashable> :
   ///   be finite.
   /// - Returns: `true` if the set is a superset of `possibleSubset`;
   ///   otherwise, `false`.
+  @_inlineable
   public func isSuperset<S : Sequence>(of possibleSubset: S) -> Bool
     where S.Iterator.Element == Element {
     // FIXME(performance): Don't build a set; just ask if every element is in
