@@ -794,6 +794,7 @@ void SILGenModule::emitConstructor(ConstructorDecl *decl) {
       PrettyStackTraceSILFunction X("silgen emitConstructor", f);
       SILGenFunction(*this, *f).emitValueConstructor(decl);
       postEmitFunction(constant, f);
+#if 0
       if (decl &&
           decl->isImplicit() &&
           decl->getDeclContext()->getParentModule()->isStdlibModule() &&
@@ -807,6 +808,7 @@ void SILGenModule::emitConstructor(ConstructorDecl *decl) {
           if (NTD->hasFixedLayout() || NTD->getAttrs().getAttribute<VersionedAttr>())
             f->setFragile(IsFragile_t::IsFragile);
       }
+#endif
     });
   }
 }
@@ -994,6 +996,7 @@ emitStoredPropertyInitialization(PatternBindingDecl *pbd, unsigned i) {
     PrettyStackTraceSILFunction X("silgen emitStoredPropertyInitialization", f);
     SILGenFunction(*this, *f).emitGeneratorFunction(constant, init);
     postEmitFunction(constant, f);
+#if 0
     if (constant.getDecl()
             ->getDeclContext()
             ->getParentModule()
@@ -1011,6 +1014,7 @@ emitStoredPropertyInitialization(PatternBindingDecl *pbd, unsigned i) {
         if (NTD->hasFixedLayout() || NTD->getAttrs().getAttribute<VersionedAttr>())
           f->setFragile(IsFragile_t::IsFragile);
     }
+#endif
   });
 }
 
