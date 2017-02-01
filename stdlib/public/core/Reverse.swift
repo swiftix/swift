@@ -44,6 +44,7 @@ extension MutableCollection where Self : BidirectionalCollection {
 
 /// An index that traverses the same positions as an underlying index,
 /// with inverted traversal direction.
+@_fixed_layout
 public struct ReversedIndex<Base : Collection> : Comparable {
   @_inlineable
   public init(_ base: Base.Index) {
@@ -88,6 +89,7 @@ public struct ReversedIndex<Base : Collection> : Comparable {
 /// * `c.lazy.reversed().map(f)` maps lazily and returns a `LazyMapCollection`
 ///
 /// - See also: `ReversedRandomAccessCollection`
+@_fixed_layout
 public struct ReversedCollection<
   Base : BidirectionalCollection
 > : BidirectionalCollection {
@@ -170,6 +172,7 @@ public struct ReversedCollection<
 
 /// An index that traverses the same positions as an underlying index,
 /// with inverted traversal direction.
+@_fixed_layout
 public struct ReversedRandomAccessIndex<
   Base : RandomAccessCollection
 > : Comparable {
@@ -206,6 +209,7 @@ public struct ReversedRandomAccessIndex<
 /// - Note: This type is the result of `x.reversed()` where `x` is a
 ///   collection having random access indices.
 /// - See also: `ReversedCollection`
+@_fixed_layout
 public struct ReversedRandomAccessCollection<
   Base : RandomAccessCollection
 > : RandomAccessCollection {

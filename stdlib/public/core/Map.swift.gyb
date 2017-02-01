@@ -59,6 +59,7 @@ public struct LazyMapIterator<
 /// `Sequence` passed through a transform function returning `Element`.
 /// These elements are computed lazily, each time they're read, by
 /// calling the transform function on a base element.
+@_fixed_layout
 public struct LazyMapSequence<Base : Sequence, Element>
   : LazySequenceProtocol {
 

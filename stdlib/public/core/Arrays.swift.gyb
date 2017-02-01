@@ -456,9 +456,9 @@ if True:
 }%
 
 ${SelfDocComment}
-% if Self != 'ArraySlice':
+//% if Self != 'ArraySlice':
 @_fixed_layout
-%end
+//%end
 public struct ${Self}<Element>
   : RandomAccessCollection,
     MutableCollection,

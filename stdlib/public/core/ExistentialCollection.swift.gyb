@@ -108,6 +108,8 @@ public struct AnyIterator<Element> : IteratorProtocol {
 /// traversing the sequence consumes the iterator.
 extension AnyIterator : Sequence {}
 
+@_versioned
+@_fixed_layout
 internal struct _ClosureBasedIterator<Element> : IteratorProtocol {
   @_inlineable
   @_versioned
@@ -691,6 +693,8 @@ internal final class _${Kind}Box<S : ${Kind}> : _Any${Kind}Box<S.Iterator.Elemen
 }
 % end
 
+@_versioned
+@_fixed_layout
 internal struct _ClosureBasedSequence<Iterator : IteratorProtocol>
   : Sequence {
 
@@ -719,7 +723,7 @@ internal struct _ClosureBasedSequence<Iterator : IteratorProtocol>
 ///
 /// - SeeAlso: `AnyIterator`
 //@_versioned
-//@_fixed_layout
+@_fixed_layout
 public struct AnySequence<Element> : Sequence {
   /// Creates a new sequence that wraps and forwards operations to `base`.
   @_inlineable
@@ -928,6 +932,7 @@ internal final class _IndexBox<
 /// A wrapper over an underlying index that hides the specific underlying type.
 ///
 /// - SeeAlso: `AnyCollection`
+@_fixed_layout
 public struct AnyIndex {
   /// Creates a new index wrapping `base`.
   @_inlineable
@@ -1003,6 +1008,7 @@ protocol _AnyCollectionProtocol : Collection {
 /// collection.
 ///
 /// - SeeAlso: ${', '.join('`Any%sCollection`' % t for t in (2 * TRAVERSALS)[ti + 1 : ti + 3]) }
+@_fixed_layout
 public struct ${Self}<Element>
   : _AnyCollectionProtocol, ${SelfProtocol} {
 

@@ -191,6 +191,7 @@ extension Strideable where Stride : FloatingPoint {
 }
 
 /// An iterator for `StrideTo<Element>`.
+@_fixed_layout
 public struct StrideToIterator<Element : Strideable> : IteratorProtocol {
   @_inlineable
   @_versioned
@@ -234,6 +235,7 @@ public struct StrideToIterator<Element : Strideable> : IteratorProtocol {
 }
 
 /// A `Sequence` of values formed by striding over a half-open interval.
+@_fixed_layout
 public struct StrideTo<Element : Strideable> : Sequence, CustomReflectable {
   // FIXME: should really be a Collection, as it is multipass
 
@@ -284,6 +286,7 @@ public func stride<T : Strideable>(
 }
 
 /// An iterator for `StrideThrough<Element>`.
+@_fixed_layout
 public struct StrideThroughIterator<Element : Strideable> : IteratorProtocol {
   @_inlineable
   @_versioned
@@ -337,6 +340,7 @@ public struct StrideThroughIterator<Element : Strideable> : IteratorProtocol {
 }
 
 /// A `Sequence` of values formed by striding over a closed interval.
+@_fixed_layout
 public struct StrideThrough<
   Element : Strideable
 > : Sequence, CustomReflectable {

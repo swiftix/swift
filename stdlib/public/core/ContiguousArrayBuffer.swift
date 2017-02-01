@@ -705,6 +705,7 @@ internal func _copyCollectionToContiguousArray<
 /// element-by-element. The type is unsafe because it cannot be deinitialized
 /// until the buffer has been finalized by a call to `finish`.
 @_versioned
+@_fixed_layout
 internal struct _UnsafePartiallyInitializedContiguousArrayBuffer<Element> {
   @_inlineable
   @_versioned

@@ -27,6 +27,7 @@ internal enum _ClosedRangeIndexRepresentation<Bound>
 // FIXME(ABI)#23 (Nesting types in generics): should be a nested type in
 // `ClosedRange`.
 /// A position in a `CountableClosedRange` instance.
+@_fixed_layout
 public struct ClosedRangeIndex<Bound>
   where
   // FIXME(ABI)#176 (Type checker)
@@ -94,6 +95,7 @@ extension ClosedRangeIndex : Comparable {
 // FIXME(ABI)#175 (Type checker)
 // WORKAROUND: needed because of rdar://25584401
 /// An iterator over the elements of a `CountableClosedRange` instance.
+@_fixed_layout
 public struct ClosedRangeIterator<Bound> : IteratorProtocol, Sequence
   where
   // FIXME(ABI)#176 (Type checker)
@@ -177,6 +179,7 @@ public struct ClosedRangeIterator<Bound> : IteratorProtocol, Sequence
 /// `stride(from:through:by:)` function.
 ///
 /// - SeeAlso: `CountableRange`, `ClosedRange`, `Range`
+@_fixed_layout
 public struct CountableClosedRange<Bound> : RandomAccessCollection
   where
   // FIXME(ABI)#176 (Type checker)

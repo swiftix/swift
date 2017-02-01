@@ -25,6 +25,7 @@
 ///     // "Humperdinck"
 ///     // "Humperdinck"
 ///     // "Humperdinck"
+@_fixed_layout
 public struct Repeated<Element> : RandomAccessCollection {
 
   public typealias Indices = CountableRange<Int>

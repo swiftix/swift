@@ -12,6 +12,7 @@
 
 /// An iterator for the elements in the buffer referenced by an
 /// `UnsafeBufferPointer` or `UnsafeMutableBufferPointer` instance.
+@_fixed_layout
 public struct UnsafeBufferPointerIterator<Element>
   : IteratorProtocol, Sequence {
 

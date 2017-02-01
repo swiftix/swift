@@ -85,6 +85,7 @@ public func max<T : Comparable>(_ x: T, _ y: T, _ z: T, _ rest: T...) -> T {
 ///
 /// To create an instance of `EnumeratedIterator`, call
 /// `enumerated().makeIterator()` on a sequence or collection.
+@_fixed_layout
 public struct EnumeratedIterator<
   Base : IteratorProtocol
 > : IteratorProtocol, Sequence {
@@ -135,6 +136,7 @@ public struct EnumeratedIterator<
 ///     }
 ///     // Prints "0: foo"
 ///     // Prints "1: bar"
+@_fixed_layout
 public struct EnumeratedSequence<Base : Sequence> : Sequence {
   @_inlineable
   @_versioned

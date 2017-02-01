@@ -1466,6 +1466,7 @@ extension Sequence {
 /// given just an iterator `i`:
 ///
 ///     for x in IteratorSequence(i) { ... }
+@_fixed_layout
 public struct IteratorSequence<
   Base : IteratorProtocol
 > : IteratorProtocol, Sequence {
