@@ -353,6 +353,7 @@ internal var _nilNativeObject: AnyObject? {
 public struct AutoreleasingUnsafeMutablePointer<Pointee /* TODO : class */>
   : Equatable, _Pointer {
 
+  @_inlineable
   public let _rawValue: Builtin.RawPointer
 
   @_transparent
@@ -365,6 +366,7 @@ public struct AutoreleasingUnsafeMutablePointer<Pointee /* TODO : class */>
   ///
   /// - Precondition: the pointee has been initialized with an instance of type
   ///   `Pointee`.
+  @_inlineable
   public var pointee: Pointee {
     /// Retrieve the value the pointer points to.
     @_transparent get {
@@ -447,6 +449,7 @@ public struct AutoreleasingUnsafeMutablePointer<Pointee /* TODO : class */>
   ///
   /// - Warning: Accessing `pointee` as a type that is unrelated to
   ///   the underlying memory's bound type is undefined.
+  @_versioned
   @_transparent
   init<U>(_ from: UnsafePointer<U>) {
     self._rawValue = from._rawValue
@@ -461,6 +464,7 @@ public struct AutoreleasingUnsafeMutablePointer<Pointee /* TODO : class */>
   ///
   /// - Warning: Accessing `pointee` as a type that is unrelated to
   ///   the underlying memory's bound type is undefined.
+  @_versioned
   @_transparent
   init?<U>(_ from: UnsafePointer<U>?) {
     guard let unwrapped = from else { return nil }
@@ -514,6 +518,7 @@ extension UnsafeRawPointer {
 
 extension AutoreleasingUnsafeMutablePointer : CustomDebugStringConvertible {
   /// A textual representation of `self`, suitable for debugging.
+  @_inlineable
   public var debugDescription: String {
     return _rawPointerToString(_rawValue)
   }

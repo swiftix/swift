@@ -20,9 +20,11 @@ import SwiftShims
 @_fixed_layout
 @_versioned
 internal struct _ArrayBody {
+  @_inlineable
   @_versioned
   var _storage: _SwiftArrayBodyStorage
 
+  @_inlineable
   @_versioned
   init(count: Int, capacity: Int, elementTypeIsBridgedVerbatim: Bool = false) {
     _sanityCheck(count >= 0)
@@ -38,6 +40,8 @@ internal struct _ArrayBody {
   /// constructed, but since we want to claim all the allocated
   /// capacity after a new buffer is allocated, it's typical to want
   /// to update it immediately after construction.
+  @_inlineable
+  @_versioned
   init() {
     _storage = _SwiftArrayBodyStorage(count: 0, _capacityAndFlags: 0)
   }

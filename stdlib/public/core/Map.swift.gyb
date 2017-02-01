@@ -46,6 +46,13 @@ public struct LazyMapIterator<
   @_inlineable
   @_versioned
   internal let _transform: (Base.Element) -> Element
+
+  @_inlineable
+  @_versioned
+  internal init(_base: Base, _transform: @escaping (Base.Element) -> Element) {
+    self._base = _base
+    self._transform = _transform
+  }
 }
 
 /// A `Sequence` whose elements consist of those in a `Base`

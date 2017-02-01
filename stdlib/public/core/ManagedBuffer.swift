@@ -478,6 +478,8 @@ public func isKnownUniquelyReferenced<T : AnyObject>(_ object: inout T) -> Bool
   return _isUnique(&object)
 }
 
+@_inlineable
+@_versioned
 internal func _isKnownUniquelyReferencedOrPinned<T : AnyObject>(_ object: inout T) -> Bool {
   return _isUniqueOrPinned(&object)
 }

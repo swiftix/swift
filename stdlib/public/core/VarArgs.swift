@@ -271,6 +271,7 @@ extension UnsafeMutablePointer : CVarArg {
 extension AutoreleasingUnsafeMutablePointer : CVarArg {
   /// Transform `self` into a series of machine words that can be
   /// appropriately interpreted by C varargs.
+  @_inlineable
   public var _cVarArgEncoding: [Int] {
     return _encodeBitsAsWords(self)
   }

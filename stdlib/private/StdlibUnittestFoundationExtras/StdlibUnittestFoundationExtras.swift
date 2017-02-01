@@ -75,6 +75,8 @@ public func autoreleasepoolIfUnoptimizedReturnAutoreleased(
 #endif
 }
 
+@_inlineable
+@_versioned
 @_silgen_name("swift_stdlib_NSArray_getObjects")
 internal func _stdlib_NSArray_getObjects(
   nsArray: AnyObject,
