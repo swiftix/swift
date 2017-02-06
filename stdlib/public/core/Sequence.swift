@@ -645,6 +645,7 @@ extension Sequence
 /// This is a class - we require reference semantics to keep track
 /// of how many elements we've already dropped from the underlying sequence.
 @_versioned
+@_fixed_layout
 internal class _DropFirstSequence<Base : IteratorProtocol>
     : Sequence, IteratorProtocol {
 
