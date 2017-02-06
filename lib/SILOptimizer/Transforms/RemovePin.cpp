@@ -90,6 +90,19 @@ public:
 
         DEBUG(llvm::dbgs() << "    Visiting: " << *CurInst);
 
+        if (auto *PinDef = dyn_cast<StrongPinInst>(CurInst)) {
+          auto *Enum = SILBuilder(PinDef).createOptionalSome(
+              PinDef->getLoc(), PinDef->getOperand(), PinDef->getType());
+          PinDef->replaceAllUsesWith(Enum);
+          CurInst->eraseFromParent();
+          continue;
+        }
+
+        if (isa<StrongUnpinInst>(CurInst)) {
+          CurInst->eraseFromParent();
+          continue;
+        }
+
         // Add StrongPinInst to available pins.
         if (isa<StrongPinInst>(CurInst)) {
           DEBUG(llvm::dbgs() << "        Found pin!\n");

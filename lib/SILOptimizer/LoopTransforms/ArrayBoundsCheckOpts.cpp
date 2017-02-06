@@ -54,10 +54,10 @@ static llvm::cl::opt<bool> ShouldReportBoundsChecks("sil-abcopts-report",
                                               llvm::cl::init(false));
 
 static llvm::cl::opt<bool> EnableABCOpts("enable-abcopts",
-                                         llvm::cl::init(true));
+                                         llvm::cl::init(false));
 
 static llvm::cl::opt<bool> EnableABCHoisting("enable-abc-hoisting",
-                                             llvm::cl::init(true));
+                                             llvm::cl::init(false));
 
 
 using ArraySet = llvm::SmallPtrSet<SILValue, 16>;
