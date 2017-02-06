@@ -176,7 +176,7 @@ extension _SwiftNativeNSArrayWithContiguousStorage : _NSArrayCore {
     return nil
   }
 
-  @_inlineable
+  //@_inlineable
   @_versioned
   internal init(_nativeStorage: _ContiguousArrayStorageBase) {
     self._nativeStorage = _nativeStorage

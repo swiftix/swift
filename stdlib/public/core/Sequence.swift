@@ -660,7 +660,7 @@ internal class _DropFirstSequence<Base : IteratorProtocol>
   internal var _dropped: Int
 
   @_versioned
-  @_inlineable
+  //@_inlineable
   internal init(_iterator: Base, limit: Int, dropped: Int = 0) {
     self._iterator = _iterator
     self._limit = limit
@@ -721,7 +721,7 @@ internal class _PrefixSequence<Base : IteratorProtocol>
   internal var _taken: Int
 
   @_versioned
-  @_inlineable
+  //@_inlineable
   internal init(_iterator: Base, maxLength: Int, taken: Int = 0) {
     self._iterator = _iterator
     self._maxLength = maxLength

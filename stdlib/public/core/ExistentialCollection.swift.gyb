@@ -353,7 +353,7 @@ internal class _AnyRandomAccessCollectionBox<Element>
   internal var _first: Element? { _abstract() }
 
   @_versioned
-  @_inlineable
+  //@_inlineable
   internal init(
     _startIndex: _AnyIndexBox,
     endIndex: _AnyIndexBox
@@ -539,7 +539,7 @@ internal final class _${Kind}Box<S : ${Kind}> : _Any${Kind}Box<S.Iterator.Elemen
 
 %   if Kind == 'Sequence':
   @_versioned
-  @_inlineable
+  //@_inlineable
   internal init(_base: S) {
     self._base = _base
   }
@@ -893,7 +893,7 @@ internal final class _IndexBox<
   internal var _base: BaseIndex
 
   @_versioned
-  @_inlineable
+  //@_inlineable
   internal init(_base: BaseIndex) {
     self._base = _base
   }
