@@ -473,6 +473,7 @@ public func == <Header, Element>(
 ///   `object`; the use of `inout` is an implementation artifact.
 /// - Returns: `true` if `object` is known to have a single strong reference;
 ///   otherwise, `false`.
+@_inlineable
 public func isKnownUniquelyReferenced<T : AnyObject>(_ object: inout T) -> Bool
 {
   return _isUnique(&object)
@@ -514,6 +515,7 @@ internal func _isKnownUniquelyReferencedOrPinned<T : AnyObject>(_ object: inout 
 ///   `object`; the use of `inout` is an implementation artifact.
 /// - Returns: `true` if `object` is known to have a single strong reference;
 ///   otherwise, `false`. If `object` is `nil`, the return value is `false`.
+@_inlineable
 public func isKnownUniquelyReferenced<T : AnyObject>(
   _ object: inout T?
 ) -> Bool {
