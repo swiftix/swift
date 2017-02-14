@@ -946,6 +946,31 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *Callee,
     SpecializedGenericSig = nullptr;
     return;
   }
+
+  if (SpecializedGenericSig) {
+    // It is a partial specializaiton.
+    if (SpecializedGenericSig) {
+      llvm::dbgs() << "\n\nPartially specialized types for function: "
+                   << Callee->getName() << "\n\n";
+      llvm::dbgs() << "Original generic function type:\n"
+                   << Callee->getLoweredFunctionType() << "\n\n";
+      llvm::dbgs() << "\nOriginal call substitution:\n";
+      for (auto Sub : getOriginalParamSubstitutions()) {
+        llvm::dbgs() << "Sub:\n";
+        Sub.dump();
+        llvm::dbgs() << "\n";
+      }
+
+      llvm::dbgs() << "Partially specialized generic function type:\n"
+                   << getSpecializedType() << "\n\n";
+      llvm::dbgs() << "\nSpecialization call substitution:\n";
+      for (auto Sub : getCallerParamSubstitutions()) {
+        llvm::dbgs() << "Sub:\n";
+        Sub.dump();
+        llvm::dbgs() << "\n";
+      }
+    }
+  }
 }
 
 bool ReabstractionInfo::canBeSpecialized() const {
@@ -1116,9 +1141,17 @@ getSignatureWithRequirements(GenericSignature *OrigGenSig,
   }
 
   Builder.finalize(SourceLoc(), OrigGenSig->getGenericParams());
-  auto *GenericSig = Builder.getGenericSignature();
+  auto *GenericSig = Builder.getGenericSignature()->getCanonicalSignature().getPointer();
   // Remember the new generic environment.
   auto *GenericEnv = GenericSig->createGenericEnvironment(*M.getSwiftModule());
+
+  // FIXME: This is a workaround for the signature minimization bug.
+  GenericSignatureBuilder TmpBuilder(M.getASTContext(),
+                                  LookUpConformanceInModule(M.getSwiftModule()));
+  TmpBuilder.addGenericSignature(GenericSig);
+  TmpBuilder.finalize(SourceLoc(), GenericSig->getGenericParams());
+  GenericSig = TmpBuilder.getGenericSignature()->getCanonicalSignature().getPointer();
+  GenericEnv = GenericSig->createGenericEnvironment(*M.getSwiftModule());
 
   return std::make_pair(GenericEnv, GenericSig);
 }
@@ -1223,6 +1256,10 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
 // requirements. It is much easier to create than using the other
 // approach, because it does not require any complex re-mappings
 // of generic types and archetypes.
+// Current issues:
+// - If Sig2 = GenericSignatureBuilder(Sig2 + Req), then GenericSignatureBuilder(Sig2) != Sig2
+// - The set of requirements is not really minimized.
+// - Some requirements are lost, when you add a same type parameter to the builder.
 
 // Initialize SpecializedType if and only if the specialization is allowed.
 void ReabstractionInfo::SpecializeConcreteSubstitutions(
@@ -1260,6 +1297,11 @@ void ReabstractionInfo::SpecializeConcreteSubstitutions(
   std::tie(SpecializedGenericEnv, SpecializedGenericSig) =
       getSignatureWithRequirements(OrigGenericSig, OrigGenericEnv,
                                    Requirements, M);
+  HasUnboundGenericParams = !SpecializedGenericSig->areAllParamsConcrete();
+
+  // No partial specializations!
+  //if (HasUnboundGenericParams)
+  //  return;
 
   {
     SmallVector<Substitution, 4> List;
@@ -1292,7 +1334,8 @@ void ReabstractionInfo::SpecializeConcreteSubstitutions(
         return SpecializedGenericEnv->mapTypeOutOfContext(
           SpecializedGenericEnv->mapTypeIntoContext(type));
       },
-      LookUpConformanceInSignature(*SpecializedGenericSig));
+        //LookUpConformanceInSignature(*SpecializedGenericSig));
+      LookUpConformanceInSignature(*OrigGenericSig));
   }
 
   HasUnboundGenericParams = !SpecializedGenericSig->areAllParamsConcrete();
