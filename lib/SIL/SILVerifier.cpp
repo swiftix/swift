@@ -419,9 +419,15 @@ public:
         TC(F.getModule().Types), OpenedArchetypes(F), Dominance(nullptr),
         PostOrderInfo(), UnreachableBlockInfo(),
         SingleFunction(SingleFunction) {
-    if (F.isExternalDeclaration())
+    if (F.isExternalDeclaration()) {
+      require(!(F.getModule().getStage() != SILStage::Raw &&
+                F.isTransparent() && F.isAvailableExternally() &&
+                hasPublicVisibility(F.getLinkage()) && F.isFragile()),
+              "transparent functions with public_external linkage should "
+              "always have a body");
       return;
-      
+    }
+
     // Check to make sure that all blocks are well formed.  If not, the
     // SILVerifier object will explode trying to compute dominance info.
     for (auto &BB : F) {
