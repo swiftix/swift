@@ -117,10 +117,10 @@ class ReabstractionInfo {
   void createSubstitutedAndSpecializedTypes();
   bool prepareAndCheck(ApplySite Apply, SILFunction *Callee,
                        SubstitutionList ParamSubs);
-  void SpecializeConcreteAndGenericSubstitutions(ApplySite Apply,
+  void specializeConcreteAndGenericSubstitutions(ApplySite Apply,
                                                  SILFunction *Callee,
                                                  SubstitutionList ParamSubs);
-  void SpecializeConcreteSubstitutions(ApplySite Apply, SILFunction *Callee,
+  void specializeConcreteSubstitutions(ApplySite Apply, SILFunction *Callee,
                                        SubstitutionList ParamSubs);
 
 public:
