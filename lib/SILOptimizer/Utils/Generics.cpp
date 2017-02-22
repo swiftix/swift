@@ -24,7 +24,7 @@ using namespace swift;
 
 /// Set to true to enable the support for partial specialization.
 llvm::cl::opt<bool> EnablePartialSpecialization(
-    "sil-partial-specialization", llvm::cl::init(false),
+    "sil-partial-specialization", llvm::cl::init(true),
     llvm::cl::desc("Enable partial specialization of generics"));
 
 /// If set, then generic specialization tries to specialize using
@@ -157,8 +157,7 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *Callee,
     return;
 
   if (SpecializeGenericSubstitutions) {
-    //specializeConcreteAndGenericSubstitutions(Apply, Callee, ParamSubs);
-    assert(0);
+    specializeConcreteAndGenericSubstitutions(Apply, Callee, ParamSubs);
   } else {
     specializeConcreteSubstitutions(Apply, Callee, ParamSubs);
   }
@@ -635,6 +634,10 @@ void ReabstractionInfo::specializeConcreteSubstitutions(
   createSubstitutedAndSpecializedTypes();
 }
 
+void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
+    ApplySite Apply, SILFunction *Callee, ArrayRef<Substitution> ParamSubs) {
+  assert(0 && "Not implemented yet");
+}
 // =============================================================================
 // GenericFuncSpecializer
 // =============================================================================
