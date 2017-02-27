@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "sil-inliner"
+#include "swift/SIL/DebugUtils.h"
 #include "swift/SILOptimizer/PassManager/Passes.h"
 #include "swift/SILOptimizer/PassManager/Transforms.h"
 #include "swift/SILOptimizer/Utils/Devirtualize.h"
@@ -48,6 +49,18 @@ enum class InlineSelection {
 };
 
 using Weight = ShortestPathAnalysis::Weight;
+
+struct CallerDumper {
+#ifndef NDEBUG
+  SILFunction *LastPrintedCaller = nullptr;
+  void dumpCaller(SILFunction *Caller) {
+    if (Caller != LastPrintedCaller) {
+      llvm::dbgs() << "\nInline into caller: " << Caller->getName() << '\n';
+      LastPrintedCaller = Caller;
+    }
+  }
+#endif
+};
 
 class SILPerformanceInliner {
   /// Specifies which functions not to inline, based on @_semantics and
@@ -111,15 +124,7 @@ class SILPerformanceInliner {
     DefaultApplyLength = 10
   };
 
-#ifndef NDEBUG
-  SILFunction *LastPrintedCaller = nullptr;
-  void dumpCaller(SILFunction *Caller) {
-    if (Caller != LastPrintedCaller) {
-      llvm::dbgs() << "\nInline into caller: " << Caller->getName() << '\n';
-      LastPrintedCaller = Caller;
-    }
-  }
-#endif
+  CallerDumper Dumper;
 
   ShortestPathAnalysis *getSPA(SILFunction *F, SILLoopInfo *LI) {
     ShortestPathAnalysis *&SPA = SPAs[F];
@@ -217,8 +222,8 @@ static bool calleeHasPartialApplyWithOpenedExistentials(FullApplySite AI) {
 }
 
 // Returns the callee of an apply_inst if it is basically inlineable.
-SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
-
+static SILFunction *getEligibleCalleeFunction(FullApplySite AI,
+                                              InlineSelection WhatToInline) {
   SILFunction *Callee = AI.getReferencedFunction();
 
   if (!Callee) {
@@ -310,6 +315,11 @@ SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
   }
 
   return Callee;
+}
+
+// Returns the callee of an apply_inst if it is basically inlineable.
+SILFunction *SILPerformanceInliner::getEligibleFunction(FullApplySite AI) {
+  return getEligibleCalleeFunction(AI, WhatToInline);
 }
 
 // Returns true if it is possible to perform a generic
@@ -486,7 +496,7 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
       return false;
 
     DEBUG(
-      dumpCaller(AI.getFunction());
+      Dumper.dumpCaller(AI.getFunction());
       llvm::dbgs() << "    decision {" << CalleeCost << " into thunk} " <<
           Callee->getName() << '\n';
     );
@@ -509,7 +519,7 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
   NumCallerBlocks += Callee->size();
 
   DEBUG(
-    dumpCaller(AI.getFunction());
+    Dumper.dumpCaller(AI.getFunction());
     llvm::dbgs() << "    decision {c=" << CalleeCost << ", b=" << Benefit <<
         ", l=" << SPA->getScopeLength(CalleeEntry, 0) <<
         ", c-w=" << CallerWeight << ", bb=" << Callee->size() <<
@@ -605,7 +615,7 @@ bool SILPerformanceInliner::decideInColdBlock(FullApplySite AI,
     }
   }
   DEBUG(
-    dumpCaller(AI.getFunction());
+    Dumper.dumpCaller(AI.getFunction());
     llvm::dbgs() << "    cold decision {" << CalleeCost << "} " <<
               Callee->getName() << '\n';
   );
@@ -736,6 +746,45 @@ void SILPerformanceInliner::collectAppliesToInline(
   }
 }
 
+static void inlineFunction(FullApplySite AI, SILFunction *Caller,
+                           CallerDumper &Dumper) {
+  SILFunction *Callee = AI.getReferencedFunction();
+  assert(Callee && "apply_inst does not have a direct callee anymore");
+
+  if (!Callee->shouldOptimize()) {
+    return;
+  }
+
+  SmallVector<SILValue, 8> Args;
+  for (const auto &Arg : AI.getArguments())
+    Args.push_back(Arg);
+
+  DEBUG(Dumper.dumpCaller(Caller);
+        llvm::dbgs() << "    inline [" << Callee->size() << "->"
+                     << Caller->size() << "] " << Callee->getName() << "\n";);
+
+  SILOpenedArchetypesTracker OpenedArchetypesTracker(*Caller);
+  Caller->getModule().registerDeleteNotificationHandler(
+      &OpenedArchetypesTracker);
+  // The callee only needs to know about opened archetypes used in
+  // the substitution list.
+  OpenedArchetypesTracker.registerUsedOpenedArchetypes(AI.getInstruction());
+
+  SILInliner Inliner(*Caller, *Callee,
+                     SILInliner::InlineKind::PerformanceInline,
+                     AI.getSubstitutions(), OpenedArchetypesTracker);
+
+  auto Success = Inliner.inlineFunction(AI, Args);
+  (void)Success;
+  // We've already determined we should be able to inline this, so
+  // we expect it to have happened.
+  assert(Success && "Expected inliner to inline this function!");
+
+  recursivelyDeleteTriviallyDeadInstructions(AI.getInstruction(), true);
+
+  NumFunctionsInlined++;
+}
+
 /// \brief Attempt to inline all calls smaller than our threshold.
 /// returns True if a function was inlined.
 bool SILPerformanceInliner::inlineCallsIntoFunction(SILFunction *Caller) {
@@ -754,43 +803,7 @@ bool SILPerformanceInliner::inlineCallsIntoFunction(SILFunction *Caller) {
 
   // Second step: do the actual inlining.
   for (auto AI : AppliesToInline) {
-    SILFunction *Callee = AI.getReferencedFunction();
-    assert(Callee && "apply_inst does not have a direct callee anymore");
-
-    if (!Callee->shouldOptimize()) {
-      continue;
-    }
-    
-    SmallVector<SILValue, 8> Args;
-    for (const auto &Arg : AI.getArguments())
-      Args.push_back(Arg);
-
-    DEBUG(
-      dumpCaller(Caller);
-      llvm::dbgs() << "    inline [" << Callee->size() << "->" <<
-          Caller->size() << "] " << Callee->getName() << "\n";
-    );
-
-    SILOpenedArchetypesTracker OpenedArchetypesTracker(*Caller);
-    Caller->getModule().registerDeleteNotificationHandler(&OpenedArchetypesTracker);
-    // The callee only needs to know about opened archetypes used in
-    // the substitution list.
-    OpenedArchetypesTracker.registerUsedOpenedArchetypes(AI.getInstruction());
-
-    SILInliner Inliner(*Caller, *Callee,
-                       SILInliner::InlineKind::PerformanceInline,
-                       AI.getSubstitutions(),
-                       OpenedArchetypesTracker);
-
-    auto Success = Inliner.inlineFunction(AI, Args);
-    (void) Success;
-    // We've already determined we should be able to inline this, so
-    // we expect it to have happened.
-    assert(Success && "Expected inliner to inline this function!");
-
-    recursivelyDeleteTriviallyDeadInstructions(AI.getInstruction(), true);
-
-    NumFunctionsInlined++;
+    inlineFunction(AI, Caller, Dumper);
   }
 
   return true;
@@ -860,6 +873,86 @@ public:
 
   StringRef getName() override { return PassName; }
 };
+
+class SingleCallSiteInlinerPass : public SILFunctionTransform {
+  public:
+  void run() override {
+    SILFunction *Caller = getFunction();
+    DEBUG(llvm::dbgs() << "*** SingleCallSiteInliner on function: "
+          << Caller->getName() << " ***\n");
+    llvm::dbgs() << "*** SingleCallSiteInliner on function: "
+                 << Caller->getName() << " ***\n";
+
+    CallerDumper Dumper;
+    llvm::SmallVector<FullApplySite, 8> AppliesToInline;
+
+    for (SILBasicBlock &BB : *Caller) {
+      for (SILInstruction &I : BB) {
+        if (FullApplySite FAS = FullApplySite::isa(&I)) {
+          FunctionRefInst *FRI = dyn_cast<FunctionRefInst>(FAS.getCallee());
+          if (!FRI)
+            continue;
+          // The function should be invoked only once.
+          // TODO: There can be multiple uses, but at most one apply among them!
+          if (!hasOneNonDebugUse(FRI))
+            continue;
+          auto *Callee = FAS.getReferencedFunction();
+#if 0
+          // This is a temporary workaround.
+          if (Callee && Callee->getName() == "_TFEsPs8Sequence5splitfzT9maxSpli"
+                                             "tsSi25omittingEmptySubsequencesSb"
+                                             "14whereSeparatorFzWx8Iterator7Ele"
+                                             "ment_Sb_GSaGVs11AnySequenceWxS0_"
+                                             "S1____")
+            continue;
+#endif
+          // The callee should be invoked only from this place.
+          // It should not be used externally.
+          if (!Callee || Callee->getRefCount() != 1 ||
+              Callee->isPossiblyUsedExternally())
+            continue;
+          if (getEligibleCalleeFunction(FAS, InlineSelection::Everything)) {
+            AppliesToInline.push_back(FAS);
+          }
+        }
+      }
+    }
+
+    // Second step: do the actual inlining.
+    for (auto AI : AppliesToInline) {
+      auto *Callee = AI.getReferencedFunction();
+      llvm::dbgs() << "Single callsite inlining\n"
+                   << Callee->getName() << "\n"
+                   << "into\n"
+                   << Caller->getName() << "\n"
+                   << "instruction:\n";
+      AI.getInstruction()->dumpInContext();
+      inlineFunction(AI, Caller, Dumper);
+      // Callee is not used anymore and can be removed.
+      if (Callee->getRefCount() != 0) {
+        assert(Callee->getRefCount() == 0 && "Callee shoul not be used");
+      }
+      llvm::dbgs() << "Removing unused function: " << Callee->getName() << "\n";
+      // FIXME: It should be possible to remove this function right here, to
+      // avoid running a dead function eliminaiton pass later. To do so,
+      // we may need to make this pass a module pass, because removing
+      // a function while running a function pass seem to cresh the compiler
+      // in some situations.
+      //Callee->convertToDeclaration();
+      //Callee->setLinkage(SILLinkage::PublicExternal);
+      //PM->invalidateAnalysisForDeadFunction(
+      //    Callee, SILAnalysis::InvalidationKind::Everything);
+      //Callee->dropAllReferences();
+      //Caller->getModule().eraseFunction(Callee);
+    }
+
+    if (!AppliesToInline.empty()) {
+      invalidateAnalysis(SILAnalysis::InvalidationKind::FunctionBody);
+    }
+  }
+
+  StringRef getName() override { return "SingleCallSiteInliner"; }
+};
 } // end anonymous namespace
 
 /// Create an inliner pass that does not inline functions that are marked with
@@ -879,4 +972,8 @@ SILTransform *swift::createPerfInliner() {
 /// the @_semantics, @effects or global_init attributes.
 SILTransform *swift::createLateInliner() {
   return new SILPerformanceInlinerPass(InlineSelection::Everything, "Late");
+}
+
+SILTransform *swift::createSingleCallSiteInliner() {
+  return new SingleCallSiteInlinerPass();
 }

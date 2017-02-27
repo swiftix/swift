@@ -376,6 +376,26 @@ static void addLateLoopOptPassPipeline(SILPassPipelinePlan &P) {
   P.addExternalFunctionDefinitionsElimination();
   P.addDeadFunctionElimination();
 
+  P.addSingleCallSiteInliner();
+  P.addDeadFunctionElimination();
+  // TODO: Add some clean-up here?
+
+  // Promote stack allocations to values and eliminate redundant
+  // loads.
+  P.addMem2Reg();
+  P.addPerformanceConstantPropagation();
+  //  Do a round of CFG simplification, followed by peepholes, then
+  //  more CFG simplification.
+
+  // Jump threading can expose opportunity for SILCombine (enum -> is_enum_tag->
+  // cond_br).
+  P.addJumpThreadSimplifyCFG();
+  P.addSILCombine();
+  // SILCombine can expose further opportunities for SimplifyCFG.
+  P.addSimplifyCFG();
+
+  P.addCSE();
+
   // Perform the final lowering transformations.
   P.addCodeSinking();
   P.addLICM();

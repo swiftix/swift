@@ -395,7 +395,7 @@ runFunctionPasses(ArrayRef<SILFunctionTransform *> FuncTransforms) {
     unsigned PipelineIdx = FunctionWorklist[TailIdx].PipelineIdx;
     SILFunction *F = FunctionWorklist[TailIdx].F;
 
-    if (PipelineIdx >= FuncTransforms.size()) {
+    if (!F->isDefinition() || PipelineIdx >= FuncTransforms.size()) {
       // All passes did already run for the function. Pop it off the worklist.
       FunctionWorklist.pop_back();
       continue;

@@ -232,6 +232,8 @@ PASS(SimplifyBBArgs, "simplify-bb-args",
 // TODO: What should this be called. We are just following what was previously in SILOpt.
 PASS(SimplifyCFG, "normal-simplify-cfg",
      "Clean up the CFG of SIL functions")
+PASS(SingleCallSiteInliner, "single-callsite-inliner",
+     "Inline functions with only a single callsite")
 PASS(SpeculativeDevirtualization, "specdevirt",
      "Speculate targets of virtual calls")
 PASS(SplitAllCriticalEdges, "split-critical-edges",
