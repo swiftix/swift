@@ -377,9 +377,9 @@ static void addLateLoopOptPassPipeline(SILPassPipelinePlan &P) {
   P.addDeadFunctionElimination();
 
   P.addSingleCallSiteInliner();
-  P.addDeadFunctionElimination();
+  // P.addDeadFunctionElimination();
   // TODO: Add some clean-up here?
-
+#if 1
   // Promote stack allocations to values and eliminate redundant
   // loads.
   P.addMem2Reg();
@@ -395,7 +395,7 @@ static void addLateLoopOptPassPipeline(SILPassPipelinePlan &P) {
   P.addSimplifyCFG();
 
   P.addCSE();
-
+#endif
   // Perform the final lowering transformations.
   P.addCodeSinking();
   P.addLICM();

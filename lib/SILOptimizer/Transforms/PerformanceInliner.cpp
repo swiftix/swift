@@ -874,18 +874,32 @@ public:
   StringRef getName() override { return PassName; }
 };
 
-class SingleCallSiteInlinerPass : public SILFunctionTransform {
-  public:
-  void run() override {
-    SILFunction *Caller = getFunction();
+static bool canBeInlined(SILFunction *F) {
+  if (F->getInlineStrategy() == Inline_t::NoInline)
+    return false;
+  if (!F->shouldOptimize())
+    return false;
+  if (F->isTransparent() || F->getInlineStrategy() == Inline_t::AlwaysInline ||
+      F->isFragile())
+    return true;
+  return true;
+}
+
+class SingleCallSiteInlinerPass : public SILModuleTransform {
+  void runOnFunction(SILFunction *Caller)  {
     DEBUG(llvm::dbgs() << "*** SingleCallSiteInliner on function: "
           << Caller->getName() << " ***\n");
     llvm::dbgs() << "*** SingleCallSiteInliner on function: "
                  << Caller->getName() << " ***\n";
 
+    // Bail if the caller can be inlined later.
+    if (canBeInlined(Caller))
+      return;
+
     CallerDumper Dumper;
     llvm::SmallVector<FullApplySite, 8> AppliesToInline;
 
+    // TODO: Only inline into a caller that cannot be inlined.
     for (SILBasicBlock &BB : *Caller) {
       for (SILInstruction &I : BB) {
         if (FullApplySite FAS = FullApplySite::isa(&I)) {
@@ -897,15 +911,6 @@ class SingleCallSiteInlinerPass : public SILFunctionTransform {
           if (!hasOneNonDebugUse(FRI))
             continue;
           auto *Callee = FAS.getReferencedFunction();
-#if 0
-          // This is a temporary workaround.
-          if (Callee && Callee->getName() == "_TFEsPs8Sequence5splitfzT9maxSpli"
-                                             "tsSi25omittingEmptySubsequencesSb"
-                                             "14whereSeparatorFzWx8Iterator7Ele"
-                                             "ment_Sb_GSaGVs11AnySequenceWxS0_"
-                                             "S1____")
-            continue;
-#endif
           // The callee should be invoked only from this place.
           // It should not be used externally.
           if (!Callee || Callee->getRefCount() != 1 ||
@@ -940,15 +945,20 @@ class SingleCallSiteInlinerPass : public SILFunctionTransform {
       // in some situations.
       //Callee->convertToDeclaration();
       //Callee->setLinkage(SILLinkage::PublicExternal);
-      //PM->invalidateAnalysisForDeadFunction(
-      //    Callee, SILAnalysis::InvalidationKind::Everything);
-      //Callee->dropAllReferences();
-      //Caller->getModule().eraseFunction(Callee);
+      PM->invalidateAnalysisForDeadFunction(
+          Callee, SILAnalysis::InvalidationKind::Everything);
+      Callee->dropAllReferences();
+      Caller->getModule().eraseFunction(Callee);
     }
 
     if (!AppliesToInline.empty()) {
       invalidateAnalysis(SILAnalysis::InvalidationKind::FunctionBody);
     }
+  }
+  public:
+  void run() override {
+    for (auto &Caller : *getModule())
+      runOnFunction(&Caller);
   }
 
   StringRef getName() override { return "SingleCallSiteInliner"; }
