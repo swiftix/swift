@@ -549,6 +549,13 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
   createSubstitutedAndSpecializedTypes();
 }
 
+static void verifySubstitutionList(SubstitutionList Subs) {
+  for (auto Sub : Subs) {
+    assert(!Sub.getReplacement()->hasError() &&
+           "There should be no error types in substitutions");
+  }
+}
+
 // Builds a new signature based on the old one and adds same type
 // requirements for those generic type parameters that are concrete
 // according to the partial substitution. This way, the signature
@@ -622,6 +629,7 @@ void ReabstractionInfo::specializeConcreteSubstitutions(
       LookUpConformanceInSignature(*SpecializedGenericSig),
       List);
     ClonerParamSubs = Ctx.AllocateCopy(List);
+    verifySubstitutionList(ClonerParamSubs);
   }
 
   {
@@ -635,6 +643,7 @@ void ReabstractionInfo::specializeConcreteSubstitutions(
       LookUpConformanceInSignature(*SpecializedGenericSig),
       List);
     CallerParamSubs = Ctx.AllocateCopy(List);
+    verifySubstitutionList(CallerParamSubs);
   }
 
   {
