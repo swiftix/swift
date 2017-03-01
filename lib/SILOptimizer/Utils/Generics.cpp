@@ -830,7 +830,7 @@ static void remapRequirements(
   // Next, add each of the requirements (mapped from the requirement's
   // interface types into the specialized interface type parameters).
   // RequirementSource source(RequirementSource::Explicit, SourceLoc());
-  auto source = RequirementSource::forAbstract(*SigBuilder);
+  auto source = GenericSignatureBuilder::FloatingRequirementSource::forAbstract();
   SourceLoc sourceLoc;
 
   // Add requirements derived from the caller signature for the
@@ -980,7 +980,8 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
 
   // This is a builder for a new specialized generic signature.
   GenericSignatureBuilder Builder(Ctx, LookUpConformanceInModule(SM));
-  auto *Source = RequirementSource::forAbstract(Builder);
+  auto Source =
+      GenericSignatureBuilder::FloatingRequirementSource::forAbstract();
 
   // Set of newly created generic type parameters.
   SmallVector<GenericTypeParamType*, 4> AllGenericParams;
