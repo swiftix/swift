@@ -343,8 +343,21 @@ ReabstractionInfo::createSubstitutedType(SILFunction *OrigF,
                                          const SubstitutionMap &SubstMap,
                                          bool HasUnboundGenericParams) {
   auto &M = OrigF->getModule();
+  CanGenericSignature CanSpecializedGenericSig;
+  if (SpecializedGenericSig)
+    CanSpecializedGenericSig = SpecializedGenericSig->getCanonicalSignature();
+
   // First substitute concrete types into the existing function type.
   auto FnTy = OrigF->getLoweredFunctionType()->substGenericArgs(M, SubstMap);
+
+#if 0
+  auto FnTy = SILType::getPrimitiveObjectType(OrigF->getLoweredFunctionType())
+                  .subst(M, QuerySubstitutionMap{SubstMap},
+                         LookUpConformanceInSubstitutionMap(SubstMap),
+                         CanSpecializedGenericSig)
+                  .getAs<SILFunctionType>();
+#endif
+  assert(FnTy);
 
   if ((SpecializedGenericSig &&
        SpecializedGenericSig->areAllParamsConcrete()) ||
@@ -352,10 +365,6 @@ ReabstractionInfo::createSubstitutedType(SILFunction *OrigF,
     SpecializedGenericSig = nullptr;
     SpecializedGenericEnv = nullptr;
   }
-
-  CanGenericSignature CanSpecializedGenericSig;
-  if (SpecializedGenericSig)
-    CanSpecializedGenericSig = SpecializedGenericSig->getCanonicalSignature();
 
   // Use the new specialized generic signature.
   auto NewFnTy = SILFunctionType::get(
@@ -587,9 +596,12 @@ void ReabstractionInfo::specializeConcreteSubstitutions(
 #if 1
   // This is a workaround for the rdar://30610428
   if (!EnablePartialSpecialization) {
-    SubstitutedType = SILType::substFuncType(M, InterfaceSubs,
-                                             Callee->getLoweredFunctionType(),
-                                             /*dropGenerics = */ true);
+    //SubstitutedType = SILType::substFuncType(M, InterfaceSubs,
+    //                                         Callee->getLoweredFunctionType(),
+    //                                         /*dropGenerics = */ true);
+    SubstitutedType =
+        Callee->getLoweredFunctionType()->substGenericArgs(M, InterfaceSubs);
+
     createSubstitutedAndSpecializedTypes();
     return;
   }
