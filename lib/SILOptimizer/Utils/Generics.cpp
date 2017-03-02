@@ -182,12 +182,12 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *Callee,
 
 #if 0
   if (SpecializedGenericSig) {
-    llvm::dbgs() << "\n\nPartially specialized types for function: "
-                 << Callee->getName() << "\n\n";
-    llvm::dbgs() << "Original generic function type:\n"
-                 << Callee->getLoweredFunctionType() << "\n"
-                 << "Partially specialized generic function type:\n"
-                 << SpecializedType << "\n\n";
+    DEBUG(llvm::dbgs() << "\n\nPartially specialized types for function: "
+                       << Callee->getName() << "\n\n";
+          llvm::dbgs() << "Original generic function type:\n"
+                       << Callee->getLoweredFunctionType() << "\n"
+                       << "Partially specialized generic function type:\n"
+                       << SpecializedType << "\n\n");
   }
 
   // Some sanity checks.
@@ -244,9 +244,10 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *Callee,
   // If the new type is the same, there is nothing to do and 
   // no specialization should be performed.
   if (getSubstitutedType() == Callee->getLoweredFunctionType()) {
-    llvm::dbgs() << "The new specialized type is the same as the original "
-                    "type. Don't specialize!\n";
-    llvm::dbgs() << "The type is: " << getSubstitutedType() << "\n";
+    DEBUG(llvm::dbgs() << "The new specialized type is the same as "
+                          "the original "
+                          "type. Don't specialize!\n";
+          llvm::dbgs() << "The type is: " << getSubstitutedType() << "\n");
     SpecializedType = CanSILFunctionType();
     SubstitutedType = CanSILFunctionType();
     SpecializedGenericSig = nullptr;
@@ -255,29 +256,27 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *Callee,
 
   if (SpecializedGenericSig) {
     // It is a partial specializaiton.
-    if (SpecializedGenericSig) {
-      llvm::dbgs() << "Specializing the call:\n";
-      Apply.getInstruction()->dumpInContext();
-      llvm::dbgs() << "\n\nPartially specialized types for function: "
-                   << Callee->getName() << "\n\n";
-      llvm::dbgs() << "Original generic function type:\n"
-                   << Callee->getLoweredFunctionType() << "\n\n";
-      llvm::dbgs() << "\nOriginal call substitution:\n";
-      for (auto Sub : getOriginalParamSubstitutions()) {
-        llvm::dbgs() << "Sub:\n";
-        Sub.dump();
-        llvm::dbgs() << "\n";
-      }
+    DEBUG(llvm::dbgs() << "Specializing the call:\n";
+          Apply.getInstruction()->dumpInContext();
+          llvm::dbgs() << "\n\nPartially specialized types for function: "
+                       << Callee->getName() << "\n\n";
+          llvm::dbgs() << "Original generic function type:\n"
+                       << Callee->getLoweredFunctionType() << "\n\n";
+          llvm::dbgs() << "\nOriginal call substitution:\n";
+          for (auto Sub : getOriginalParamSubstitutions()) {
+            llvm::dbgs() << "Sub:\n";
+            Sub.dump();
+            llvm::dbgs() << "\n";
+          }
 
-      llvm::dbgs() << "Partially specialized generic function type:\n"
-                   << getSpecializedType() << "\n\n";
-      llvm::dbgs() << "\nSpecialization call substitution:\n";
-      for (auto Sub : getCallerParamSubstitutions()) {
-        llvm::dbgs() << "Sub:\n";
-        Sub.dump();
-        llvm::dbgs() << "\n";
-      }
-    }
+          llvm::dbgs() << "Partially specialized generic function type:\n"
+                       << getSpecializedType() << "\n\n";
+          llvm::dbgs() << "\nSpecialization call substitution:\n";
+          for (auto Sub : getCallerParamSubstitutions()) {
+            llvm::dbgs() << "Sub:\n";
+            Sub.dump();
+            llvm::dbgs() << "\n";
+          });
   }
 }
 
@@ -987,6 +986,10 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
   SubstitutionMap EmptyMap;
 
   //llvm::DenseMap<CanType, Type> CalleeInterfaceToSpecializedInterfaceMapping;
+  DEBUG(llvm::dbgs() << "\n\nTrying partial specialization for: "
+                     << Callee->getName() << "\n";
+        llvm::dbgs() << "Callee generic signature is:\n";
+        CalleeGenericSig->dump());
 
   // Maps caller's generic parameters to generic parameters of the specialized
   // function.
@@ -1024,22 +1027,21 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
     auto CanTy = GP->getCanonicalType();
     auto Replacement = CalleeInterfaceToCallerArchetypeMap.lookupSubstitution(
         cast<SubstitutableType>(CanTy));
-    llvm::dbgs() << "Chekcing callee generic parameter:\n";
-    CanTy->dump();
+    DEBUG(llvm::dbgs() << "Checking callee generic parameter:\n";
+          CanTy->dump());
     if (!Replacement) {
-      llvm::dbgs() << "No replacement found. Skipping.\n";
+      DEBUG(llvm::dbgs() << "No replacement found. Skipping.\n");
       continue;
     }
 
-    llvm::dbgs() << "Replacement found:\n";
-    Replacement->dump();
+    DEBUG(llvm::dbgs() << "Replacement found:\n"; Replacement->dump());
 
     if (shouldBePartiallySpecialized(
             Replacement,
             CalleeInterfaceToCallerArchetypeMap.getConformances(CanTy))) {
-      llvm::dbgs() << "Should be partially specialized.\n";
+      DEBUG(llvm::dbgs() << "Should be partially specialized.\n");
       if(Replacement->hasArchetype()) {
-        llvm::dbgs() << "Replacement contains archetype. Skipping.\n";
+        DEBUG(llvm::dbgs() << "Replacement contains archetype. Skipping.\n");
         continue;
       }
     }
@@ -1055,11 +1057,11 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
 
     //CalleeInterfaceToSpecializedInterfaceMapping[CanTy] = SubstGenericParam;
 
-    llvm::dbgs() << "Created a new specialized generic parameter:\n";
-    SubstGenericParam->dump();
+    DEBUG(llvm::dbgs() << "Created a new specialized generic parameter:\n";
+          SubstGenericParam->dump();
 
-    llvm::dbgs() << "Created a mapping: " << CanTy << " -> "
-                 << SubstGenericParamCanTy << "\n";
+          llvm::dbgs() << "Created a mapping: " << CanTy << " -> "
+                       << SubstGenericParamCanTy << "\n");
 
     if (!Replacement->hasArchetype()) {
       // Add a same-concrete type requirement.
@@ -1083,10 +1085,10 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
     assert(CallerGenericParam);
     assert(CallerGenericParam->is<GenericTypeParamType>());
 
-    llvm::dbgs() << "Checking used caller archetype:\n";
-    CallerArchetype->dump();
-    llvm::dbgs() << "It corresponds to the caller generic parameter:\n";
-    CallerGenericParam->dump();
+    DEBUG(llvm::dbgs() << "Checking used caller archetype:\n";
+          CallerArchetype->dump();
+          llvm::dbgs() << "It corresponds to the caller generic parameter:\n";
+          CallerGenericParam->dump());
 
     // Create an equivalent generic parameter.
     auto SubstGenericParam = GenericTypeParamType::get(Depth, Index++, Ctx);
@@ -1101,13 +1103,13 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
     SpecializedInterfaceToCallerArchetypeMapping[SubstGenericParamCanTy] =
         CallerArchetype;
 
-    llvm::dbgs() << "Created a new specialized generic parameter:\n";
-    SubstGenericParam->dump();
+    DEBUG(llvm::dbgs() << "Created a new specialized generic parameter:\n";
+          SubstGenericParam->dump();
 
-    llvm::dbgs() << "Created a mapping: " << CallerGenericParam << " -> "
-                 << SubstGenericParamCanTy << "\n";
-    llvm::dbgs() << "Created a mapping: " << SubstGenericParamCanTy << " -> "
-                 << CallerArchetype << "\n";
+          llvm::dbgs() << "Created a mapping: " << CallerGenericParam << " -> "
+                       << SubstGenericParamCanTy << "\n";
+          llvm::dbgs() << "Created a mapping: " << SubstGenericParamCanTy
+                       << " -> " << CallerArchetype << "\n");
   }
 
 
@@ -1256,8 +1258,8 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
   //if (SpecializedType != Callee->getLoweredFunctionType()) {
   if (getSubstitutedType() != Callee->getLoweredFunctionType()) {
     if (getSubstitutedType()->isPolymorphic())
-      llvm::dbgs() << "Created new specialized type: " << SpecializedType
-                   << "\n";
+      DEBUG(llvm::dbgs() << "Created new specialized type: " << SpecializedType
+                         << "\n");
   }
 }
 
