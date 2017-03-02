@@ -60,17 +60,30 @@ static unsigned getBoundGenericDepth(Type t) {
 // ReabstractionInfo
 // =============================================================================
 
+static bool shouldNotSpecializeCallee(SILFunction *Callee) {
+  if (!Callee->shouldOptimize()) {
+    DEBUG(llvm::dbgs() << "    Cannot specialize function " << Callee->getName()
+          << " marked to be excluded from optimizations.\n");
+    return true;
+  }
+
+  if (Callee->hasSemanticsAttr("optimize.sil.call_specialized.never"))
+    return true;
+
+  if (!Callee->isDefinition())
+    return true;
+
+  return false;
+}
+
 /// Prepares the ReabstractionInfo object for further processing and checks
 /// if the current function can be specialized at all.
 /// Returns false, if the current function cannot be specialized.
 /// Returns true otherwise.
 bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *Callee,
                                         SubstitutionList ParamSubs) {
-  if (!Callee->shouldOptimize()) {
-    DEBUG(llvm::dbgs() << "    Cannot specialize function " << Callee->getName()
-                       << " marked to be excluded from optimizations.\n");
+  if (shouldNotSpecializeCallee(Callee))
     return false;
-  }
 
   SpecializedGenericEnv = nullptr;
   SpecializedGenericSig = nullptr;
@@ -499,11 +512,8 @@ checkSpecializationRequirements(ArrayRef<Requirement> Requirements) {
 
 ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
                                      ArrayRef<Requirement> Requirements) {
-  if (!OrigF->shouldOptimize()) {
-    DEBUG(llvm::dbgs() << "    Cannot specialize function " << OrigF->getName()
-                       << " marked to be excluded from optimizations.\n");
+  if (shouldNotSpecializeCallee(OrigF))
     return;
-  }
 
   // Perform some sanity checks for the requirements
   checkSpecializationRequirements(Requirements);
@@ -1733,7 +1743,7 @@ void swift::trySpecializeApplyOfGeneric(
   if (F->isFragile() && !RefF->hasValidLinkageForFragileInline())
       return;
 
-  if (RefF && RefF->hasSemanticsAttr("optimize.sil.call_specialized.never"))
+  if (shouldNotSpecializeCallee(RefF))
     return;
 
   // If the caller and callee are both fragile, preserve the fragility when
