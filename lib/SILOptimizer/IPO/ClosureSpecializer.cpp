@@ -87,6 +87,10 @@ llvm::cl::opt<bool> EliminateDeadClosures(
     llvm::cl::desc("Do not eliminate dead closures after closure "
                    "specialization. This is meant ot be used when testing."));
 
+llvm::cl::opt<bool> SupportGenericClosureSpecialization(
+    "closure-specialize-generic-closures", llvm::cl::init(false),
+    llvm::cl::desc("Support generic closures during closure "
+                   "specialization. This is meant ot be used when testing."));
 //===----------------------------------------------------------------------===//
 //                                  Utility
 //===----------------------------------------------------------------------===//
@@ -109,16 +113,16 @@ class CallSiteDescriptor;
 /// We also need to replace the closure parameter with the partial apply
 /// on the closure. We need to update the callsite to pass in the correct
 /// arguments.
-class ClosureSpecCloner : public SILClonerWithScopes<ClosureSpecCloner> {
+//#define SuperCloner TypeSubstCloner
+#define SuperCloner SILClonerWithScopes
+class ClosureSpecCloner : public SuperCloner<ClosureSpecCloner> {
 public:
-  using SuperTy = SILClonerWithScopes<ClosureSpecCloner>;
+  using SuperTy = SuperCloner<ClosureSpecCloner>;
   friend class SILVisitor<ClosureSpecCloner>;
   friend class SILCloner<ClosureSpecCloner>;
 
   ClosureSpecCloner(const CallSiteDescriptor &CallSiteDesc,
-                    StringRef ClonedName)
-      : SuperTy(*initCloned(CallSiteDesc, ClonedName)),
-        CallSiteDesc(CallSiteDesc) {}
+                    StringRef ClonedName);
 
   void populateCloned();
 
@@ -130,6 +134,14 @@ public:
     ++NumClosureSpecialized;
     return C.getCloned();
   };
+
+  void postProcess(SILInstruction *Orig, SILInstruction *Cloned) {
+    SILClonerWithScopes<ClosureSpecCloner>::postProcess(Orig, Cloned);
+  }
+
+  const SILDebugScope *remapScope(const SILDebugScope *DS) {
+    return SILClonerWithScopes<ClosureSpecCloner>::remapScope(DS);
+  }
 
 private:
   static SILFunction *initCloned(const CallSiteDescriptor &CallSiteDesc,
@@ -189,11 +201,18 @@ public:
 
   SILInstruction *
   createNewClosure(SILBuilder &B, SILValue V,
-                   llvm::SmallVectorImpl<SILValue> &Args) const {
-    if (isa<PartialApplyInst>(getClosure()))
-      return B.createPartialApply(getClosure()->getLoc(), V, V->getType(), {},
-                                  Args, getClosure()->getType());
-
+                   ArrayRef<SILValue> Args) const {
+    if (isa<PartialApplyInst>(getClosure())) {
+      auto PAI = cast<PartialApplyInst>(getClosure());
+      auto FnTy = dyn_cast<SILFunctionType>(V->getType().getSwiftRValueType());
+      assert(!FnTy->getGenericSignature() ||
+             !FnTy->getGenericSignature()->getSubstitutableParams().size() ||
+             PAI->getSubstitutions().size() ==
+                 FnTy->getGenericSignature()->getSubstitutableParams().size());
+      return B.createPartialApply(getClosure()->getLoc(), V, V->getType(),
+                                  PAI->getSubstitutions(), Args,
+                                  getClosure()->getType());
+    }
     assert(isa<ThinToThickFunctionInst>(getClosure()) &&
            "We only support partial_apply and thin_to_thick_function");
     return B.createThinToThickFunction(getClosure()->getLoc(), V,
@@ -240,6 +259,8 @@ public:
 
   SILModule &getModule() const { return AI.getModule(); }
 
+  SubstitutionList getSubstitutions() const { return AI.getSubstitutions(); }
+
   ArrayRef<SILBasicBlock *> getNonFailureExitBBs() const {
     return NonFailureExitBBs;
   }
@@ -265,6 +286,21 @@ struct ClosureInfo {
 SILInstruction *CallSiteDescriptor::getClosure() const {
   return CInfo->Closure;
 }
+
+#if 0
+ClosureSpecCloner::ClosureSpecCloner(const CallSiteDescriptor &CallSiteDesc,
+                                     StringRef ClonedName)
+    : SuperTy(
+          *initCloned(CallSiteDesc, ClonedName),
+          //*CallSiteDesc.getApplyCallee(), CallSiteDesc.getSubstitutions()),
+          *CallSiteDesc.getApplyCallee(), SubstitutionList()),
+      CallSiteDesc(CallSiteDesc) {}
+#endif
+
+ClosureSpecCloner::ClosureSpecCloner(const CallSiteDescriptor &CallSiteDesc,
+                                     StringRef ClonedName)
+    : SuperTy(*initCloned(CallSiteDesc, ClonedName)),
+      CallSiteDesc(CallSiteDesc) {}
 
 /// Update the callsite to pass in the correct arguments.
 static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
@@ -354,9 +390,10 @@ static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
   SILType ResultType = loweredConv.getSILResultType();
   Builder.setInsertionPoint(AI.getInstruction());
   FullApplySite NewAI;
+  auto Subs = CSDesc.getSubstitutions();
   if (auto *TAI = dyn_cast<TryApplyInst>(AI)) {
     NewAI = Builder.createTryApply(AI.getLoc(), FRI, LoweredType,
-                                   SubstitutionList(),
+                                   Subs,
                                    NewArgs,
                                    TAI->getNormalBB(), TAI->getErrorBB());
     // If we passed in the original closure as @owned, then insert a release
@@ -371,7 +408,7 @@ static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
     }
   } else {
     NewAI = Builder.createApply(AI.getLoc(), FRI, LoweredType,
-                                ResultType, SubstitutionList(),
+                                ResultType, Subs,
                                 NewArgs, cast<ApplyInst>(AI)->isNonThrowing());
     // If we passed in the original closure as @owned, then insert a release
     // right after NewAI. This is to balance the +1 from being an @owned
@@ -444,7 +481,7 @@ static bool isSupportedClosure(const SILInstruction *Closure) {
   // If Closure is a partial apply...
   if (auto *PAI = dyn_cast<PartialApplyInst>(Closure)) {
     // And it has substitutions, return false.
-    if (PAI->hasSubstitutions())
+    if (!SupportGenericClosureSpecialization && PAI->hasSubstitutions())
       return false;
 
     // If any arguments are not objects, return false. This is a temporary
@@ -723,17 +760,19 @@ void ClosureSpecializer::gatherCallSites(
 
       // Go through all uses of our closure.
       for (auto *Use : II.getUses()) {
-        // If this use is not an apply inst or an apply inst with
-        // substitutions, there is nothing interesting for us to do, so
-        // continue...
+        // If this use is not an apply, there is nothing interesting for us to do,
+        // so continue...
         auto AI = FullApplySite::isa(Use->getUser());
-        if (!AI || AI.hasSubstitutions())
+        if (!AI)
           continue;
-
+        bool GenericClosure = AI.hasSubstitutions();
+        if (!SupportGenericClosureSpecialization && AI.hasSubstitutions()) {
+          //continue;
+        }
         // Check if we have already associated this apply inst with a closure to
         // be specialized. We do not handle applies that take in multiple
         // closures at this time.
-        if (!VisitedAI.insert(AI).second) {
+        if (!GenericClosure && !VisitedAI.insert(AI).second) {
           MultipleClosureAI.insert(AI);
           continue;
         }
@@ -802,6 +841,23 @@ void ClosureSpecializer::gatherCallSites(
             !findAllNonFailureExitBBs(ApplyCallee, NonFailureExitBBs)) {
           continue;
         }
+
+        if (!GenericClosure) {
+          llvm::dbgs() << "ClosureSpecializer: found a non-generic closure\n";
+          AI.getInstruction()->dumpInContext();
+        }
+
+        if (GenericClosure) {
+          llvm::dbgs() << "ClosureSpecializer: found a generic closure\n";
+          if (hasArchetypes(AI.getSubstitutions()))
+            llvm::dbgs() << "Partial specialization is required\n";
+          else
+            llvm::dbgs() << "Full specialization is required\n";
+          AI.getInstruction()->dumpInContext();
+        }
+
+        if (GenericClosure && !SupportGenericClosureSpecialization)
+          continue;
 
         // Compute the final release points of the closure. We will insert
         // release of the captured arguments here.
