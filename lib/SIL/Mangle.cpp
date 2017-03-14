@@ -236,7 +236,11 @@ mangleClosureProp(PartialApplyInst *PAI) {
   // specializing.
   for (auto &Op : PAI->getArgumentOperands()) {
     SILType Ty = Op.get()->getType();
-    M.mangleType(Ty.getSwiftRValueType(), 0);
+    // Use interface types for mangling.
+    Type InterfaceTy = Ty.getSwiftRValueType();
+    InterfaceTy =
+        FRI->getReferencedFunction()->mapTypeOutOfContext(InterfaceTy);
+    M.mangleType(InterfaceTy, 0);
   }
 }
 

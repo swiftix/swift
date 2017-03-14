@@ -230,7 +230,11 @@ FunctionSignatureSpecializationMangler::mangleClosureProp(SILInstruction *Inst) 
   // specializing.
   for (auto &Op : PAI->getArgumentOperands()) {
     SILType Ty = Op.get()->getType();
-    appendType(Ty.getSwiftRValueType());
+    // Use interface types for mangling.
+    Type InterfaceTy = Ty.getSwiftRValueType();
+    InterfaceTy =
+      FRI->getReferencedFunction()->mapTypeOutOfContext(InterfaceTy);
+    appendType(InterfaceTy);
   }
 }
 

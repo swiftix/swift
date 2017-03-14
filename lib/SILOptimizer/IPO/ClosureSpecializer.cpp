@@ -55,6 +55,7 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "closure-specialization"
+#include "swift/AST/GenericSignatureBuilder.h"
 #include "swift/SILOptimizer/PassManager/Passes.h"
 #include "swift/SILOptimizer/Utils/SpecializationMangler.h"
 #include "swift/SIL/Mangle.h"
@@ -113,27 +114,22 @@ class CallSiteDescriptor;
 /// We also need to replace the closure parameter with the partial apply
 /// on the closure. We need to update the callsite to pass in the correct
 /// arguments.
-//#define SuperCloner TypeSubstCloner
-#define SuperCloner SILClonerWithScopes
-class ClosureSpecCloner : public SuperCloner<ClosureSpecCloner> {
+class ClosureSpecCloner : public SILClonerWithScopes<ClosureSpecCloner> {
 public:
-  using SuperTy = SuperCloner<ClosureSpecCloner>;
+  using SuperTy = SILClonerWithScopes<ClosureSpecCloner>;
   friend class SILVisitor<ClosureSpecCloner>;
   friend class SILCloner<ClosureSpecCloner>;
 
   ClosureSpecCloner(const CallSiteDescriptor &CallSiteDesc,
-                    StringRef ClonedName);
+                    StringRef ClonedName,
+                    SubstitutionMap &CallerToClosureUserSubsMap,
+                    SubstitutionMap &OldToNewCalleeSubsMap);
 
   void populateCloned();
 
   SILFunction *getCloned() { return &getBuilder().getFunction(); }
   static SILFunction *cloneFunction(const CallSiteDescriptor &CallSiteDesc,
-                                    StringRef NewName) {
-    ClosureSpecCloner C(CallSiteDesc, NewName);
-    C.populateCloned();
-    ++NumClosureSpecialized;
-    return C.getCloned();
-  };
+                                    StringRef NewName);
 
   void postProcess(SILInstruction *Orig, SILInstruction *Cloned) {
     SILClonerWithScopes<ClosureSpecCloner>::postProcess(Orig, Cloned);
@@ -143,10 +139,37 @@ public:
     return SILClonerWithScopes<ClosureSpecCloner>::remapScope(DS);
   }
 
+  SILType remapType(SILType Ty);
+
+  CanType remapASTType(CanType ty) {
+    return ty.subst(CallerToClosureUserSubsMap)
+        .subst(OldToNewCalleeSubsMap)
+        ->getCanonicalType();
+  }
+
+  SubstitutionMap &getCallerToClosureUserSubsMap() {
+    return CallerToClosureUserSubsMap;
+  }
+
 private:
   static SILFunction *initCloned(const CallSiteDescriptor &CallSiteDesc,
-                                 StringRef ClonedName);
+                                 StringRef ClonedName,
+                                 SubstitutionMap &CallerToClosureUserSubsMap,
+                                 SubstitutionMap &OldToNewCalleeSubsMap);
+  static SubstitutionMap
+  computeCallerToClosureUserSubsMap(SILFunction *Caller, SILFunction *Callee,
+                                    SubstitutionList Subs,
+                                    SILFunction *NewCallee = nullptr);
+  static void
+  computeOldToNewCalleeSubsMap(SILFunction *Old, SILFunction *New,
+                               SubstitutionMap &OldToNewCalleeSubsMap);
   const CallSiteDescriptor &CallSiteDesc;
+  // Map archetypes of the function containg the apply instruction to the
+  // archetypes of the closure user.
+  SubstitutionMap &CallerToClosureUserSubsMap;
+  // Map archetypes of the original ClosureUser to the archetypes of the cloned
+  // ClosureUser.
+  SubstitutionMap &OldToNewCalleeSubsMap;
 };
 
 } // end anonymous namespace
@@ -201,17 +224,48 @@ public:
 
   SILInstruction *
   createNewClosure(SILBuilder &B, SILValue V,
-                   ArrayRef<SILValue> Args) const {
+                   ArrayRef<SILValue> Args, ClosureSpecCloner &C) const {
     if (isa<PartialApplyInst>(getClosure())) {
+      auto ClosedOverFun = getClosureCallee();
       auto PAI = cast<PartialApplyInst>(getClosure());
       auto FnTy = dyn_cast<SILFunctionType>(V->getType().getSwiftRValueType());
       assert(!FnTy->getGenericSignature() ||
              !FnTy->getGenericSignature()->getSubstitutableParams().size() ||
              PAI->getSubstitutions().size() ==
                  FnTy->getGenericSignature()->getSubstitutableParams().size());
-      return B.createPartialApply(getClosure()->getLoc(), V, V->getType(),
-                                  PAI->getSubstitutions(), Args,
-                                  getClosure()->getType());
+
+      SmallVector<Substitution, 2> NewSubs;
+      auto NewClosureType = getClosure()->getType();
+      auto SubstCanFnTy = V->getType().castTo<SILFunctionType>();
+
+      // Handle invocations of generic closures.
+      if (PAI->hasSubstitutions()) {
+        auto ClosedOverFunSig =
+          ClosedOverFun->getLoweredFunctionType()->getGenericSignature();
+
+        auto PAISubs = PAI->getSubstitutions();
+        auto PAISubsMap = ClosedOverFunSig->getSubstitutionMap(PAISubs);
+
+        // Replace all archetypes from the apply's function by archetypes
+        // of the apply's callee.
+        auto NewPAISubsMap = PAISubsMap.subst(
+            QuerySubstitutionMap{C.getCallerToClosureUserSubsMap()},
+            [&](CanType dependentType, Type conformingReplacementType,
+                ProtocolType *conformedProtocol)
+                -> Optional<ProtocolConformanceRef> {
+              assert(conformingReplacementType->is<ArchetypeType>());
+              return ProtocolConformanceRef(conformedProtocol->getDecl());
+            });
+        ClosedOverFunSig->getSubstitutions(NewPAISubsMap, NewSubs);
+        // Remap the type of the closure.
+        NewClosureType = C.remapType(getClosure()->getType());
+        auto &M = getApplyInst().getModule();
+        SubstCanFnTy = SubstCanFnTy->substGenericArgs(M, NewPAISubsMap);
+      }
+      auto SILSubstFnTy = SILType::getPrimitiveObjectType(SubstCanFnTy);
+
+      return B.createPartialApply(getClosure()->getLoc(), V, SILSubstFnTy,
+                                  NewSubs, Args, NewClosureType);
     }
     assert(isa<ThinToThickFunctionInst>(getClosure()) &&
            "We only support partial_apply and thin_to_thick_function");
@@ -287,20 +341,129 @@ SILInstruction *CallSiteDescriptor::getClosure() const {
   return CInfo->Closure;
 }
 
-#if 0
-ClosureSpecCloner::ClosureSpecCloner(const CallSiteDescriptor &CallSiteDesc,
-                                     StringRef ClonedName)
-    : SuperTy(
-          *initCloned(CallSiteDesc, ClonedName),
-          //*CallSiteDesc.getApplyCallee(), CallSiteDesc.getSubstitutions()),
-          *CallSiteDesc.getApplyCallee(), SubstitutionList()),
-      CallSiteDesc(CallSiteDesc) {}
-#endif
+SILFunction *
+ClosureSpecCloner::cloneFunction(const CallSiteDescriptor &CallSiteDesc,
+                                 StringRef NewName) {
+  SubstitutionMap CallerToClosureUserSubsMap(computeCallerToClosureUserSubsMap(
+      CallSiteDesc.getApplyInst().getFunction(), CallSiteDesc.getApplyCallee(),
+      CallSiteDesc.getSubstitutions()));
+  SubstitutionMap OldToNewCalleeSubsMap;
+  ClosureSpecCloner C(CallSiteDesc, NewName, CallerToClosureUserSubsMap, OldToNewCalleeSubsMap);
+  C.populateCloned();
+  ++NumClosureSpecialized;
+  return C.getCloned();
+};
 
-ClosureSpecCloner::ClosureSpecCloner(const CallSiteDescriptor &CallSiteDesc,
-                                     StringRef ClonedName)
-    : SuperTy(*initCloned(CallSiteDesc, ClonedName)),
-      CallSiteDesc(CallSiteDesc) {}
+SubstitutionMap ClosureSpecCloner::computeCallerToClosureUserSubsMap(
+    SILFunction *Caller, SILFunction *Callee, SubstitutionList CalleeSubs,
+    SILFunction *NewCallee) {
+  SubstitutionMap SubsMap;
+  if (CalleeSubs.empty())
+    return SubsMap;
+
+  if (!NewCallee)
+    NewCallee = Callee;
+
+  // Generic signatures of Callee and NewCallee are supposed to have the
+  // same number of generic parameters. Only the set of requirements on
+  // their generic parameters is different.
+  assert(NewCallee->getLoweredFunctionType()
+             ->getGenericSignature()
+             ->getGenericParams()
+             .size() ==
+         Callee->getLoweredFunctionType()
+             ->getGenericSignature()
+             ->getGenericParams()
+             .size());
+
+  auto GenericEnv = Caller->getGenericEnvironment();
+  auto GenericSig = Caller->getLoweredFunctionType()->getGenericSignature();
+
+  auto CalleeGenericSig =
+      Callee->getLoweredFunctionType()->getGenericSignature();
+
+  SubstitutionMap CalleeSubsMap;
+  ArrayRef<GenericTypeParamType *> CalleeGenericParams;
+  if (CalleeGenericSig) {
+    CalleeSubsMap = CalleeGenericSig->getSubstitutionMap(CalleeSubs);
+    CalleeGenericParams = CalleeGenericSig->getSubstitutableParams();
+  }
+
+  if (GenericEnv) {
+    // Map archetypes of the caller containing the apply instruction to the
+    // archetypes of the apply's callee.
+    // TODO: We also need to form proper conformances, as required by the
+    // closure.
+    SubsMap = GenericEnv->getSubstitutionMap(
+        [&](Type ty) -> Type {
+          assert(ty->is<ArchetypeType>());
+          for (auto GP : CalleeGenericParams) {
+            auto GPArchetype =
+                NewCallee->mapTypeIntoContext(GP->getCanonicalType());
+            auto GPSubstTy = GP->getCanonicalType().subst(CalleeSubsMap);
+            // Return the callee's archetype if its interface type is mapped
+            // to the current archetype from the GenericEnv.
+            if (GPSubstTy->getCanonicalType() == ty->getCanonicalType()) {
+              return GPArchetype;
+            }
+          }
+          return ty;
+        },
+        LookUpConformanceInSignature(*GenericSig));
+  }
+
+  return SubsMap;
+}
+
+/// Build a SubsitutionMap that substitutes archetypes of the
+/// original function Old by archetypes of the cloned function New.
+void ClosureSpecCloner::computeOldToNewCalleeSubsMap(
+    SILFunction *Old, SILFunction *New,
+    SubstitutionMap &OldToNewCalleeSubsMap) {
+  // Generic signatures of Callee and NewCallee are supposed to have the
+  // same number of generic parameters. Only the set of requirements on
+  // their generic parameters is different.
+  assert(New->getLoweredFunctionType()
+             ->getGenericSignature()
+             ->getGenericParams()
+             .size() ==
+         Old->getLoweredFunctionType()
+             ->getGenericSignature()
+             ->getGenericParams()
+             .size());
+
+  auto OldGenericEnv = Old->getGenericEnvironment();
+  auto OldGenericSig = Old->getLoweredFunctionType()->getGenericSignature();
+  auto NewGenericEnv = New->getGenericEnvironment();
+
+  // TODO: We also need to form proper conformances, as required by the
+  // closure.
+  OldToNewCalleeSubsMap = OldGenericEnv->getSubstitutionMap(
+      [&](Type ty) -> Type {
+        assert(ty->is<ArchetypeType>());
+        return NewGenericEnv->mapTypeIntoContext(
+            OldGenericEnv->mapTypeOutOfContext(ty));
+      },
+      LookUpConformanceInSignature(*OldGenericSig));
+}
+
+ClosureSpecCloner::ClosureSpecCloner(
+    const CallSiteDescriptor &CallSiteDesc, StringRef ClonedName,
+    SubstitutionMap &CallerToClosureUserSubsMap,
+    SubstitutionMap &OldToNewCalleeSubsMap)
+    : SuperTy(*initCloned(CallSiteDesc, ClonedName, CallerToClosureUserSubsMap,
+                          OldToNewCalleeSubsMap)),
+      CallSiteDesc(CallSiteDesc),
+      CallerToClosureUserSubsMap(CallerToClosureUserSubsMap),
+      OldToNewCalleeSubsMap(OldToNewCalleeSubsMap) {}
+
+SILType ClosureSpecCloner::remapType(SILType Ty) {
+  return Ty
+      .subst(CallSiteDesc.getApplyInst().getModule(),
+             CallerToClosureUserSubsMap)
+      .subst(CallSiteDesc.getApplyInst().getModule(),
+             OldToNewCalleeSubsMap);
+}
 
 /// Update the callsite to pass in the correct arguments.
 static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
@@ -390,9 +553,38 @@ static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
   SILType ResultType = loweredConv.getSILResultType();
   Builder.setInsertionPoint(AI.getInstruction());
   FullApplySite NewAI;
+  // The generic signature of the ClosureUser may have changed,
+  // because it may have more requirements now. Therefore,
+  // the list of substitutions may need to be updated to contain
+  // more conformances.
   auto Subs = CSDesc.getSubstitutions();
+  auto NewSubstFnTy = LoweredType;
+  SmallVector<Substitution, 4> NewSubs;
+  if (!Subs.empty()) {
+    auto SubsMap = CSDesc.getApplyCallee()
+                       ->getLoweredFunctionType()
+                       ->getGenericSignature()
+                       ->getSubstitutionMap(Subs);
+
+    NewSubstFnTy = SILType::getPrimitiveObjectType(
+        LoweredType.castTo<SILFunctionType>()->substGenericArgs(
+            M, QuerySubstitutionMap{SubsMap},
+            // Add any required abstract conformances.
+            [&](CanType dependentType, Type conformingReplacementType,
+                ProtocolType *conformedProtocol)
+                -> Optional<ProtocolConformanceRef> {
+              assert(conformingReplacementType->is<ArchetypeType>());
+              return ProtocolConformanceRef(conformedProtocol->getDecl());
+            }));
+
+    auto NewGenericSig = NewF->getLoweredFunctionType()->getGenericSignature();
+    NewGenericSig->getSubstitutions(
+        QuerySubstitutionMap{SubsMap},
+        LookUpConformanceInSignature(*NewGenericSig), NewSubs);
+    Subs = NewSubs;
+  }
   if (auto *TAI = dyn_cast<TryApplyInst>(AI)) {
-    NewAI = Builder.createTryApply(AI.getLoc(), FRI, LoweredType,
+    NewAI = Builder.createTryApply(AI.getLoc(), FRI, NewSubstFnTy,
                                    Subs,
                                    NewArgs,
                                    TAI->getNormalBB(), TAI->getErrorBB());
@@ -407,7 +599,7 @@ static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
       Builder.setInsertionPoint(AI.getInstruction());
     }
   } else {
-    NewAI = Builder.createApply(AI.getLoc(), FRI, LoweredType,
+    NewAI = Builder.createApply(AI.getLoc(), FRI, NewSubstFnTy,
                                 ResultType, Subs,
                                 NewArgs, cast<ApplyInst>(AI)->isNonThrowing());
     // If we passed in the original closure as @owned, then insert a release
@@ -514,18 +706,98 @@ static bool isSupportedClosure(const SILInstruction *Closure) {
 //                     Closure Spec Cloner Implementation
 //===----------------------------------------------------------------------===//
 
+/// Create a new generic signature, because it may need
+/// some additional requirements, e.g. if they are present in the
+/// ClosedOverFun's generic signature, but are not present in the ClosureUser's
+/// generic signature.
+/// The new signature has the same generic parameters as the old signature of
+/// the ClosureUser, but eventually it has more requirements.
+static std::pair<GenericEnvironment *, CanGenericSignature>
+createNewGenericEnvironementAndSignature(
+    const CallSiteDescriptor &CallSiteDesc,
+    const SubstitutionMap &CallerToClosureUserSubsMap) {
+  SILFunction *ClosedOverFun = CallSiteDesc.getClosureCallee();
+  auto ClosedOverFunTy = ClosedOverFun->getLoweredFunctionType();
+  SILFunction *ClosureUser = CallSiteDesc.getApplyCallee();
+  auto ClosureUserFunTy = ClosureUser->getLoweredFunctionType();
+  auto ClosureUserGenericSig = ClosureUserFunTy->getGenericSignature();
+  auto ClosedOverFunGenericSig = ClosedOverFunTy->getGenericSignature();
+  auto &M = ClosureUser->getModule();
+
+  GenericSignatureBuilder GSB(M.getASTContext(),
+                              LookUpConformanceInModule(M.getSwiftModule()));
+
+  // First, add the generics signature of the ClosureUser.
+  GSB.addGenericSignature(ClosureUserGenericSig);
+
+  // Then add any additional requirements from the ClosedOverFun.
+  auto Closure = CallSiteDesc.getClosure();
+  auto PAI = dyn_cast<PartialApplyInst>(Closure);
+  assert(PAI);
+  auto PAISubs = PAI->getSubstitutions();
+  auto PAISubsMap = ClosedOverFunGenericSig->getSubstitutionMap(PAISubs);
+  auto Source =
+      GenericSignatureBuilder::FloatingRequirementSource::forAbstract();
+
+  // Express the requirements of the Closure in terms of the ClosureUser's
+  // interface types and add these requirements.
+  // Re-mapping of the types is done in two steps:
+  // - First map types to the ClosureUser's archetypes
+  // - Then map them to the ClosureUser's interface
+  for (auto Req : ClosedOverFunGenericSig->getRequirements()) {
+    switch (Req.getKind()) {
+    case swift::RequirementKind::SameType:
+    case swift::RequirementKind::Conformance:
+    case swift::RequirementKind::Superclass: {
+      auto First = Req.getFirstType()
+                       .subst(PAISubsMap)
+                       .subst(CallerToClosureUserSubsMap);
+      auto Second = Req.getSecondType()
+                        .subst(PAISubsMap)
+                        .subst(CallerToClosureUserSubsMap);
+      // If everything is concrete, the requirement can be ommitted.
+      if (!First->hasArchetype() && !Second->hasArchetype())
+        continue;
+      Requirement NewReq(Req.getKind(),
+                         ClosureUser->mapTypeOutOfContext(First),
+                         ClosureUser->mapTypeOutOfContext(Second));
+      GSB.addRequirement(NewReq, Source);
+      break;
+    }
+    case swift::RequirementKind::Layout: {
+      auto First = Req.getFirstType()
+                       .subst(PAISubsMap)
+                       .subst(CallerToClosureUserSubsMap);
+      // If everything is concrete, the requirement can be ommitted.
+      if (!First->hasArchetype())
+        continue;
+      Requirement NewReq(Req.getKind(),
+                         ClosureUser->mapTypeOutOfContext(First),
+                         Req.getLayoutConstraint());
+      GSB.addRequirement(NewReq, Source);
+      break;
+    }
+    }
+  }
+
+  GSB.finalize(SourceLoc(), ClosureUserGenericSig->getGenericParams(),
+               /* allowConcreteGenericParams */ true);
+  auto ClonedGenericSig = GSB.getGenericSignature()->getCanonicalSignature();
+  auto *ClonedGenericEnv =
+      ClonedGenericSig->createGenericEnvironment(*M.getSwiftModule());
+  return std::make_pair(ClonedGenericEnv, ClonedGenericSig);
+}
+
 /// In this function we create the actual cloned function and its proper cloned
 /// type. But we do not create any body. This implies that the creation of the
 /// actual arguments in the function is in populateCloned.
 ///
-/// \arg PAUser The function that is being passed the partial apply.
-/// \arg PAI The partial apply that is being passed to PAUser.
-/// \arg ClosureIndex The index of the partial apply in PAUser's function
-///                   signature.
 /// \arg ClonedName The name of the cloned function that we will create.
 SILFunction *
 ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
-                              StringRef ClonedName) {
+                              StringRef ClonedName,
+                              SubstitutionMap &CallerToClosureUserSubsMap,
+                              SubstitutionMap &OldToNewCalleeSubsMap) {
   SILFunction *ClosureUser = CallSiteDesc.getApplyCallee();
 
   // This is the list of new interface parameters of the cloned function.
@@ -545,29 +817,45 @@ ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
   // Then add any arguments that are captured in the closure to the function's
   // argument type. Since they are captured, we need to pass them directly into
   // the new specialized function.
-  SILFunction *ClosedOverFun = CallSiteDesc.getClosureCallee();
-  auto ClosedOverFunConv = ClosedOverFun->getConventions();
+
   SILModule &M = ClosureUser->getModule();
+  SILFunction *ClosedOverFun = CallSiteDesc.getClosureCallee();
+  auto ClosedOverFunTy = ClosedOverFun->getLoweredFunctionType();
 
-  // Captured parameters are always appended to the function signature. If the
-  // type of the captured argument is trivial, pass the argument as
-  // Direct_Unowned. Otherwise pass it as Direct_Owned.
-  //
-  // We use the type of the closure here since we allow for the closure to be an
-  // external declaration.
-  unsigned NumTotalParams = ClosedOverFunConv.getNumParameters();
-  unsigned NumNotCaptured = NumTotalParams - CallSiteDesc.getNumArguments();
-  for (auto &PInfo : ClosedOverFunConv.getParameters().slice(NumNotCaptured)) {
-    if (ClosedOverFunConv.getSILType(PInfo).isTrivial(M)) {
+  // An artificial scope just for the sake of GenericContextScope.
+  {
+    CanGenericSignature CanSig;
+    if (ClosedOverFunTy->getGenericSignature())
+      CanSig = ClosedOverFunTy->getGenericSignature()->getCanonicalSignature();
+
+    // Set a proper generic context, because it is needed by the
+    // type lowering, e.g. when it evaluates isTrivial, etc.
+    Lowering::GenericContextScope GenericScope(M.Types, CanSig);
+
+    auto ClosedOverFunConv = ClosedOverFun->getConventions();
+
+    // Captured parameters are always appended to the function signature. If the
+    // type of the captured argument is trivial, pass the argument as
+    // Direct_Unowned. Otherwise pass it as Direct_Owned.
+    //
+    // We use the type of the closure here since we allow for the closure to be
+    // an
+    // external declaration.
+    unsigned NumTotalParams = ClosedOverFunConv.getNumParameters();
+    unsigned NumNotCaptured = NumTotalParams - CallSiteDesc.getNumArguments();
+    for (auto &PInfo :
+         ClosedOverFunConv.getParameters().slice(NumNotCaptured)) {
+      if (ClosedOverFunConv.getSILType(PInfo).isTrivial(M)) {
+        SILParameterInfo NewPInfo(PInfo.getType(),
+                                  ParameterConvention::Direct_Unowned);
+        NewParameterInfoList.push_back(NewPInfo);
+        continue;
+      }
+
       SILParameterInfo NewPInfo(PInfo.getType(),
-                                ParameterConvention::Direct_Unowned);
+                                ParameterConvention::Direct_Owned);
       NewParameterInfoList.push_back(NewPInfo);
-      continue;
     }
-
-    SILParameterInfo NewPInfo(PInfo.getType(),
-                              ParameterConvention::Direct_Owned);
-    NewParameterInfoList.push_back(NewPInfo);
   }
 
   // The specialized function is always a thin function. This is important
@@ -576,8 +864,24 @@ ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
   auto ExtInfo = ClosureUserFunTy->getExtInfo();
   ExtInfo = ExtInfo.withRepresentation(SILFunctionTypeRepresentation::Thin);
 
+  auto ClosureUserGenericSig = ClosureUserFunTy->getGenericSignature();
+  auto ClosedOverFunGenericSig = ClosedOverFunTy->getGenericSignature();
+  auto ClonedGenericSig = ClosureUserGenericSig;
+  auto ClonedGenericEnv = ClosureUser->getGenericEnvironment();
+  bool CreatedNewGenericEnv = false;
+
+  // A new generic signature should be created, because it may need
+  // some additional requirements.
+  if (ClosedOverFunGenericSig &&
+      !ClosedOverFunGenericSig->getRequirements().empty()) {
+    std::tie(ClonedGenericEnv, ClonedGenericSig) =
+        createNewGenericEnvironementAndSignature(CallSiteDesc,
+                                                 CallerToClosureUserSubsMap);
+    CreatedNewGenericEnv = true;
+  }
+
   auto ClonedTy = SILFunctionType::get(
-      ClosureUserFunTy->getGenericSignature(), ExtInfo,
+      ClonedGenericSig, ExtInfo,
       ClosureUserFunTy->getCalleeConvention(), NewParameterInfoList,
       ClosureUserFunTy->getResults(),
       ClosureUserFunTy->getOptionalErrorResult(), M.getASTContext());
@@ -589,10 +893,9 @@ ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
       // and not the original linkage.
       // Otherwise the new function could have an external linkage (in case the
       // original function was de-serialized) and would not be code-gen'd.
-      getSpecializedLinkage(ClosureUser, ClosureUser->getLinkage()),
-      ClonedName, ClonedTy,
-      ClosureUser->getGenericEnvironment(), ClosureUser->getLocation(),
-      IsBare, ClosureUser->isTransparent(), CallSiteDesc.isFragile(),
+      getSpecializedLinkage(ClosureUser, ClosureUser->getLinkage()), ClonedName,
+      ClonedTy, ClonedGenericEnv, ClosureUser->getLocation(), IsBare,
+      ClosureUser->isTransparent(), CallSiteDesc.isFragile(),
       ClosureUser->isThunk(), ClosureUser->getClassVisibility(),
       ClosureUser->getInlineStrategy(), ClosureUser->getEffectsKind(),
       ClosureUser, ClosureUser->getDebugScope());
@@ -601,6 +904,18 @@ ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
   }
   for (auto &Attr : ClosureUser->getSemanticsAttrs())
     Fn->addSemanticsAttr(Attr);
+
+  // SubstitutionMaps need to be recomputed if a new generic environment was
+  // created.
+  if (CreatedNewGenericEnv) {
+    auto TmpSubsMap = computeCallerToClosureUserSubsMap(
+        CallSiteDesc.getApplyInst().getFunction(), ClosureUser,
+        CallSiteDesc.getSubstitutions(), Fn);
+    CallerToClosureUserSubsMap = TmpSubsMap;
+    // Now update the old to new callee SubMap.
+    computeOldToNewCalleeSubsMap(ClosureUser, Fn, OldToNewCalleeSubsMap);
+  }
+
   return Fn;
 }
 
@@ -623,9 +938,17 @@ void ClosureSpecCloner::populateCloned() {
       continue;
     }
 
-    // Otherwise, create a new argument which copies the original argument
+    // Otherwise, create a new argument which copies the original argument.
+    auto ArgSILType = Arg->getType();
+    auto ArgCanType = Cloned
+                          ->mapTypeIntoContext(ClosureUser->mapTypeOutOfContext(
+                              ArgSILType.getSwiftRValueType()))
+                          ->getCanonicalType();
+    ArgSILType = SILType::getPrimitiveType(ArgCanType,
+                                           ArgSILType.getCategory());
+    assert(!ArgSILType.getSwiftRValueType()->hasTypeParameter());
     SILValue MappedValue =
-        ClonedEntryBB->createFunctionArgument(Arg->getType(), Arg->getDecl());
+        ClonedEntryBB->createFunctionArgument(ArgSILType, Arg->getDecl());
     ValueMap.insert(std::make_pair(Arg, MappedValue));
   }
 
@@ -643,6 +966,12 @@ void ClosureSpecCloner::populateCloned() {
   llvm::SmallVector<SILValue, 4> NewPAIArgs;
   for (auto &PInfo : ClosedOverFunConv.getParameters().slice(NumNotCaptured)) {
     auto paramTy = ClosedOverFunConv.getSILType(PInfo);
+    // Map to a contextual type.
+    paramTy = SILType::getPrimitiveType(
+        Cloned->mapTypeIntoContext(paramTy.getSwiftRValueType())
+            ->getCanonicalType(),
+        paramTy.getCategory());
+    assert(!paramTy.getSwiftRValueType()->hasTypeParameter());
     SILValue MappedValue = ClonedEntryBB->createFunctionArgument(paramTy);
     NewPAIArgs.push_back(MappedValue);
   }
@@ -654,7 +983,8 @@ void ClosureSpecCloner::populateCloned() {
   // with result of cloned PAI.
   SILValue FnVal =
       Builder.createFunctionRef(CallSiteDesc.getLoc(), ClosedOverFun);
-  auto *NewClosure = CallSiteDesc.createNewClosure(Builder, FnVal, NewPAIArgs);
+  auto *NewClosure =
+      CallSiteDesc.createNewClosure(Builder, FnVal, NewPAIArgs, *this);
   ValueMap.insert(std::make_pair(ClosureArg, SILValue(NewClosure)));
 
   BBMap.insert(std::make_pair(ClosureUserEntryBB, ClonedEntryBB));
