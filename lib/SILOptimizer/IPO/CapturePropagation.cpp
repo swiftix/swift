@@ -228,7 +228,6 @@ CanSILFunctionType getPartialApplyInterfaceResultType(PartialApplyInst *PAI) {
   // The new partial_apply will no longer take any arguments--they are all
   // expressed as literals. So its callee signature will be the same as its
   // return signature.
-  auto PAIFTy = PAI->getCalleeFunction()->getLoweredFunctionType();
   auto FTy = PAI->getType().castTo<SILFunctionType>();
   CanGenericSignature CanGenericSig;
   assert(!PAI->hasSubstitutions() || !hasArchetypes(PAI->getSubstitutions()));
