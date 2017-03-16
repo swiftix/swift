@@ -983,6 +983,7 @@ void IRGenerator::emitTypeMetadataRecords() {
 }
 
 static bool shouldNotBeEmitted(CurrentIGMPtr IGM, StringRef Name) {
+  return false;
   if (Name.find("Debug", 0) != StringRef::npos)
     return true;
   if (Name.find("Mirror", 0) != StringRef::npos)

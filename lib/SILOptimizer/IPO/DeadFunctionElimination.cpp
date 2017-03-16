@@ -203,7 +203,7 @@ protected:
 
   /// Marks a function as alive.
   void makeAlive(SILFunction *F) {
-    if (neverMarkAlive(F))
+    if (false && neverMarkAlive(F))
       return;
     AliveFunctionsAndTables.insert(F);
     assert(F && "function does not exist");
