@@ -1422,7 +1422,9 @@ void IRGenModule::emitSILFunction(SILFunction *f) {
     return;
 
   PrettyStackTraceSILFunction stackTrace("emitting IR", f);
+  llvm::dbgs() << "\n\nIRGen: Emit SIL function: begin: " << f->getName() << "\n";
   IRGenSILFunction(*this, f).emitSILFunction();
+  llvm::dbgs() << "IRGen: Emit SIL function: end: " << f->getName() << "\n\n";
 }
 
 void IRGenSILFunction::emitSILFunction() {
@@ -4886,6 +4888,8 @@ void IRGenModule::emitSILStaticInitializers() {
 
     auto *InitValue = Global.getValueOfStaticInitializer();
 
+    llvm::dbgs() << "IRGen: Emit SIL static initializer for: "
+                 << Global.getName() << "\n";
     // Set the IR global's initializer to the constant for this SIL
     // struct.
     if (auto *SI = dyn_cast<StructInst>(InitValue)) {

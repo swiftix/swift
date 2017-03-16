@@ -713,6 +713,10 @@ static std::unique_ptr<llvm::Module> performIRGeneration(IRGenOptions &Opts,
       IGM.emitTypeMetadataRecords();
       IGM.emitBuiltinReflectionMetadata();
       IGM.emitReflectionMetadataVersion();
+      // Okay, emit any definitions that we suddenly need.
+      // Some new lazy definitions may have been added
+      // e.g. by emitProtocolConformances.
+      irgen.emitLazyDefinitions();
     }
 
     // Emit symbols for eliminated dead methods.

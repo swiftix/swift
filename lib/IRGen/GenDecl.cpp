@@ -69,6 +69,11 @@ bool IRGenerator::tryEnableLazyTypeMetadata(NominalTypeDecl *Nominal) {
     case DeclKind::Enum:
     case DeclKind::Struct:
       break;
+    case DeclKind::Class:
+    case DeclKind::Protocol:
+      if (SIL.isWholeProgram())
+        break;
+      return false;
     default:
       // Keep all metadata for classes, because a class can be instantiated by
       // using the library function _typeByName or NSClassFromString.
@@ -79,18 +84,41 @@ bool IRGenerator::tryEnableLazyTypeMetadata(NominalTypeDecl *Nominal) {
     case FormalLinkage::PublicUnique:
     case FormalLinkage::PublicNonUnique:
       // We can't remove metadata for externally visible types.
+      if (SIL.isWholeProgram())
+        break;
       return false;
     case FormalLinkage::HiddenUnique:
     case FormalLinkage::HiddenNonUnique:
       // In non-whole-module mode, also internal types are visible externally.
-      if (!SIL.isWholeModule())
+      if (!SIL.isWholeModule() && !SIL.isWholeProgram())
         return false;
       break;
     case FormalLinkage::Private:
       break;
   }
+  if (eligibleLazyMetadata.count(Nominal) != 0)
+    return true;
   assert(eligibleLazyMetadata.count(Nominal) == 0);
   eligibleLazyMetadata.insert(Nominal);
+  StringRef KindName;
+  switch (Nominal->getKind()) {
+  case DeclKind::Class:
+    KindName = "class";
+    break;
+  case DeclKind::Enum:
+    KindName = "enum";
+    break;
+  case DeclKind::Struct:
+    KindName = "struct";
+    break;
+  case DeclKind::Protocol:
+    KindName = "protocol";
+    break;
+  default:
+    break;
+  }
+  llvm::dbgs() << "IRGen: mark eligibleLazyMetadata for " << KindName << " : "
+               << Nominal->getName() << "\n";
   return true;
 }
 
@@ -454,10 +482,33 @@ void IRGenModule::emitSourceFile(SourceFile &SF, unsigned StartElem) {
   PrettySourceFileEmission StackEntry(SF);
 
   // Emit types and other global decls.
-  for (unsigned i = StartElem, e = SF.Decls.size(); i != e; ++i)
+  for (unsigned i = StartElem, e = SF.Decls.size(); i != e; ++i) {
+    if (auto *VD = dyn_cast<ValueDecl>(SF.Decls[i]))
+      llvm::dbgs() << "IRGen: emitSourceFile: emit decl: " << VD->getName()
+                   << "\n";
     emitGlobalDecl(SF.Decls[i]);
-  for (auto *localDecl : SF.LocalTypeDecls)
+  }
+  for (auto *localDecl : SF.LocalTypeDecls) {
+    llvm::dbgs() << "IRGen: emitSourceFile: emit local type decl: "
+                 << localDecl->getName() << "\n";
     emitGlobalDecl(localDecl);
+  }
+
+#if 0
+  llvm::dbgs() << "IRGen: emit deserialized types: begin\n";
+  llvm::DenseSet<CanType> EmittedDeserializedTypes;
+  for (auto Ty : getSILModule().getDeserializedTypesSet()) {
+    auto CanTy = Ty->getCanonicalType();
+    auto Nominal = CanTy->getNominalOrBoundGenericNominal();
+    if (Nominal && !EmittedDeserializedTypes.count(CanTy)) {
+      llvm::dbgs() << "IRGen: emitSourceFile: emit deserialized type decl: "
+                   << Nominal->getName() << "\n";
+      EmittedDeserializedTypes.insert(CanTy);
+      emitGlobalDecl(Nominal);
+    }
+  }
+  llvm::dbgs() << "IRGen: emit deserialized types: end\n";
+#endif
 
   SF.forAllVisibleModules([&](swift::ModuleDecl::ImportedModule import) {
     swift::ModuleDecl *next = import.second;
@@ -830,7 +881,8 @@ void IRGenerator::emitGlobalTopLevel() {
   PrimaryIGM->emitCoverageMapping();
   
   // Emit SIL functions.
-  bool isWholeModule = PrimaryIGM->getSILModule().isWholeModule();
+  bool isWholeModule = PrimaryIGM->getSILModule().isWholeModule() ||
+                       PrimaryIGM->getSILModule().isWholeProgram();
   for (SILFunction &f : PrimaryIGM->getSILModule()) {
     // Only eagerly emit functions that are externally visible.
     if (!isPossiblyUsedExternally(f.getLinkage(), isWholeModule))
@@ -863,7 +915,7 @@ void IRGenerator::emitGlobalTopLevel() {
     IGM->CurrentWitnessTable = nullptr;
 #endif
   }
-  
+
   for (auto Iter : *this) {
     IRGenModule *IGM = Iter.second;
     IGM->finishEmitAfterTopLevel();
@@ -886,9 +938,29 @@ void IRGenModule::finishEmitAfterTopLevel() {
   }
 }
 
+/// Return the lowered type for the class's 'self' type within its context.
+static SILType getSelfType(ClassDecl *base) {
+  auto loweredTy = base->getDeclaredTypeInContext()->getCanonicalType();
+  return SILType::getPrimitiveObjectType(loweredTy);
+}
+
+const StructLayout &getLayout(const TypeInfo &TI, IRGenModule &IGM,
+                              SILType classType);
+
+const ClassLayout &getClassLayout(const TypeInfo &TI, IRGenModule &IGM,
+                                  SILType classType);
+
 static void emitLazyTypeMetadata(IRGenModule &IGM, NominalTypeDecl *Nominal) {
+  llvm::dbgs() << "IRGen: emitLazyTypeMetadata for: " << Nominal->getFullName()
+               << "\n";
   if (auto sd = dyn_cast<StructDecl>(Nominal)) {
     return emitStructMetadata(IGM, sd);
+  } else if (auto cd = dyn_cast<ClassDecl>(Nominal)) {
+    SILType selfType = getSelfType(cd);
+    auto &classTI = IGM.getTypeInfo(selfType);
+    // Emit the class metadata.
+    return emitClassMetadata(IGM, cd, getLayout(classTI, IGM, selfType),
+                             getClassLayout(classTI, IGM, selfType));
   } else if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
     emitEnumMetadata(IGM, ed);
   } else if (auto pd = dyn_cast<ProtocolDecl>(Nominal)) {
@@ -910,6 +982,16 @@ void IRGenerator::emitTypeMetadataRecords() {
   }
 }
 
+static bool shouldNotBeEmitted(CurrentIGMPtr IGM, StringRef Name) {
+  if (Name.find("Debug", 0) != StringRef::npos)
+    return true;
+  if (Name.find("Mirror", 0) != StringRef::npos)
+    return true;
+  if (Name.find("Reflect", 0) != StringRef::npos)
+    return true;
+  return false;
+}
+
 /// Emit any lazy definitions (of globals or functions or whatever
 /// else) that we require.
 void IRGenerator::emitLazyDefinitions() {
@@ -929,19 +1011,35 @@ void IRGenerator::emitLazyDefinitions() {
     while (!LazyMetadata.empty()) {
       NominalTypeDecl *Nominal = LazyMetadata.pop_back_val();
       assert(scheduledLazyMetadata.count(Nominal) == 1);
-      if (eligibleLazyMetadata.count(Nominal) != 0) {
-        CurrentIGMPtr IGM = getGenModule(Nominal->getDeclContext());
+      llvm::dbgs() << "IRGen: checking lazy metadata for " << Nominal->getName()
+                   << "\n";
+      CurrentIGMPtr IGM = getGenModule(Nominal->getDeclContext());
+      if (IGM->getSILModule().isWholeProgram() ||
+          eligibleLazyMetadata.count(Nominal) != 0) {
+        llvm::dbgs() << "IRGen: will emit lazy metadata for "
+                     << Nominal->getName() << "\n";
+        //CurrentIGMPtr IGM = getGenModule(Nominal->getDeclContext());
         emitLazyTypeMetadata(*IGM.get(), Nominal);
+      } else {
+        llvm::dbgs() << "IRGen: will not emit lazy metadata for "
+                     << Nominal->getName() << "\n";
       }
     }
     while (!LazyFieldTypeAccessors.empty()) {
       auto accessor = LazyFieldTypeAccessors.pop_back_val();
+      llvm::dbgs() << "IRGen: lazy emit field type accessor for: "
+                   << accessor.fn->getName() << "\n";
+
       emitFieldTypeAccessor(*accessor.IGM, accessor.type, accessor.fn,
                             accessor.fieldTypes);
     }
     while (!LazyWitnessTables.empty()) {
       SILWitnessTable *wt = LazyWitnessTables.pop_back_val();
       CurrentIGMPtr IGM = getGenModule(wt->getConformance()->getDeclContext());
+      //if (shouldNotBeEmitted(IGM, wt->getName()))
+      //  continue;
+      llvm::dbgs() << "IRGen: lazy emit witness table: " << wt->getName()
+                   << "\n";
       IGM->emitSILWitnessTable(wt);
     }
 
@@ -952,7 +1050,14 @@ void IRGenerator::emitLazyDefinitions() {
       assert(!isPossiblyUsedExternally(f->getLinkage(),
                                        IGM->getSILModule().isWholeModule())
              && "function with externally-visible linkage emitted lazily?");
+      if (shouldNotBeEmitted(IGM, f->getName()))
+        continue;
+
+      llvm::dbgs() << "\n\nIRGen: lazy emit function definition: begin: "
+                   << f->getName() << "\n\n";
       IGM->emitSILFunction(f);
+      llvm::dbgs() << "\n\nIRGen: lazy emit function definition: end: "
+                   << f->getName() << "\n\n";
     }
   }
 }
@@ -2014,6 +2119,18 @@ IRGenModule::getAddrOfLLVMVariable(LinkEntity entity, Alignment alignment,
     // If we're looking to define something, we may need to replace a
     // forward declaration.
     if (definitionType) {
+      auto Name = existing->getName();
+      // Allow re-definitions with the same type.
+      if (!existing->isDeclaration() &&
+          entry->getType()->getPointerElementType() == definitionType) {
+        llvm::dbgs() << "IRGen: getAddrOfLLVMVariable: redefine existing "
+                     << Name << " with the same type\n";
+        if (definition.hasInit()){
+          definition.getInit().abandon();
+        }
+        return entry;
+      }
+      llvm::dbgs() << "IRGen: getAddrOfLLVMVariable: redefine existing " << Name << "\n";
       assert(existing->isDeclaration() && "already defined");
       assert(entry->getType()->getPointerElementType() == defaultType);
       updateLinkageForDefinition(*this, existing, entity);
@@ -2042,6 +2159,8 @@ IRGenModule::getAddrOfLLVMVariable(LinkEntity entity, Alignment alignment,
   ForDefinition_t forDefinition = (ForDefinition_t) (definitionType != nullptr);
   LinkInfo link = LinkInfo::get(*this, entity, forDefinition);
 
+  auto Name = link.getName();
+  llvm::dbgs() << "IRGen: getAddrOfLLVMVariable: define " << Name << "\n";
   // Clang may have defined the variable already.
   if (auto existing = Module.getNamedGlobal(link.getName()))
     return getElementBitCast(existing, defaultType);
@@ -2296,6 +2415,11 @@ llvm::Constant *IRGenModule::emitProtocolConformances() {
 
     emitAssociatedTypeMetadataRecord(conformance);
 
+    if (getSILModule().isWholeProgram() &&
+        IRGen.tryEnableLazyTypeMetadata(conformance->getProtocol())) {
+      IRGen.addLazyTypeMetadata(conformance->getProtocol());
+    }
+
     // Relative reference to the nominal type descriptor.
     auto descriptorRef = getAddrOfLLVMVariableOrGOTEquivalent(
                   LinkEntity::forProtocolDescriptor(conformance->getProtocol()),
@@ -2521,7 +2645,8 @@ IRGenModule::getAddrOfTypeMetadataAccessFunction(CanType type,
   assert(!type->hasArchetype() && !type->hasTypeParameter());
   NominalTypeDecl *Nominal = type->getNominalOrBoundGenericNominal();
   checkEligibleMetaType(Nominal);
-  IRGen.addLazyTypeMetadata(Nominal);
+  if (Nominal)
+    IRGen.addLazyTypeMetadata(Nominal);
 
   LinkEntity entity = LinkEntity::forTypeMetadataAccessFunction(type);
   llvm::Function *&entry = GlobalFuncs[entity];
@@ -2824,6 +2949,10 @@ llvm::Constant *IRGenModule::getAddrOfNominalTypeDescriptor(NominalTypeDecl *D,
 
 llvm::Constant *IRGenModule::getAddrOfProtocolDescriptor(ProtocolDecl *D,
                                                       ConstantInit definition) {
+  if (getSILModule().isWholeProgram() && IRGen.tryEnableLazyTypeMetadata(D)) {
+    IRGen.addLazyTypeMetadata(D);
+  }
+
   if (D->isObjC()) {
     assert(!definition &&
            "cannot define an @objc protocol descriptor this way");

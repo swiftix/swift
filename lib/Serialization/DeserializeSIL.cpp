@@ -576,7 +576,8 @@ SILFunction *SILDeserializer::readSILFunction(DeclID FID,
     if (ty->isOpenedExistential())
       OpenedArchetypesTracker.registerUsedOpenedArchetypes(CanType(ty));
     if (SILMod.isWholeProgram()) {
-
+      // Remember that this type was deserialized.
+      SILMod.getDeserializedTypesSet().insert(ty);
 #if 0
     llvm::dbgs() << "\nDeserializeSIL: Processing used type: ";
     ty.dump();

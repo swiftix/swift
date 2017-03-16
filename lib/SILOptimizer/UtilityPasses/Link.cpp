@@ -41,6 +41,7 @@ namespace {
 /// A helper class to collect information about types
 /// used by a SILModule, SILInstruction or other types.
 class UsedTypesCollector {
+  llvm::DenseSet<SILFunction *> ProcessedFunctions;
   llvm::DenseSet<CanType> UsedTypes;
   llvm::DenseSet<CanType> UsedMetatypes;
 public:
@@ -57,7 +58,7 @@ public:
   }
 
   const llvm::DenseSet<CanType> &getMetatypes() const {
-    return UsedTypes;
+    return UsedMetatypes;
   }
 };
 
@@ -69,13 +70,17 @@ void UsedTypesCollector::collect(CanType Ty) {
     //llvm::dbgs() << "Got the instance type: " << Ty << "\n";
   }
 
+  auto NTD = Ty->getAnyNominal();
+
   // Bail if the type was processed already.
   if (!UsedTypes.insert(Ty).second)
     return;
 
-  DEBUG(llvm::dbgs() << "Found type: " << Ty << "\n");
+  if (NTD) {
+    DEBUG(llvm::dbgs() << "Found type: " << Ty << "\n");
+    llvm::dbgs() << "Found new type " << Ty << "\n";
+  }
 
-  auto NTD = Ty->getAnyNominal();
   // Generic signature of the type, if present.
   GenericSignature *Signature = nullptr;
 
@@ -83,9 +88,9 @@ void UsedTypesCollector::collect(CanType Ty) {
     // Add referenced protocols.
     auto Protocols = NTD->getAllProtocols();
     for (auto P : Protocols) {
-     llvm::dbgs() << "Adding protocol of " << NTD->getName() << ": "
-                     << P->getNameStr() << "\n";
-     collect(P->getDeclaredInterfaceType()->getCanonicalType());
+      // llvm::dbgs() << "Adding protocol of " << NTD->getName() << ": "
+      //               << P->getNameStr() << "\n";
+      collect(P->getDeclaredInterfaceType()->getCanonicalType());
     }
 #if 0
     for (auto C : NTD->getAllConformances()) {
@@ -99,8 +104,8 @@ void UsedTypesCollector::collect(CanType Ty) {
     if (auto CD = Ty->getClassOrBoundGenericClass()) {
       auto Superclass = CD->getSuperclass();
       if (Superclass) {
-        llvm::dbgs() << "Adding superclass of " << CD->getName() << ": "
-                     << Superclass->getAnyNominal()->getNameStr() << "\n";
+        //llvm::dbgs() << "Adding superclass of " << CD->getName() << ": "
+        //             << Superclass->getAnyNominal()->getNameStr() << "\n";
         collect(Superclass->getCanonicalType());
       }
     }
@@ -198,6 +203,7 @@ void UsedTypesCollector::collectMetatypes(CanType Ty) {
     return;
 
   DEBUG(llvm::dbgs() << "collectMetatypes: Found type: " << Ty << "\n");
+  llvm::dbgs() << "collectMetatypes: Found type: " << Ty << "\n";
 
   auto NTD = Ty->getAnyNominal();
 
@@ -277,6 +283,8 @@ void UsedTypesCollector::collect(const SILInstruction &I) {
 }
 
 void UsedTypesCollector::collectMetatypes(const SILInstruction &I) {
+  // Don't collect metatypes for now.
+  return;
   SmallVector<CanType, 8> InstUsedTypes;
   // Add types of type operands.
   I.collectTypeOperands(InstUsedTypes);
@@ -346,6 +354,8 @@ void UsedTypesCollector::collect(const SILFunction &Fn) {
 
 void UsedTypesCollector::collect(SILModule &M) {
   for (auto &Fn : M) {
+    if (!ProcessedFunctions.insert(&Fn).second)
+      continue;
     DEBUG(llvm::dbgs() << "Collecting types used by SIL function "
                        << Fn.getName() << "\n");
     collect(Fn);
@@ -369,6 +379,8 @@ static const char *StdlibRuntimeFunctions[] = {
 #else
   // @_silgen_name annotated functions
   "swift_stringFromUTF8InRawMemory",
+#if 0
+  // Do not include any objc-interop functions here.
   "swift_stdlib_getErrorUserInfoNSDictionary",
   "swift_stdlib_getErrorEmbeddedNSErrorIndirect",
   "swift_stdlib_getErrorDomainNSString",
@@ -400,11 +412,53 @@ static const char *StdlibRuntimeFunctions[] = {
   // Jan 2017
   //"_TWPVs19_BridgeableMetatypes21_ObjectiveCBridgeables"
 #endif
+#endif
 };
 
-static void linkFunctionsRequiredByRuntime(SILModule &M) {
+static const char *StdlibRuntimeObjcInteropFunctions[] = {
+#if 0
+  "xyz",
+#else
+  // @_silgen_name annotated functions
+  "swift_stdlib_getErrorUserInfoNSDictionary",
+  "swift_stdlib_getErrorEmbeddedNSErrorIndirect",
+  "swift_stdlib_getErrorDomainNSString",
+  "swift_stdlib_getErrorCode",
+  "swift_stdlib_Hashable_isEqual_indirect",
+  "swift_stdlib_Hashable_hashValue_indirect",
+  "_swift_stdlib_makeAnyHashableUsingDefaultRepresentation",
+  "_swift_setDownCastIndirect",
+  "_swift_setDownCastConditionalIndirect",
+  "_swift_dictionaryDownCastIndirect",
+  "_swift_dictionaryDownCastConditionalIndirect",
+  "_swift_convertToAnyHashableIndirect",
+  "_swift_bridgeNonVerbatimFromObjectiveCToAny",
+  "_swift_bridgeNonVerbatimBoxedValue",
+  "_swift_arrayDownCastIndirect",
+  "_swift_arrayDownCastConditionalIndirect",
+  "_swift_anyHashableDownCastConditionalIndirect",
+#endif
+};
+
+static const char *StdlibRuntimeMirrorsFunctions[] = {
+  // Mirrors
+  "_TFVs11_ObjCMirrorg7summarySS",
+  "_TFVs12_ClassMirrorg7summarySS",
+  "_TFVs12_TupleMirrorg7summarySS",
+  "_TFVs13_StructMirrorg7summarySS",
+  "_TFVs11_EnumMirrorg7summarySS",
+  "_TTWVs13_OpaqueMirrors7_MirrorsFS0_g7summarySS",
+  "_TTWVs15_MetatypeMirrors7_MirrorsFS0_g7summarySS",
+};
+
+static void
+linkFunctionsRequiredByRuntime(SILModule &M,
+                               ArrayRef<const char *> RuntimeFunctions) {
+  llvm::dbgs() << "Linking functions required by runtime\n";
   ArrayRef<const char *> ExposedStdlibRuntimeFunctions(StdlibRuntimeFunctions);
-  for (auto F : ExposedStdlibRuntimeFunctions) {
+  for (auto F : RuntimeFunctions) {
+    llvm::dbgs() << "Looking for a function required by runtime: " << F << "\n";
+
     SILFunction *Fn;
     Fn = M.lookUpFunction(F);
     if (!Fn) {
@@ -418,6 +472,9 @@ static void linkFunctionsRequiredByRuntime(SILModule &M) {
     }
     // Mark it as non-removable, because runtime may invoke it.
     Fn->setKeepAsPublic(true);
+    Fn->setLinkage(SILLinkage::Public);
+    llvm::dbgs() << "Marked a function required by runtime as public: "
+                 << Fn->getName() << "\n";
   }
 }
 
@@ -433,6 +490,7 @@ static void linkFunctionsRequiredByRuntime(SILModule &M) {
 /// is reached, i.e. no new entities that need to be linked are
 /// found.
 void linkAllUsedFunctionsAndTypes(SILModule &M) {
+  llvm::dbgs() << "Linking all used functions and types\n";
   auto &ASTTypes = M.getDeserializedNominalTypesSet();
   UsedTypesCollector UsedTypes;
 
@@ -450,7 +508,18 @@ void linkAllUsedFunctionsAndTypes(SILModule &M) {
   // - Have a mapping from a runtime call name to a set of
   // Swift methods that are possibly invoked by such a call.
   // - Link only those Swift methods which can be really called.
-  linkFunctionsRequiredByRuntime(M);
+  linkFunctionsRequiredByRuntime(M, StdlibRuntimeFunctions);
+  // TODO: If some of those entry points required by the runtime are not emitted,
+  // we may still need to emit some stubs for them. The stubs should simply
+  // abort the program execution with an error message that this function is
+  // not available. Providing these functions is necessary, because otherwise
+  // the linker will complain about the missing symbols.
+  // TODO: Check if objc-interop is enabled.
+  if (false)
+    linkFunctionsRequiredByRuntime(M, StdlibRuntimeObjcInteropFunctions);
+  // TODO: Check if mirrors-support is enabled.
+  if (false)
+    linkFunctionsRequiredByRuntime(M, StdlibRuntimeMirrorsFunctions);
 
   // Iterate until no new types can be found.
   while (true) {
@@ -600,21 +669,41 @@ void linkAllUsedFunctionsAndTypes(SILModule &M) {
               continue;
             llvm::dbgs() << "Linking class member: " << MangledName
                                << "\n";
-            DEBUG(llvm::dbgs() << "Linking class member: " << MangledName
+            DEBUG(llvm::dbgs() << "Linking class member(1): " << MangledName
                                << "\n");
-            if (!M.hasFunction(MangledName))
+            if (M.hasFunction(MangledName)) {
+              llvm::dbgs() << "Could find class member(1): " << MangledName
+                           << "\n";
               M.linkFunction(MemberRef, SILModule::LinkingMode::LinkNormal);
+            }
+            auto *F = M.lookUpFunction(MangledName);
+            if (F) {
+              llvm::dbgs() << "Could link class member: " << MangledName << "\n";
+            } else {
+              llvm::dbgs() << "Could not link class member: " << MangledName
+                           << "\n";
+            }
           } else {
             SILDeclRef MemberRef(MemberLoc, ResilienceExpansion::Minimal,
                                  SILDeclRef::ConstructAtNaturalUncurryLevel,
                                  /* isForeign */ true);
             auto MangledNameStr = MemberRef.mangle();
             StringRef MangledName = MangledNameStr;
-            DEBUG(llvm::dbgs() << "Linking class member: " << MangledName
+            DEBUG(llvm::dbgs() << "Linking class member(2): " << MangledName
                                << "\n");
             // assert(false);
-            if (!M.hasFunction(MangledName))
+            if (M.hasFunction(MangledName)) {
+              llvm::dbgs() << "Could find class member(2): " << MangledName
+                           << "\n";
               M.linkFunction(MemberRef, SILModule::LinkingMode::LinkNormal);
+            }
+            auto *F = M.lookUpFunction(MangledName);
+            if (F) {
+              llvm::dbgs() << "Could link class member: " << MangledName << "\n";
+            } else {
+              llvm::dbgs() << "Could not link class member: " << MangledName
+                           << "\n";
+            }
           }
         }
       }

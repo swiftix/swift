@@ -401,6 +401,20 @@ ClassTypeInfo::getClassLayout(IRGenModule &IGM, SILType classType) const {
   return FieldLayout;
 }
 
+const StructLayout &getLayout(const TypeInfo &TI, IRGenModule &IGM,
+                              SILType classType) {
+  //assert(TI.is<ClassTypeInfo>());
+  auto &classTI = TI.as<ClassTypeInfo>();
+  return classTI.getLayout(IGM, classType);
+}
+
+const ClassLayout &getClassLayout(const TypeInfo &TI, IRGenModule &IGM,
+                                  SILType classType) {
+  //assert(TI.is<ClassTypeInfo>());
+  auto &classTI = TI.as<ClassTypeInfo>();
+  return classTI.getClassLayout(IGM, classType);
+}
+
 /// Cast the base to i8*, apply the given inbounds offset (in bytes,
 /// as a size_t), and cast to a pointer to the given type.
 llvm::Value *IRGenFunction::emitByteOffsetGEP(llvm::Value *base,
@@ -920,10 +934,10 @@ void IRGenModule::emitClassDecl(ClassDecl *D) {
   SILType selfType = getSelfType(D);
   auto &classTI = getTypeInfo(selfType).as<ClassTypeInfo>();
 
-  // Emit the class metadata.
-  emitClassMetadata(*this, D,
-                    classTI.getLayout(*this, selfType),
-                    classTI.getClassLayout(*this, selfType));
+  if (!IRGen.tryEnableLazyTypeMetadata(D))
+    // Emit the class metadata.
+    emitClassMetadata(*this, D, classTI.getLayout(*this, selfType),
+                      classTI.getClassLayout(*this, selfType));
   emitNestedTypeDecls(D->getMembers());
   emitFieldMetadataRecord(D);
 }

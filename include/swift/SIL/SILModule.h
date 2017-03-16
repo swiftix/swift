@@ -98,6 +98,7 @@ public:
   using CoverageMapListType = llvm::ilist<SILCoverageMap>;
   using LinkingMode = SILOptions::LinkingMode;
   using NominalTypesSet = llvm::DenseSet<NominalTypeDecl *>;
+  using DeserializedTypesSet = llvm::DenseSet<Type>;
 
 private:
   friend class SILBasicBlock;
@@ -185,6 +186,9 @@ private:
 
   /// This is a set of deserialized nominal types used by the module.
   NominalTypesSet DeserializedNominalTypes;
+
+  /// This is a set of deserialized types used by the module.
+  DeserializedTypesSet DeserializedTypes;
 
   /// The stage of processing this module is at.
   SILStage Stage;
@@ -432,6 +436,21 @@ public:
   }
   iterator_range<nominal_type_set_const_iterator> getDeserializedNominalTypes() const {
     return {DeserializedNominalTypes.begin(), DeserializedNominalTypes.end()};
+  }
+
+  using type_set_iterator = DeserializedTypesSet::iterator;
+  using type_set_const_iterator = DeserializedTypesSet::const_iterator;
+  DeserializedTypesSet &getDeserializedTypesSet() { return DeserializedTypes; }
+  const DeserializedTypesSet &getDeserializedTypesSet() const { return DeserializedTypes; }
+  type_set_iterator deserialized_types_begin() { return DeserializedTypes.begin(); }
+  type_set_iterator deserialized_types_end() { return DeserializedTypes.end(); }
+  type_set_const_iterator deserialized_types_begin() const { return DeserializedTypes.begin(); }
+  type_set_const_iterator deserialized_types_end() const { return DeserializedTypes.end(); }
+  iterator_range<type_set_iterator> getDeserializedTypes() {
+    return {DeserializedTypes.begin(), DeserializedTypes.end()};
+  }
+  iterator_range<type_set_const_iterator> getDeserializedTypes() const {
+    return {DeserializedTypes.begin(), DeserializedTypes.end()};
   }
 
   /// Look for a global variable by name.

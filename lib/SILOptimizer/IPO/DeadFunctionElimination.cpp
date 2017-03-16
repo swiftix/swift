@@ -203,6 +203,8 @@ protected:
 
   /// Marks a function as alive.
   void makeAlive(SILFunction *F) {
+    if (neverMarkAlive(F))
+      return;
     AliveFunctionsAndTables.insert(F);
     assert(F && "function does not exist");
     Worklist.insert(F);
@@ -303,6 +305,15 @@ protected:
     return Impl1 == Impl2;
   }
 
+  // TODO: Introduce a more principle way to disable emission of certain
+  // kinds of protocol conformances.
+  // For example:
+  // - if objc-interop is not enabled, no objc or bridging
+  // related conformances should be emitted.
+  // - if reflection is not enabled, no reflection related conformances should
+  // be emitted.
+  // - if mirrors are not enabled, no mirrors related conformances should be
+  // emitted.
   bool neverMarkAlive(SILFunction *F) {
 #if 1
     if (F->getName().find("description") < 1000 &&
@@ -468,6 +479,7 @@ protected:
       if (isa<AbstractFunctionDecl>(decl))
         // Nothing is visible externaly in this mode.
         return false;
+      // Should protocols be visible externally in WholeProgram() mode?
       if (isa<ProtocolDecl>(decl))
         return true;
     }
@@ -863,7 +875,9 @@ class DeadFunctionElimination : FunctionLivenessComputation {
       }
 
       if (IsEmpty) {
-        llvm::dbgs() << "vtable can be eliminated (all method entries are nil): " << vTable.getClass()->getNameStr() << "\n";
+        llvm::dbgs()
+            << "vtable can be eliminated (all method entries are nil): "
+            << vTable.getClass()->getNameStr() << "\n";
       }
     }
 
@@ -887,10 +901,14 @@ class DeadFunctionElimination : FunctionLivenessComputation {
       }
 
       if (IsEmpty) {
-        llvm::dbgs() << "Witness table can be eliminated (all entries are nil): " << WT->getName() << "\n";
+        llvm::dbgs()
+            << "Witness table can be eliminated (all entries are nil): "
+            << WT->getName() << "\n";
         WitnessTablesToRemove.push_back(WT);
       } else {
-        llvm::dbgs() << "Witness table cannot be eliminated (not all entries are nil): " << WT->getName() << "\n";
+        llvm::dbgs()
+            << "Witness table cannot be eliminated (not all entries are nil): "
+            << WT->getName() << "\n";
       }
     }
     /*
@@ -1149,6 +1167,9 @@ public:
       return;
 #endif
 
+    //if (getModule()->isWholeProgram())
+    //  return;
+
     // The deserializer caches functions that it deserializes so that if it is
     // asked to deserialize that function again, it does not do extra work. This
     // causes the function's reference count to be incremented causing it to be
@@ -1185,7 +1206,7 @@ public:
 class SILExternalFuncDefinitionsElimination : public SILModuleTransform {
   void run() override {
     DEBUG(llvm::dbgs() << "Running ExternalFunctionDefinitionsElimination\n");
-#if 1
+#if 0
     // Do not use external defs in the whole-program optimization
     // mode.
     if (getModule()->isWholeProgram())

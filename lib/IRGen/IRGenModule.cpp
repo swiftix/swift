@@ -730,6 +730,9 @@ bool IRGenerator::canEmitWitnessTableLazily(SILWitnessTable *wt) {
   if (Opts.UseJIT)
     return false;
 
+  if (PrimaryIGM->getSILModule().isWholeProgram())
+    return true;
+
   NominalTypeDecl *ConformingTy =
     wt->getConformance()->getType()->getNominalOrBoundGenericNominal();
 
@@ -739,7 +742,8 @@ bool IRGenerator::canEmitWitnessTableLazily(SILWitnessTable *wt) {
       return true;
 
     case Accessibility::Internal:
-      return PrimaryIGM->getSILModule().isWholeModule();
+      return PrimaryIGM->getSILModule().isWholeModule() ||
+             PrimaryIGM->getSILModule().isWholeProgram();
 
     default:
       return false;
@@ -752,6 +756,8 @@ void IRGenerator::addLazyWitnessTable(const ProtocolConformance *Conf) {
     // Add it to the queue if it hasn't already been put there.
     if (canEmitWitnessTableLazily(wt) &&
         LazilyEmittedWitnessTables.insert(wt).second) {
+      llvm::dbgs() << "IRGen: schedule lazy witness table: "
+                   << wt->getName() << "\n";
       LazyWitnessTables.push_back(wt);
     }
   }

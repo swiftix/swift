@@ -37,6 +37,8 @@
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/IR/Function.h"
 #include "llvm/Target/TargetMachine.h"
 #include "IRGen.h"
 #include "SwiftTargetInfo.h"
@@ -316,6 +318,26 @@ public:
   void addLazyTypeMetadata(NominalTypeDecl *Nominal) {
     // Add it to the queue if it hasn't already been put there.
     if (scheduledLazyMetadata.insert(Nominal).second) {
+      StringRef KindName;
+      switch (Nominal->getKind()) {
+      case DeclKind::Class:
+        KindName = "class";
+        break;
+      case DeclKind::Enum:
+        KindName = "enum";
+        break;
+      case DeclKind::Struct:
+        KindName = "struct";
+        break;
+      case DeclKind::Protocol:
+        KindName = "protocol";
+        break;
+      default:
+        break;
+      }
+
+      llvm::dbgs() << "IRGen: schedule lazy type metadata for " << KindName
+                   << " : " << Nominal->getName() << "\n";
       LazyMetadata.push_back(Nominal);
     }
   }
@@ -330,6 +352,8 @@ public:
                                 ArrayRef<FieldTypeInfo> fieldTypes,
                                 llvm::Function *fn,
                                 IRGenModule *IGM) {
+    llvm::dbgs() << "IRGen: schedule lazy field type accessor for: "
+                 << fn->getName() << "\n";
     LazyFieldTypeAccessors.push_back({type,
                                       {fieldTypes.begin(), fieldTypes.end()},
                                       fn, IGM});

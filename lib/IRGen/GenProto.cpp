@@ -1714,7 +1714,7 @@ void IRGenModule::emitSILWitnessTable(SILWitnessTable *wt) {
     return;
   }
 
-  llvm::dbgs() << "Do emit witness table for declaration: " << wt->getName()
+  llvm::dbgs() << "IRGen: Emit witness table for declaration: " << wt->getName()
                << "\n";
 
   // Build the witnesses.

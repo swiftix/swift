@@ -5680,6 +5680,7 @@ namespace {
 /// the protocol descriptor, and for ObjC interop, references to the descriptor
 /// that the ObjC runtime uses for uniquing.
 void IRGenModule::emitProtocolDecl(ProtocolDecl *protocol) {
+  llvm::dbgs() << "\nIRGen: emitProtocolDecl: " << protocol->getName() << "\n";
   // Emit remote reflection metadata for the protocol.
   emitFieldMetadataRecord(protocol);
 
