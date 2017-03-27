@@ -1983,6 +1983,16 @@ bool SILSerializer::shouldEmitFunctionBody(const SILFunction *F,
   if (F->isExternalDeclaration())
     return false;
 
+#if 0
+  // Emit bodies of functions with shared linkage only if they are
+  // referenced from other serialized entities.
+  if (hasSharedVisibility(F->getLinkage())) {
+    if (isReference)
+      return true;
+    return false;
+  }
+#endif
+
   // Never serialize any function definitions available externally, unless
   // it is a referenced shared function (see the explanation in
   // SILSerializer::writeSILFunction).
