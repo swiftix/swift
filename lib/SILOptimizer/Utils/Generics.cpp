@@ -19,6 +19,10 @@
 #include "swift/SIL/DebugUtils.h"
 #include "swift/AST/GenericSignatureBuilder.h"
 #include "swift/AST/GenericEnvironment.h"
+#include "swift/AST/ParameterList.h"
+
+#undef DEBUG
+#define DEBUG(X) X
 
 using namespace swift;
 
@@ -314,9 +318,11 @@ ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *Callee,
   if (SpecializedGenericSig) {
     DEBUG(llvm::dbgs() << "\n\nPartially specialized types for function: "
                        << Callee->getName() << "\n\n";
-          llvm::dbgs() << "Original generic function type:\n"
+          llvm::dbgs() << "Original generic function type of callee:\n"
                        << Callee->getLoweredFunctionType() << "\n"
-                       << "Partially specialized generic function type:\n"
+                       << "Original generic function type of caller:\n"
+                       << Apply.getFunction()->getLoweredFunctionType() << "\n"
+                       << "Partially specialized generic function type of callee:\n"
                        << SpecializedType << "\n\n");
   }
 
@@ -587,6 +593,45 @@ getGenericEnvironmentAndSignature(GenericSignatureBuilder &Builder,
   return std::make_pair(GenericEnv, GenericSig);
 }
 
+static void
+addRequirement(GenericSignatureBuilder &Builder, ModuleDecl *SM,
+               const Requirement &Req,
+               GenericSignatureBuilder::FloatingRequirementSource source) {
+  auto Failure = Builder.addRequirement(Req, source);
+  assert(!Failure);
+  DEBUG(llvm::dbgs() << "\nRe-mapped requirement:\n"; Req.dump());
+
+  auto first = Req.getFirstType();
+  auto Kind = Req.getKind();
+
+  switch (Kind) {
+  case RequirementKind::SameType:
+  case RequirementKind::Superclass:
+  case RequirementKind::Conformance: {
+    auto second = Req.getSecondType();
+    if (true || first->hasTypeParameter()) {
+      DEBUG(llvm::dbgs() << "\nBefore infer requirement:\n"; Builder.dump());
+      Builder.inferRequirements(*SM, TypeLoc::withoutLoc(first));
+      DEBUG(llvm::dbgs() << "\nAfter infer requirement:\n"; Builder.dump());
+    }
+    if (true || second->hasTypeParameter()) {
+      DEBUG(llvm::dbgs() << "\nBefore infer requirement:\n"; Builder.dump());
+      Builder.inferRequirements(*SM, TypeLoc::withoutLoc(second));
+      DEBUG(llvm::dbgs() << "\nAfter infer requirement:\n"; Builder.dump());
+    }
+    break;
+  }
+  case RequirementKind::Layout: {
+    if (true || first->hasTypeParameter()) {
+      DEBUG(llvm::dbgs() << "\nBefore infer requirement:\n"; Builder.dump());
+      Builder.inferRequirements(*SM, TypeLoc::withoutLoc(first));
+      DEBUG(llvm::dbgs() << "\nAfter infer requirement:\n"; Builder.dump());
+    }
+    break;
+  }
+  }
+}
+
 std::pair<GenericEnvironment *, GenericSignature *>
 getSignatureWithRequirements(GenericSignature *OrigGenSig,
                              GenericEnvironment *OrigGenericEnv,
@@ -604,7 +649,7 @@ getSignatureWithRequirements(GenericSignature *OrigGenSig,
   // For each substitution with a concrete type as a replacement,
   // add a new concrete type equality requirement.
   for (auto &Req : Requirements) {
-    Builder.addRequirement(Req, Source);
+    addRequirement(Builder, M.getSwiftModule(), Req, Source);
   }
 
   Builder.finalize(SourceLoc(), OrigGenSig->getGenericParams(),
@@ -908,9 +953,7 @@ static void remapRequirements(GenericSignature *GenSig,
         break;
 
       Requirement Req(Kind, first, second);
-      auto Failure = Builder.addRequirement(Req, source);
-      assert(!Failure);
-      DEBUG(llvm::dbgs() << "\nRe-mapped requirement:\n"; Req.dump());
+      addRequirement(Builder, SM, Req, source);
       break;
     }
     case RequirementKind::Layout: {
@@ -919,12 +962,12 @@ static void remapRequirements(GenericSignature *GenSig,
 
       Requirement Req(RequirementKind::Layout, first,
                       reqReq.getLayoutConstraint());
-      auto Failure = Builder.addRequirement(Req, source);
-      assert(!Failure);
-      DEBUG(llvm::dbgs() << "\nRe-mapped requirement:\n"; Req.dump());
+      addRequirement(Builder, SM, Req, source);
       break;
     }
     }
+    //auto Failure = Builder.addRequirement(reqReq, source, &SubsMap);
+    //assert(!Failure);
   }
 }
 
@@ -982,7 +1025,9 @@ class FunctionSignaturePartialSpecializer {
   void createGenericParamsForCalleeGenericParams(
       GenericSignature *CalleeGenericSig, GenericEnvironment *CallerGenericEnv);
 
-  void addRequirements(GenericSignature *CalleeGenericSig);
+  void addRequirements(GenericSignature *CalleeGenericSig,
+                       GenericSignature *CallerGenericSig,
+                       GenericEnvironment *GenericEnv);
 
   std::pair<GenericEnvironment *, GenericSignature *>
   getSpecializedGenericEnvironmentAndSignature();
@@ -1206,7 +1251,11 @@ void FunctionSignaturePartialSpecializer::
 
     Requirement Req(RequirementKind::SameType, SubstGenericParamCanTy,
                     SpecializedReplacementCallerInterfaceTy);
-    Builder.addRequirement(Req, Source);
+    if (!SpecializedReplacementCallerInterfaceTy->isTypeParameter() &&
+        SpecializedReplacementCallerInterfaceTy->hasTypeParameter())
+      addRequirement(Builder, SM, Req, Source);
+    else
+        Builder.addRequirement(Req, Source);
 
     DEBUG(llvm::dbgs() << "Added a requirement:\n"; Req.dump());
 
@@ -1237,14 +1286,93 @@ void FunctionSignaturePartialSpecializer::
 // Just some of them? Most likely we need to add only those which are not
 // present in the callee's signature.
 void FunctionSignaturePartialSpecializer::addRequirements(
-    GenericSignature *CalleeGenericSig) {
+    GenericSignature *CalleeGenericSig, GenericSignature *CallerGenericSig,
+    GenericEnvironment *CallerGenericEnv) {
   remapRequirements(CalleeGenericSig, CalleeInterfaceToSpecializedInterfaceMap,
                     Builder, SM);
+  auto source =
+      GenericSignatureBuilder::FloatingRequirementSource::forAbstract();
+
+#if 0
+  if (!CallerGenericSig)
+    return;
+  DEBUG(llvm::dbgs() << "\nRemapping caller's requirements "
+                        "from the generic signature:\n";
+        CallerGenericSig->dump());
+  // TODO: Add requirements related to the caller's archtypes.
+  // May be they should be inferred automatically by the GSB?
+  // E.g. given <T0, T1 where T1 == Slice<T0>> it should be possible
+  // to infer that T0 is _Indexable.
+  for (auto Req : CallerGenericSig->getRequirements()) {
+    DEBUG(llvm::dbgs() << "Consider requirement:\n"; Req.dump());
+    // Nothing to do, if the requirement is unrelated.
+    switch (Req.getKind()) {
+    case RequirementKind::Layout: {
+      auto FirstArchetype =
+          CallerGenericEnv->mapTypeIntoContext(Req.getFirstType());
+      if (!FirstArchetype->is<ArchetypeType>())
+          continue;
+      if (!UsedCallerArchetypes.count(
+              FirstArchetype->getAs<ArchetypeType>()->getPrimary()))
+        continue;
+      break;
+    }
+    case RequirementKind::Superclass:
+    case RequirementKind::Conformance: {
+      auto FirstArchetype =
+          CallerGenericEnv->mapTypeIntoContext(Req.getFirstType());
+      if (!FirstArchetype->is<ArchetypeType>())
+        continue;
+      if (!UsedCallerArchetypes.count(
+              FirstArchetype->getAs<ArchetypeType>()->getPrimary()))
+        continue;
+      break;
+    }
+    case RequirementKind::SameType: {
+      auto FirstArchetype =
+          CallerGenericEnv->mapTypeIntoContext(Req.getFirstType());
+      auto SecondArchetype =
+          CallerGenericEnv->mapTypeIntoContext(Req.getSecondType());
+      if (!FirstArchetype->is<ArchetypeType>() &&
+          !SecondArchetype->is<ArchetypeType>())
+        continue;
+
+      if (!UsedCallerArchetypes.count(
+              FirstArchetype->getAs<ArchetypeType>()->getPrimary()) &&
+          !UsedCallerArchetypes.count(
+              SecondArchetype->getAs<ArchetypeType>()->getPrimary()))
+        continue;
+
+      // The requirement should not reference any archetypes that are not used
+      // by substitutions.
+      // TODO: Add the involved archetypes to the new generic signature as well?
+      assert(!FirstArchetype->hasArchetype() ||
+             UsedCallerArchetypes.count(
+                 FirstArchetype->getAs<ArchetypeType>()->getPrimary()));
+      assert(!SecondArchetype->hasArchetype() ||
+             UsedCallerArchetypes.count(
+                 SecondArchetype->getAs<ArchetypeType>()->getPrimary()));
+
+      break;
+    }
+    };
+    DEBUG(llvm::dbgs() << "Remap and add requirement:\n"; Req.dump());
+    DEBUG(llvm::dbgs() << "\nGSB before:\n";Builder.dump());
+    auto Failure = Builder.addRequirement(
+        Req, source, &CallerInterfaceToSpecializedInterfaceMap);
+    assert(!Failure);
+    DEBUG(llvm::dbgs() << "\nGSB after:\n";Builder.dump());
+  }
+#endif
 }
 
 std::pair<GenericEnvironment *, GenericSignature *>
 FunctionSignaturePartialSpecializer::
     getSpecializedGenericEnvironmentAndSignature() {
+  // Infer requirements for all generic parameters of the new signature.
+  for (auto GP : AllGenericParams) {
+    Builder.inferRequirements(*SM, TypeLoc::withoutLoc(Type(GP)));
+  }
   // Finalize the archetype builder.
   Builder.finalize(SourceLoc(), AllGenericParams,
                    /*allowConcreteGenericParams=*/true);
@@ -1387,7 +1515,7 @@ FunctionSignaturePartialSpecializer::createSpecializedGenericSignature(
   computeCalleeInterfaceToSpecializedInterfaceMap(CalleeGenericSig);
 
   // Add requirements from the callee signature.
-  addRequirements(CalleeGenericSig);
+  addRequirements(CalleeGenericSig, CallerGenericSig, CallerGenericEnv);
 
   return getSpecializedGenericEnvironmentAndSignature();
 }
@@ -1425,11 +1553,19 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
     ApplySite Apply, SILFunction *Callee, ArrayRef<Substitution> ParamSubs) {
   SILModule &M = Callee->getModule();
   auto &Ctx = M.getASTContext();
+  SILFunction *Caller = nullptr;
+
+  if (Apply)
+    Caller = Apply.getFunction();
 
   // Caller is the SILFunction containing the apply instruction.
-  auto CallerGenericSig =
-      Apply.getFunction()->getLoweredFunctionType()->getGenericSignature();
-  auto CallerGenericEnv = Apply.getFunction()->getGenericEnvironment();
+  GenericSignature *CallerGenericSig = nullptr;
+  GenericEnvironment *CallerGenericEnv = nullptr;
+
+  if (Caller) {
+    CallerGenericSig = Caller->getLoweredFunctionType()->getGenericSignature();
+    CallerGenericEnv = Caller->getGenericEnvironment();
+  }
 
   // Callee is the generic function being called by the apply instruction.
   auto CalleeFnTy = Callee->getLoweredFunctionType();
@@ -1460,7 +1596,9 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
 
   // Create substitution lists for the caller and cloner.
   FSPS.computeClonerParamSubs(CalleeGenericSig, *this, ClonerParamSubs);
+  verifySubstitutionList(ClonerParamSubs, "Final ClonerParamSubs");
   FSPS.computeCallerParamSubs(SpecializedGenericSig, CallerParamSubs);
+  verifySubstitutionList(CallerParamSubs, "Final CallerParamSubs");
   // Create a substitution map for the caller interface substitutions.
   FSPS.computeCallerInterfaceSubs(CalleeGenericSig, *this, CallerInterfaceSubs);
 
@@ -1483,6 +1621,38 @@ void ReabstractionInfo::specializeConcreteAndGenericSubstitutions(
 
   assert(!SubstitutedType->hasArchetype() &&
          "Function type should not contain archetypes");
+
+#if 0
+  // Try to infer the requirements.
+  GenericSignatureBuilder TmpBuilder(
+      M.getASTContext(), LookUpConformanceInModule(M.getSwiftModule()));
+  TmpBuilder.addGenericSignature(SubstitutedType->getGenericSignature());
+
+  SmallVector<ParamDecl *, 4> ParamDecls;
+  for (auto P : SubstitutedType->getParameters()) {
+    auto *NewPD = new (Ctx)
+        ParamDecl(false, SourceLoc(), SourceLoc(), Identifier(), SourceLoc(),
+                  Identifier(), P.getType(), Callee->getDeclContext());
+    ParamDecls.push_back(NewPD);
+  }
+
+  ParameterList *ParamList = ParameterList::create(Ctx, ParamDecls);
+  SmallVector<GenericTypeParamDecl *, 4> GenericParamDecls;
+  for (auto GP : SubstitutedType->getGenericSignature()->getGenericParams()) {
+    auto *NewGPD = new (Ctx)
+        GenericTypeParamDecl(Callee->getDeclContext(), Identifier(),
+                             SourceLoc(), GP->getDepth(), GP->getIndex());
+    GenericParamDecls.push_back(NewGPD);
+  }
+  GenericParamList *GenericParametersList = GenericParamList::create(
+      Ctx, SourceLoc(), GenericParamDecls, SourceLoc());
+
+  TmpBuilder.inferRequirements(*M.getSwiftModule(), ParamList,
+                               GenericParametersList);
+  TmpBuilder.finalize(
+      SourceLoc(), SubstitutedType->getGenericSignature()->getGenericParams(),
+      /*allowConcreteGenericParams=*/true);
+#endif
 
   HasUnboundGenericParams =
       SpecializedGenericSig && !SpecializedGenericSig->areAllParamsConcrete();
@@ -2290,4 +2460,3 @@ SILFunction *swift::lookupPrespecializedSymbol(SILModule &M,
 
   return Specialization;
 }
-
