@@ -21,6 +21,7 @@
 #include "swift/Basic/QuotedString.h"
 #include "swift/SIL/SILPrintContext.h"
 #include "swift/SIL/CFG.h"
+#include "swift/SIL/FormalLinkage.h"
 #include "swift/SIL/SILFunction.h"
 #include "swift/SIL/SILCoverageMap.h"
 #include "swift/SIL/SILDebugScope.h"
@@ -2058,18 +2059,113 @@ static void printSILGlobals(SILPrintContext &Ctx,
     g->print(Ctx.OS(), Ctx.printVerbose());
 }
 
+static bool shouldBePrinted(const SILWitnessTable &WT) {
+  if (isAvailableExternally(WT.getLinkage()) &&
+      !hasSharedVisibility(WT.getLinkage()))
+    return false;
+  return true;
+}
+
+static bool shouldBePrinted(const SILDefaultWitnessTable &WT) {
+  if (isAvailableExternally(WT.getLinkage()) &&
+      !hasSharedVisibility(WT.getLinkage()))
+    return false;
+  return true;
+}
+
+static bool shouldBePrinted(const SILVTable &VT, const SILModule &M) {
+  auto Class = VT.getClass();
+  auto isLocalClass = Class->getParentModule() == M.getSwiftModule();
+  ForDefinition_t ForDefinition = isLocalClass
+                                      ? ForDefinition_t::ForDefinition
+                                      : ForDefinition_t::NotForDefinition;
+  auto Linkage = getSILLinkage(getDeclLinkage(Class), ForDefinition);
+  if (isAvailableExternally(Linkage) && !hasSharedVisibility(Linkage))
+    return false;
+  return true;
+}
+
+/// Compute a set of functions that need to be printed.
+/// The result is stored into FuncsToPrint map. Each function that needs
+/// to be printed is mapped to true.
+static void
+findFunctionsToPrint(const SILModule::FunctionListType &Functions,
+                     llvm::DenseMap<const SILFunction *, bool> &FuncsToPrint) {
+  std::vector<const SILFunction *> Worklist;
+  Worklist.reserve(Functions.size());
+
+  auto ShouldBePrinted = [] (const SILFunction &F, bool isReference) -> bool {
+    if (F.isAvailableExternally()) {
+      // Emit external shared functions only if they are referenced.
+      if (hasSharedVisibility(F.getLinkage()) && isReference)
+        return true;
+      return false;
+    }
+    return true;
+  };
+
+  auto AddToWorklist = [&](const SILFunction *F) {
+    if (FuncsToPrint.find(F) != FuncsToPrint.end())
+      return;
+    Worklist.push_back(F);
+    FuncsToPrint[F] = true;
+  };
+
+  // Find functions that should be always printed.
+  for (const SILFunction &f : Functions) {
+    if (ShouldBePrinted(f, /* IsReference */ false)) {
+      AddToWorklist(&f);
+    }
+  }
+
+  // Scan the body of a function, find all referenced functions
+  // and add them to the worklist if they should be printed.
+  auto AddReferencedFunctions = [&](const SILFunction &F) {
+    for (auto &BB : F)
+      for (auto &I : BB) {
+        if (auto *FRI = dyn_cast<FunctionRefInst>(&I)) {
+          auto *ReferencedF = FRI->getReferencedFunction();
+          if (ShouldBePrinted(*ReferencedF,
+                              /* isReference */ true)) {
+            AddToWorklist(ReferencedF);
+          }
+        }
+      }
+  };
+
+  // Iterate until all functions in the worklist are processed.
+  while (!Worklist.empty()) {
+    const SILFunction *F = Worklist.back();
+    Worklist.pop_back();
+    assert(F != nullptr);
+    AddReferencedFunctions(*F);
+  }
+}
+
+static bool
+shouldBePrinted(const SILFunction &F,
+                llvm::DenseMap<const SILFunction *, bool> &FuncsToPrint) {
+  return FuncsToPrint.find(&F) != FuncsToPrint.end();
+}
+
 static void printSILFunctions(SILPrintContext &Ctx,
                               const SILModule::FunctionListType &Functions) {
+
+  llvm::DenseMap<const SILFunction *, bool> funcsToPrint;
+  findFunctionsToPrint(Functions, funcsToPrint);
   if (!Ctx.sortSIL()) {
-    for (const SILFunction &f : Functions)
-      f.print(Ctx);
+    for (const SILFunction &f : Functions) {
+      if (shouldBePrinted(f, funcsToPrint))
+        f.print(Ctx);
+    }
     return;
   }
 
   std::vector<const SILFunction *> functions;
   functions.reserve(Functions.size());
   for (const SILFunction &f : Functions)
-    functions.push_back(&f);
+    if (shouldBePrinted(f, funcsToPrint))
+      functions.push_back(&f);
   std::sort(functions.begin(), functions.end(),
     [] (const SILFunction *f1, const SILFunction *f2) -> bool {
       return f1->getName().compare(f2->getName()) == -1;
@@ -2080,17 +2176,20 @@ static void printSILFunctions(SILPrintContext &Ctx,
 }
 
 static void printSILVTables(SILPrintContext &Ctx,
-                            const SILModule::VTableListType &VTables) {
+                            const SILModule::VTableListType &VTables,
+                            const SILModule &M) {
   if (!Ctx.sortSIL()) {
     for (const SILVTable &vt : VTables)
-      vt.print(Ctx.OS(), Ctx.printVerbose());
+      if (shouldBePrinted(vt, M))
+        vt.print(Ctx.OS(), Ctx.printVerbose());
     return;
   }
 
   std::vector<const SILVTable *> vtables;
   vtables.reserve(VTables.size());
   for (const SILVTable &vt : VTables)
-    vtables.push_back(&vt);
+    if (shouldBePrinted(vt, M))
+      vtables.push_back(&vt);
   std::sort(vtables.begin(), vtables.end(),
     [] (const SILVTable *v1, const SILVTable *v2) -> bool {
       StringRef Name1 = v1->getClass()->getName().str();
@@ -2107,14 +2206,16 @@ printSILWitnessTables(SILPrintContext &Ctx,
                       const SILModule::WitnessTableListType &WTables) {
   if (!Ctx.sortSIL()) {
     for (const SILWitnessTable &wt : WTables)
-      wt.print(Ctx.OS(), Ctx.printVerbose());
+      if (shouldBePrinted(wt))
+        wt.print(Ctx.OS(), Ctx.printVerbose());
     return;
   }
 
   std::vector<const SILWitnessTable *> witnesstables;
   witnesstables.reserve(WTables.size());
   for (const SILWitnessTable &wt : WTables)
-    witnesstables.push_back(&wt);
+    if (shouldBePrinted(wt))
+      witnesstables.push_back(&wt);
   std::sort(witnesstables.begin(), witnesstables.end(),
     [] (const SILWitnessTable *w1, const SILWitnessTable *w2) -> bool {
       return w1->getName().compare(w2->getName()) == -1;
@@ -2129,14 +2230,16 @@ printSILDefaultWitnessTables(SILPrintContext &Ctx,
                         const SILModule::DefaultWitnessTableListType &WTables) {
   if (!Ctx.sortSIL()) {
     for (const SILDefaultWitnessTable &wt : WTables)
-      wt.print(Ctx.OS(), Ctx.printVerbose());
+      if (shouldBePrinted(wt))
+        wt.print(Ctx.OS(), Ctx.printVerbose());
     return;
   }
 
   std::vector<const SILDefaultWitnessTable *> witnesstables;
   witnesstables.reserve(WTables.size());
   for (const SILDefaultWitnessTable &wt : WTables)
-    witnesstables.push_back(&wt);
+    if (shouldBePrinted(wt))
+      witnesstables.push_back(&wt);
   std::sort(witnesstables.begin(), witnesstables.end(),
     [] (const SILDefaultWitnessTable *w1,
         const SILDefaultWitnessTable *w2) -> bool {
@@ -2219,7 +2322,7 @@ void SILModule::print(SILPrintContext &PrintCtx, ModuleDecl *M,
 
   printSILGlobals(PrintCtx, getSILGlobalList());
   printSILFunctions(PrintCtx, getFunctionList());
-  printSILVTables(PrintCtx, getVTableList());
+  printSILVTables(PrintCtx, getVTableList(), *this);
   printSILWitnessTables(PrintCtx, getWitnessTableList());
   printSILDefaultWitnessTables(PrintCtx, getDefaultWitnessTableList());
   printSILCoverageMaps(PrintCtx, getCoverageMapList());
