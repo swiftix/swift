@@ -23,6 +23,7 @@
 #include "swift/AST/SubstitutionMap.h"
 #include "swift/AST/Types.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/Support/Debug.h"
 
 using namespace swift;
 
@@ -41,4 +42,31 @@ Substitution::Substitution(Type Replacement,
   // The replacement type must be materializable.
   assert(Replacement->isMaterializable()
          && "cannot substitute with a non-materializable type");
+#ifndef NDEBUG
+  if (Replacement->isTypeParameter() || Replacement->is<ArchetypeType>() ||
+      Replacement->isTypeVariableOrMember() ||
+      Replacement->is<UnresolvedType>() || Replacement->hasError())
+    return;
+  // Check conformances of a concrete replacement type.
+  for (auto C : Conformance) {
+    // An existential type can have an abstract conformance to
+    // AnyObject or an @objc protocol.
+    if (C.isAbstract() && Replacement->isExistentialType()) {
+      auto *proto = C.getRequirement();
+      assert((proto->isSpecificProtocol(KnownProtocolKind::AnyObject) ||
+              proto->isObjC()) &&
+             "an existential type can conform only to AnyObject or an "
+             "@objc-protocol");
+      continue;
+    }
+    // All of the conformances should be concrete.
+    if (!C.isConcrete()) {
+      llvm::dbgs() << "Concrete replacement type:\n";
+      Replacement->dump(llvm::dbgs());
+      llvm::dbgs() << "SubstitutionMap:\n";
+      dump(llvm::dbgs());
+    }
+    assert(C.isConcrete() && "Conformance should be concrete");
+  }
+#endif
 }
