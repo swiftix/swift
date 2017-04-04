@@ -481,6 +481,13 @@ static void collectUsedArchetypes(SILFunction *F,
           Sub.getReplacement().visit(RegisterArchetypesAndGenericTypes);
         }
       }
+      // Scan all substitutions of builtin instructions.
+      if (auto *BI = dyn_cast<BuiltinInst>(&I)) {
+        auto Subs = BI->getSubstitutions();
+        for (auto Sub : Subs) {
+          Sub.getReplacement().visit(RegisterArchetypesAndGenericTypes);
+        }
+      }
       // Scan the result type of the instruction.
       if (I.getType()) {
         I.getType().getSwiftRValueType().visit(RegisterArchetypesAndGenericTypes);
@@ -556,6 +563,7 @@ CanSILFunctionType FunctionSignatureTransform::createOptimizedSILFunctionType() 
     InterfaceResults.push_back(InterfaceResult);
   }
 
+#if 0
   llvm::DenseSet<Type> UsedArchetypes;
   if (HasGenericSignature) {
     // Not all of the generic type parameters are used by the function
@@ -585,6 +593,7 @@ CanSILFunctionType FunctionSignatureTransform::createOptimizedSILFunctionType() 
             });
     }
   }
+#endif
 
   // Don't use a method representation if we modified self.
   auto ExtInfo = FTy->getExtInfo();
@@ -601,8 +610,11 @@ CanSILFunctionType FunctionSignatureTransform::createOptimizedSILFunctionType() 
   // proper interface type. This is required for generic functions.
   mapInterfaceTypes(F, InterfaceParams, InterfaceResults, InterfaceErrorResult);
 
+#if 0
   GenericSignature *GenericSig =
       UsedArchetypes.empty() ? nullptr : FTy->getGenericSignature();
+#endif
+  GenericSignature *GenericSig = FTy->getGenericSignature();
 
   return SILFunctionType::get(GenericSig, ExtInfo,
                               FTy->getCalleeConvention(), InterfaceParams,
