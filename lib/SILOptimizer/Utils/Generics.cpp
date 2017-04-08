@@ -21,8 +21,8 @@
 #include "swift/AST/GenericEnvironment.h"
 #include "swift/AST/ParameterList.h"
 
-#undef DEBUG
-#define DEBUG(X) X
+//#undef DEBUG
+//#define DEBUG(X) X
 
 using namespace swift;
 
@@ -687,6 +687,11 @@ checkSpecializationRequirements(ArrayRef<Requirement> Requirements) {
   }
 }
 
+/// This constructor is used by the EagerSpecializer, which implements
+/// the @_specialize handling.
+///
+/// The difference from a usual invocation of the generic specializer is that
+/// there is no apply instruction, whose callee function is being specialized.
 ReabstractionInfo::ReabstractionInfo(SILFunction *OrigF,
                                      ArrayRef<Requirement> Requirements) {
   if (shouldNotSpecializeCallee(OrigF))
