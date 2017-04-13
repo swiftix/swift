@@ -269,13 +269,22 @@ extension String.Content {
   
   static func _unpack(
     bits: UInt61, bitsPerElement: UInt16
-  ) -> _MapRandomAccessCollection<String.Content.Packed, _Unpack> {
+  ) -> LazyMapRandomAccessCollection<String.Content.Packed, UInt16> {
     let source = String.Content.Packed(
       representation: numericCast(bits & (~(0 as UInt61) >> 1)),
       bitsPerElement: numericCast(bitsPerElement)
     )
-    return _MapRandomAccessCollection(
-      source, through: _Unpack(bitsPerElement: bitsPerElement))
+    return bitsPerElement < 7
+    ? String.Content.packingTable.withUTF8Buffer {
+      table in source.lazy.map {
+        (x: UInt16) -> UInt16 in UInt16(table[numericCast(x)])
+      }
+    }
+    : source.lazy.map { 
+      [ mask = UInt16(truncatingBitPattern: ~0 << UInt32(bitsPerElement)) ]
+      (x: UInt16) -> UInt16 in
+      (x &+ 32) & ~mask
+    }
   }
 }
   
@@ -316,8 +325,9 @@ extension String.Content.Inline${N}or${W} : AnyUnicodeContent {
 }
 
 extension String.Content.Inline${N}or${W} : UnicodeContent {
-  public typealias _UTF16View = _MapRandomAccessCollection<
-    String.Content.Packed, String.Content._Unpack>
+  public typealias _UTF16View = LazyMapRandomAccessCollection<
+    String.Content.Packed, UTF16.CodeUnit
+  >
   
   internal var _utf16: _UTF16View {
     return String.Content._unpack(
