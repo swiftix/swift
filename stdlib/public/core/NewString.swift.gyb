@@ -251,25 +251,31 @@ extension String.Content {
       bitsPerElement: numericCast(bitsPerElement)
     )
   }
+
+  public struct _Unpack : _Function {
+    let bitsPerElement: UInt16
+    public func apply(_ input: UInt16) -> UInt16 {
+      if bitsPerElement < 7 {
+        return String.Content.packingTable.withUTF8Buffer {
+          UInt16($0[numericCast(input)])
+        }
+      }
+      else {
+        let mask = UInt16(truncatingBitPattern: ~0 << UInt32(bitsPerElement))
+        return (input &+ 32) & ~mask
+      }
+    }
+  }
   
   static func _unpack(
     bits: UInt61, bitsPerElement: UInt16
-  ) -> LazyMapRandomAccessCollection<String.Content.Packed, UInt16> {
+  ) -> _MapRandomAccessCollection<String.Content.Packed, _Unpack> {
     let source = String.Content.Packed(
       representation: numericCast(bits & (~(0 as UInt61) >> 1)),
       bitsPerElement: numericCast(bitsPerElement)
     )
-    return bitsPerElement < 7
-    ? String.Content.packingTable.withUTF8Buffer {
-      table in source.lazy.map {
-        (x: UInt16) -> UInt16 in UInt16(table[numericCast(x)])
-      }
-    }
-    : source.lazy.map { 
-      [ mask = UInt16(truncatingBitPattern: ~0 << UInt32(bitsPerElement)) ]
-      (x: UInt16) -> UInt16 in
-      (x &+ 32) & ~mask
-    }
+    return _MapRandomAccessCollection(
+      source, through: _Unpack(bitsPerElement: bitsPerElement))
   }
 }
   
@@ -310,9 +316,8 @@ extension String.Content.Inline${N}or${W} : AnyUnicodeContent {
 }
 
 extension String.Content.Inline${N}or${W} : UnicodeContent {
-  public typealias _UTF16View = LazyMapRandomAccessCollection<
-    String.Content.Packed, UTF16.CodeUnit
-  >
+  public typealias _UTF16View = _MapRandomAccessCollection<
+    String.Content.Packed, String.Content._Unpack>
   
   internal var _utf16: _UTF16View {
     return String.Content._unpack(
@@ -531,12 +536,21 @@ extension String.Content : UnicodeContent {
   }
 }
 
+struct _UInt8TruncatingBitPatternUTF16CodeUnit : _Function {
+  func apply(_ input: UTF16.CodeUnit) -> UInt8 {
+    return UInt8(truncatingBitPattern: input)
+  }
+}
+
 extension Collection where Iterator.Element == UTF16.CodeUnit {
   internal func _isLatin1() -> Bool {
     return !self.contains { $0 > 0xFF }
   }
-  internal var _low8Bits : LazyMapCollection<Self, UInt8> {
-    return self.lazy.map { UInt8(truncatingBitPattern: $0) }
+  
+  internal var _low8Bits :
+  _MapCollection<Self, _UInt8TruncatingBitPatternUTF16CodeUnit>
+  {
+    return _MapCollection(self, through: _UInt8TruncatingBitPatternUTF16CodeUnit())
   }
 }
 
