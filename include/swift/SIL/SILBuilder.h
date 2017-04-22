@@ -848,31 +848,31 @@ public:
   RetainValueInst *createRetainValue(SILLocation Loc, SILValue operand,
                                      Atomicity atomicity) {
     assert(isParsing || F.hasUnqualifiedOwnership());
-    return insert(new (F.getModule()) RetainValueInst(getSILDebugLocation(Loc),
-                                                      operand, atomicity));
+    return insert(RetainValueInst::create(getSILDebugLocation(Loc), operand,
+                                          atomicity, F, OpenedArchetypes));
   }
 
   ReleaseValueInst *createReleaseValue(SILLocation Loc, SILValue operand,
                                        Atomicity atomicity) {
     assert(isParsing || F.hasUnqualifiedOwnership());
-    return insert(new (F.getModule()) ReleaseValueInst(getSILDebugLocation(Loc),
-                                                       operand, atomicity));
+    return insert(ReleaseValueInst::create(getSILDebugLocation(Loc), operand,
+                                           atomicity, F, OpenedArchetypes));
   }
 
   UnmanagedRetainValueInst *createUnmanagedRetainValue(SILLocation Loc,
                                                        SILValue operand,
                                                        Atomicity atomicity) {
     assert(F.hasQualifiedOwnership());
-    return insert(new (F.getModule()) UnmanagedRetainValueInst(
-        getSILDebugLocation(Loc), operand, atomicity));
+    return insert(UnmanagedRetainValueInst::create(
+        getSILDebugLocation(Loc), operand, atomicity, F, OpenedArchetypes));
   }
 
   UnmanagedReleaseValueInst *createUnmanagedReleaseValue(SILLocation Loc,
                                                          SILValue operand,
                                                          Atomicity atomicity) {
     assert(F.hasQualifiedOwnership());
-    return insert(new (F.getModule()) UnmanagedReleaseValueInst(
-        getSILDebugLocation(Loc), operand, atomicity));
+    return insert(UnmanagedReleaseValueInst::create(
+        getSILDebugLocation(Loc), operand, atomicity, F, OpenedArchetypes));
   }
 
   CopyValueInst *createCopyValue(SILLocation Loc, SILValue operand) {
@@ -894,22 +894,22 @@ public:
   AutoreleaseValueInst *createAutoreleaseValue(SILLocation Loc,
                                                SILValue operand,
                                                Atomicity atomicity) {
-    return insert(new (F.getModule()) AutoreleaseValueInst(
-        getSILDebugLocation(Loc), operand, atomicity));
+    return insert(AutoreleaseValueInst::create(
+        getSILDebugLocation(Loc), operand, atomicity, F, OpenedArchetypes));
   }
 
   UnmanagedAutoreleaseValueInst *
   createUnmanagedAutoreleaseValue(SILLocation Loc, SILValue operand,
                                   Atomicity atomicity) {
-    return insert(new (F.getModule()) UnmanagedAutoreleaseValueInst(
-                      getSILDebugLocation(Loc), operand, atomicity));
+    return insert(UnmanagedAutoreleaseValueInst::create(
+        getSILDebugLocation(Loc), operand, atomicity, F, OpenedArchetypes));
   }
 
   SetDeallocatingInst *createSetDeallocating(SILLocation Loc,
                                             SILValue operand,
                                             Atomicity atomicity) {
-    return insert(new (F.getModule()) SetDeallocatingInst(
-        getSILDebugLocation(Loc), operand, atomicity));
+    return insert(SetDeallocatingInst::create(getSILDebugLocation(Loc), operand,
+                                              atomicity, F, OpenedArchetypes));
   }
 
   StructInst *createStruct(SILLocation Loc, SILType Ty,
@@ -1281,43 +1281,43 @@ public:
     return insert(new (F.getModule())
                       CopyBlockInst(getSILDebugLocation(Loc), Operand));
   }
-  StrongRetainInst *createStrongRetain(SILLocation Loc, SILValue Operand,
+  StrongRetainInst *createStrongRetain(SILLocation Loc, SILValue operand,
                                        Atomicity atomicity) {
     assert(isParsing || F.hasUnqualifiedOwnership());
-    return insert(new (F.getModule()) StrongRetainInst(getSILDebugLocation(Loc),
-                                                       Operand, atomicity));
+    return insert(StrongRetainInst::create(getSILDebugLocation(Loc), operand,
+                                           atomicity, F, OpenedArchetypes));
   }
-  StrongReleaseInst *createStrongRelease(SILLocation Loc, SILValue Operand,
+  StrongReleaseInst *createStrongRelease(SILLocation Loc, SILValue operand,
                                          Atomicity atomicity) {
     assert(isParsing || F.hasUnqualifiedOwnership());
-    return insert(new (F.getModule()) StrongReleaseInst(
-        getSILDebugLocation(Loc), Operand, atomicity));
+    return insert(StrongReleaseInst::create(getSILDebugLocation(Loc), operand,
+                                            atomicity, F, OpenedArchetypes));
   }
-  StrongPinInst *createStrongPin(SILLocation Loc, SILValue Operand,
+  StrongPinInst *createStrongPin(SILLocation Loc, SILValue operand,
                                  Atomicity atomicity) {
-    return insert(new (F.getModule()) StrongPinInst(getSILDebugLocation(Loc),
-                                                    Operand, atomicity));
+    return insert(StrongPinInst::create(getSILDebugLocation(Loc), operand,
+                                        atomicity, F, OpenedArchetypes));
   }
-  StrongUnpinInst *createStrongUnpin(SILLocation Loc, SILValue Operand,
+  StrongUnpinInst *createStrongUnpin(SILLocation Loc, SILValue operand,
                                      Atomicity atomicity) {
-    return insert(new (F.getModule()) StrongUnpinInst(getSILDebugLocation(Loc),
-                                                      Operand, atomicity));
+    return insert(StrongUnpinInst::create(getSILDebugLocation(Loc), operand,
+                                          atomicity, F, OpenedArchetypes));
   }
   StrongRetainUnownedInst *createStrongRetainUnowned(SILLocation Loc,
-                                                     SILValue Operand,
+                                                     SILValue operand,
                                                      Atomicity atomicity) {
-    return insert(new (F.getModule()) StrongRetainUnownedInst(
-        getSILDebugLocation(Loc), Operand, atomicity));
+    return insert(StrongRetainUnownedInst::create(
+        getSILDebugLocation(Loc), operand, atomicity, F, OpenedArchetypes));
   }
-  UnownedRetainInst *createUnownedRetain(SILLocation Loc, SILValue Operand,
+  UnownedRetainInst *createUnownedRetain(SILLocation Loc, SILValue operand,
                                          Atomicity atomicity) {
-    return insert(new (F.getModule()) UnownedRetainInst(
-        getSILDebugLocation(Loc), Operand, atomicity));
+    return insert(UnownedRetainInst::create(getSILDebugLocation(Loc), operand,
+                                            atomicity, F, OpenedArchetypes));
   }
-  UnownedReleaseInst *createUnownedRelease(SILLocation Loc, SILValue Operand,
+  UnownedReleaseInst *createUnownedRelease(SILLocation Loc, SILValue operand,
                                            Atomicity atomicity) {
-    return insert(new (F.getModule()) UnownedReleaseInst(
-        getSILDebugLocation(Loc), Operand, atomicity));
+    return insert(UnownedReleaseInst::create(getSILDebugLocation(Loc), operand,
+                                             atomicity, F, OpenedArchetypes));
   }
 
   EndLifetimeInst *createEndLifetime(SILLocation Loc, SILValue Operand) {

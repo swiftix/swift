@@ -747,12 +747,6 @@ static SILType getPinResultType(SILType operandType) {
     OptionalType::get(operandType.getSwiftRValueType())->getCanonicalType());
 }
 
-StrongPinInst::StrongPinInst(SILDebugLocation Loc, SILValue operand,
-                             Atomicity atomicity)
-    : UnaryInstructionBase(Loc, operand, getPinResultType(operand->getType())) {
-  setAtomicity(atomicity);
-}
-
 CopyAddrInst::CopyAddrInst(SILDebugLocation Loc, SILValue SrcLValue,
                            SILValue DestLValue, IsTake_t isTakeOfSrc,
                            IsInitialization_t isInitializationOfDest)
@@ -2077,3 +2071,41 @@ KeyPathInst::~KeyPathInst() {
 KeyPathPattern *KeyPathInst::getPattern() const {
   return Pattern;
 }
+
+StrongPinInst::StrongPinInst(SILDebugLocation Loc, SILValue operand,
+                             ArrayRef<SILValue> TypeDependentOperands,
+                             Atomicity atomicity)
+  : Base(Loc, operand, getPinResultType(operand->getType()),
+         TypeDependentOperands, atomicity) {
+}
+
+/// Define create methods for unary reference counting instructions.
+#define UNARY_REF_COUNTING_INST_CREATE(INST)                                   \
+  INST *INST::create(SILDebugLocation DebugLoc, SILValue operand,              \
+                     Atomicity atomicity, SILFunction &F,                      \
+                     SILOpenedArchetypesState &OpenedArchetypes) {             \
+    SILModule &Mod = F.getModule();                                            \
+    SmallVector<SILValue, 8> TypeDependentOperands;                            \
+    collectTypeDependentOperands(TypeDependentOperands, OpenedArchetypes, F,   \
+                                 operand->getType().getSwiftRValueType());     \
+    unsigned size =                                                            \
+        totalSizeToAlloc<swift::Operand>(1 + TypeDependentOperands.size());    \
+    void *Buffer = Mod.allocateInst(size, alignof(INST));                      \
+    return ::new (Buffer)                                                      \
+        INST(DebugLoc, operand, TypeDependentOperands, atomicity);             \
+  }
+
+UNARY_REF_COUNTING_INST_CREATE(RetainValueInst)
+UNARY_REF_COUNTING_INST_CREATE(ReleaseValueInst)
+UNARY_REF_COUNTING_INST_CREATE(UnmanagedRetainValueInst)
+UNARY_REF_COUNTING_INST_CREATE(UnmanagedReleaseValueInst)
+UNARY_REF_COUNTING_INST_CREATE(UnmanagedAutoreleaseValueInst)
+UNARY_REF_COUNTING_INST_CREATE(AutoreleaseValueInst)
+UNARY_REF_COUNTING_INST_CREATE(SetDeallocatingInst)
+UNARY_REF_COUNTING_INST_CREATE(StrongPinInst)
+UNARY_REF_COUNTING_INST_CREATE(StrongUnpinInst)
+UNARY_REF_COUNTING_INST_CREATE(StrongRetainInst)
+UNARY_REF_COUNTING_INST_CREATE(StrongReleaseInst)
+UNARY_REF_COUNTING_INST_CREATE(StrongRetainUnownedInst)
+UNARY_REF_COUNTING_INST_CREATE(UnownedRetainInst)
+UNARY_REF_COUNTING_INST_CREATE(UnownedReleaseInst)

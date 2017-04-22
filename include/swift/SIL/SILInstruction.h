@@ -3516,108 +3516,164 @@ public:
   bool isAtomic() const { return atomicity == Atomicity::Atomic; }
 };
 
-/// RetainValueInst - Copies a loadable value.
-class RetainValueInst : public UnaryInstructionBase<ValueKind::RetainValueInst,
-                                                    RefCountingInst,
-                                                    /*HasValue*/ false> {
-  friend SILBuilder;
+/// UnaryRefCountingInst - An abstract class of unary instructions which
+/// manipulate the reference count of their object operand.
+template <ValueKind KIND, typename DERIVED, bool HAS_RESULT>
+class UnaryRefCountingInst
+    : public UnaryInstructionWithTypeDependentOperandsBase<
+          KIND, DERIVED, RefCountingInst, HAS_RESULT> {
+public:
+  using Super = UnaryInstructionWithTypeDependentOperandsBase<
+      KIND, DERIVED, RefCountingInst, HAS_RESULT>;
+  using Base = UnaryRefCountingInst;
+  using Self = DERIVED;
+  using Atomicity = RefCountingInst::Atomicity;
 
-  RetainValueInst(SILDebugLocation DebugLoc, SILValue operand,
-                  Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
+  UnaryRefCountingInst(SILDebugLocation Loc, SILValue Operand,
+                       ArrayRef<SILValue> TypeDependentOperands,
+                       Atomicity atomicity)
+      : Super(Loc, Operand, TypeDependentOperands) {
+    Super::setAtomicity(atomicity);
+  }
+
+  UnaryRefCountingInst(SILDebugLocation Loc, SILValue Operand, SILType Ty,
+                       ArrayRef<SILValue> TypeDependentOperands,
+                       Atomicity atomicity)
+      : Super(Loc, Operand, TypeDependentOperands, Ty) {
+    Super::setAtomicity(atomicity);
   }
 };
 
+/// RetainValueInst - Copies a loadable value.
+class RetainValueInst final
+    : public UnaryRefCountingInst<ValueKind::RetainValueInst, RetainValueInst,
+                                  /*HasValue*/ false> {
+  friend SILBuilder;
+
+  RetainValueInst(SILDebugLocation DebugLoc, SILValue operand,
+                  ArrayRef<SILValue> TypeDependentOperands,
+                  Atomicity atomicity)
+    : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
+};
+
 /// ReleaseValueInst - Destroys a loadable value.
-class ReleaseValueInst : public UnaryInstructionBase<ValueKind::ReleaseValueInst,
-                                                     RefCountingInst,
-                                                     /*HasValue*/ false> {
+class ReleaseValueInst final
+    : public UnaryRefCountingInst<ValueKind::ReleaseValueInst, ReleaseValueInst,
+                                  /*HasValue*/ false> {
   friend SILBuilder;
 
   ReleaseValueInst(SILDebugLocation DebugLoc, SILValue operand,
+                   ArrayRef<SILValue> TypeDependentOperands,
                    Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// Copies a loadable value in an unmanaged, unbalanced way. Only meant for use
 /// in ownership qualified SIL. Please do not use this EVER unless you are
 /// implementing a part of the stdlib called Unmanaged.
-class UnmanagedRetainValueInst
-    : public UnaryInstructionBase<ValueKind::UnmanagedRetainValueInst,
-                                  RefCountingInst,
+class UnmanagedRetainValueInst final
+    : public UnaryRefCountingInst<ValueKind::UnmanagedRetainValueInst,
+                                  UnmanagedRetainValueInst,
                                   /*HasValue*/ false> {
   friend SILBuilder;
 
   UnmanagedRetainValueInst(SILDebugLocation DebugLoc, SILValue operand,
+                           ArrayRef<SILValue> TypeDependentOperands,
                            Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// Destroys a loadable value in an unmanaged, unbalanced way. Only meant for
 /// use in ownership qualified SIL. Please do not use this EVER unless you are
 /// implementing a part of the stdlib called Unmanaged.
-class UnmanagedReleaseValueInst
-    : public UnaryInstructionBase<ValueKind::UnmanagedReleaseValueInst,
-                                  RefCountingInst,
+class UnmanagedReleaseValueInst final
+    : public UnaryRefCountingInst<ValueKind::UnmanagedReleaseValueInst,
+                                  UnmanagedReleaseValueInst,
                                   /*HasValue*/ false> {
   friend SILBuilder;
 
   UnmanagedReleaseValueInst(SILDebugLocation DebugLoc, SILValue operand,
+                            ArrayRef<SILValue> TypeDependentOperands,
                             Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// Transfers ownership of a loadable value to the current autorelease
 /// pool. Unmanaged, so it is ignored from an ownership balancing perspective.
-class UnmanagedAutoreleaseValueInst
-                  : public UnaryInstructionBase<ValueKind::UnmanagedAutoreleaseValueInst,
-                                                RefCountingInst,
-                                                /*HasValue*/ false> {
+class UnmanagedAutoreleaseValueInst final
+    : public UnaryRefCountingInst<ValueKind::UnmanagedAutoreleaseValueInst,
+                                  UnmanagedAutoreleaseValueInst,
+                                  /*HasValue*/ false> {
   friend SILBuilder;
 
   UnmanagedAutoreleaseValueInst(SILDebugLocation DebugLoc, SILValue operand,
+                                ArrayRef<SILValue> TypeDependentOperands,
                                 Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// Transfers ownership of a loadable value to the current autorelease pool.
-class AutoreleaseValueInst
-                  : public UnaryInstructionBase<ValueKind::AutoreleaseValueInst,
-                                                RefCountingInst,
-                                                /*HasValue*/ false> {
+class AutoreleaseValueInst final
+    : public UnaryRefCountingInst<ValueKind::AutoreleaseValueInst,
+                                  AutoreleaseValueInst,
+                                  /*HasValue*/ false> {
   friend SILBuilder;
 
   AutoreleaseValueInst(SILDebugLocation DebugLoc, SILValue operand,
+                       ArrayRef<SILValue> TypeDependentOperands,
                        Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// SetDeallocatingInst - Sets the operand in deallocating state.
 ///
 /// This is the same operation what's done by a strong_release immediately
 /// before it calls the deallocator of the object.
-class SetDeallocatingInst
-                 : public UnaryInstructionBase<ValueKind::SetDeallocatingInst,
-                                                RefCountingInst,
-                                                /*HasValue*/ false> {
+class SetDeallocatingInst final
+    : public UnaryRefCountingInst<ValueKind::SetDeallocatingInst,
+                                  SetDeallocatingInst,
+                                  /*HasValue*/ false> {
   friend SILBuilder;
 
   SetDeallocatingInst(SILDebugLocation DebugLoc, SILValue operand,
+                      ArrayRef<SILValue> TypeDependentOperands,
                       Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// StrongPinInst - Ensure that the operand is retained and pinned, if
@@ -3627,29 +3683,36 @@ class SetDeallocatingInst
 /// operations.  (This should generally be straightforward, as pin and
 /// unpin may be conservatively assumed to have arbitrary
 /// side-effects.)
-class StrongPinInst
-  : public UnaryInstructionBase<ValueKind::StrongPinInst, RefCountingInst,
-                                /*HasResult*/ true>
-{
+class StrongPinInst final
+    : public UnaryRefCountingInst<ValueKind::StrongPinInst, StrongPinInst,
+                                  /*HasResult*/ true> {
   friend SILBuilder;
 
   StrongPinInst(SILDebugLocation DebugLoc, SILValue operand,
+                ArrayRef<SILValue> TypeDependentOperands,
                 Atomicity atomicity);
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// StrongUnpinInst - Given that the operand is the result of a
 /// strong_pin instruction, unpin it.
-class StrongUnpinInst
-  : public UnaryInstructionBase<ValueKind::StrongUnpinInst, RefCountingInst,
-                                /*HasResult*/ false>
-{
+class StrongUnpinInst final
+    : public UnaryRefCountingInst<ValueKind::StrongUnpinInst, StrongUnpinInst,
+                                  /*HasResult*/ false> {
   friend SILBuilder;
 
   StrongUnpinInst(SILDebugLocation DebugLoc, SILValue operand,
-                  Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
-  }
+                  ArrayRef<SILValue> TypeDependentOperands, Atomicity atomicity)
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// TupleInst - Represents a constructed loadable tuple.
@@ -4779,18 +4842,20 @@ public:
 };
 
 /// StrongRetainInst - Increase the strong reference count of an object.
-class StrongRetainInst
-  : public UnaryInstructionBase<ValueKind::StrongRetainInst,
-                                RefCountingInst,
-                                /*HAS_RESULT*/ false>
-{
+class StrongRetainInst final
+    : public UnaryRefCountingInst<ValueKind::StrongRetainInst, StrongRetainInst,
+                                  /*HAS_RESULT*/ false> {
   friend SILBuilder;
 
   StrongRetainInst(SILDebugLocation DebugLoc, SILValue Operand,
+                   ArrayRef<SILValue> TypeDependentOperands,
                    Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, Operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, Operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// StrongReleaseInst - Decrease the strong reference count of an object.
@@ -4798,62 +4863,78 @@ class StrongRetainInst
 /// An object can be destroyed when its strong reference count is
 /// zero.  It can be deallocated when both its strong reference and
 /// weak reference counts reach zero.
-class StrongReleaseInst
-  : public UnaryInstructionBase<ValueKind::StrongReleaseInst,
-                                RefCountingInst, /*HAS_RESULT*/ false>
-{
+class StrongReleaseInst final
+    : public UnaryRefCountingInst<ValueKind::StrongReleaseInst,
+                                  StrongReleaseInst,
+                                  /*HAS_RESULT*/ false> {
   friend SILBuilder;
 
   StrongReleaseInst(SILDebugLocation DebugLoc, SILValue Operand,
+                    ArrayRef<SILValue> TypeDependentOperands,
                     Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, Operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, Operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// StrongRetainUnownedInst - Increase the strong reference count of an object
 /// and assert that it has not been deallocated.
 ///
 /// The operand must be an @unowned type.
-class StrongRetainUnownedInst :
-    public UnaryInstructionBase<ValueKind::StrongRetainUnownedInst,
-                                RefCountingInst, /*HAS_RESULT*/ false>
-{
+class StrongRetainUnownedInst final
+    : public UnaryRefCountingInst<ValueKind::StrongRetainUnownedInst,
+                                  StrongRetainUnownedInst,
+                                  /*HAS_RESULT*/ false> {
   friend SILBuilder;
 
   StrongRetainUnownedInst(SILDebugLocation DebugLoc, SILValue operand,
+                          ArrayRef<SILValue> TypeDependentOperands,
                           Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// UnownedRetainInst - Increase the unowned reference count of an object.
-class UnownedRetainInst :
-    public UnaryInstructionBase<ValueKind::UnownedRetainInst,
-                                RefCountingInst, /*HAS_RESULT*/ false>
-{
+class UnownedRetainInst final
+    : public UnaryRefCountingInst<ValueKind::UnownedRetainInst,
+                                  UnownedRetainInst,
+                                  /*HAS_RESULT*/ false> {
   friend SILBuilder;
 
-  UnownedRetainInst(SILDebugLocation DebugLoc, SILValue Operand,
+  UnownedRetainInst(SILDebugLocation DebugLoc, SILValue operand,
+                    ArrayRef<SILValue> TypeDependentOperands,
                     Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, Operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// UnownedReleaseInst - Decrease the unowned reference count of an object.
-class UnownedReleaseInst :
-     public UnaryInstructionBase<ValueKind::UnownedReleaseInst,
-                                 RefCountingInst, /*HAS_RESULT*/ false>
-{
+class UnownedReleaseInst final
+    : public UnaryRefCountingInst<ValueKind::UnownedReleaseInst,
+                                  UnownedReleaseInst,
+                                  /*HAS_RESULT*/ false> {
   friend SILBuilder;
 
-  UnownedReleaseInst(SILDebugLocation DebugLoc, SILValue Operand,
+  UnownedReleaseInst(SILDebugLocation DebugLoc, SILValue operand,
+                     ArrayRef<SILValue> TypeDependentOperands,
                      Atomicity atomicity)
-      : UnaryInstructionBase(DebugLoc, Operand) {
-    setAtomicity(atomicity);
-  }
+      : Base(DebugLoc, operand, TypeDependentOperands, atomicity) {}
+
+public:
+  static Self *create(SILDebugLocation DebugLoc, SILValue operand,
+                      Atomicity atomicity, SILFunction &F,
+                      SILOpenedArchetypesState &OpenedArchetypes);
 };
 
 /// FixLifetimeInst - An artificial use of a value for the purposes of ARC or
