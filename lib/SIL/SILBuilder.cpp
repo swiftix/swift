@@ -344,3 +344,29 @@ SILValue SILBuilder::emitObjCToThickMetatype(SILLocation Loc, SILValue Op,
   // Just create the objc_to_thick_metatype instruction.
   return createObjCToThickMetatype(Loc, Op, Ty);
 }
+
+void SILBuilder::addOpenedArchetypeOperands(SILInstruction *I) {
+  while (I && I->getNumOperands() == 1 &&
+         I->getNumTypeDependentOperands() == 0) {
+    I = dyn_cast<SILInstruction>(I->getOperand(0));
+    // If it is a definition of an opened archetype,
+    // register it and exit.
+    if (I) {
+      auto Archetype = getOpenedArchetypeOf(I);
+      if (!Archetype)
+        continue;
+      auto Def = OpenedArchetypes.getOpenedArchetypeDef(Archetype);
+      // Return if it is a known open archetype.
+      if (Def)
+        return;
+      // Otherwise register it and return.
+      if (OpenedArchetypesTracker)
+        OpenedArchetypesTracker->addOpenedArchetypeDef(Archetype, I);
+      return;
+    }
+  }
+
+  if (I && I->getNumTypeDependentOperands() > 0) {
+    OpenedArchetypes.addOpenedArchetypeOperands(I->getTypeDependentOperands());
+  }
+}
