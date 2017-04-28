@@ -174,11 +174,15 @@ bool SILFunction::shouldOptimize() const {
 }
 
 Type SILFunction::mapTypeIntoContext(Type type) const {
+  assert((!type->hasTypeParameter() || getGenericEnvironment()) &&
+         "SILFunction should have a generic environment");
   return GenericEnvironment::mapTypeIntoContext(
       getGenericEnvironment(), type);
 }
 
 SILType SILFunction::mapTypeIntoContext(SILType type) const {
+  assert((!type.hasTypeParameter() || getGenericEnvironment()) &&
+         "SILFunction should have a generic environment");
   if (auto *genericEnv = getGenericEnvironment())
     return genericEnv->mapTypeIntoContext(getModule(), type);
   return type;
@@ -196,6 +200,8 @@ SILType GenericEnvironment::mapTypeIntoContext(SILModule &M,
 }
 
 Type SILFunction::mapTypeOutOfContext(Type type) const {
+  assert((!type->hasArchetype() || getGenericEnvironment()) &&
+         "SILFunction should have a generic environment");
   return GenericEnvironment::mapTypeOutOfContext(
       getGenericEnvironment(), type);
 }
