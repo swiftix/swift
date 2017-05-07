@@ -1732,6 +1732,25 @@ getCalleeSubstFunctionType(SILValue Callee, SubstitutionList Subs) {
   return CanFnTy->substGenericArgs(*Callee->getModule(), Subs);
 }
 
+static SILType getPartialApplyResultType(PartialApplyInst *PAI,
+                                         SILType CalleeSILSubstFnTy,
+                                         SubstitutionList Subs,
+                                         ArrayRef<SILValue> Arguments,
+                                         const ReabstractionInfo &ReInfo) {
+  auto PartialApplyConvention = PAI->getType()
+                                    .getSwiftRValueType()
+                                    ->getAs<SILFunctionType>()
+                                    ->getCalleeConvention();
+  auto &M = PAI->getModule();
+  auto PAIResultType = SILBuilder::getPartialApplyResultType(
+      CalleeSILSubstFnTy, Arguments.size(), M, {}, PartialApplyConvention);
+
+  auto NewPAType = SILType::getPrimitiveObjectType(
+      ReInfo.createSpecializedType(PAI->getFunctionType(), M));
+  assert(PAIResultType == NewPAType);
+  return PAIResultType;
+}
+
 /// Create a new apply based on an old one, but with a different
 /// function being applied.
 static ApplySite replaceWithSpecializedCallee(ApplySite AI,
@@ -1807,14 +1826,15 @@ static ApplySite replaceWithSpecializedCallee(ApplySite AI,
     return NewAI;
   }
   if (auto *PAI = dyn_cast<PartialApplyInst>(AI)) {
-    CanSILFunctionType NewPAType = ReInfo.createSpecializedType(
-        PAI->getFunctionType(), Builder.getModule());
-    // SILType PTy =
-    // SILType::getPrimitiveObjectType(ReInfo.getSpecializedType());
-    SILType PTy = CalleeSILSubstFnTy;
-    auto *NewPAI =
-        Builder.createPartialApply(Loc, Callee, PTy, Subs, Arguments,
-                                   SILType::getPrimitiveObjectType(NewPAType));
+    auto PAResultTy = getPartialApplyResultType(PAI, CalleeSILSubstFnTy, Subs,
+                                                Arguments, ReInfo);
+    /*
+      auto PAResultTy =
+        SILType::getPrimitiveObjectType(ReInfo.createSpecializedType(
+            PAI->getFunctionType(), Builder.getModule()));
+    */
+    auto *NewPAI = Builder.createPartialApply(Loc, Callee, CalleeSILSubstFnTy,
+                                              Subs, Arguments, PAResultTy);
     PAI->replaceAllUsesWith(NewPAI);
     return NewPAI;
   }
