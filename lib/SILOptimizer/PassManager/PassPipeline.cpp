@@ -354,6 +354,9 @@ static void addClosureSpecializePassPipeline(SILPassPipelinePlan &P) {
   // take advantage of static dispatch.
   P.addCapturePropagation();
 
+  // Create specialized functions for constant arguments.
+  P.addFunctionSpecialization();
+
   // Specialize closure.
   P.addClosureSpecializer();
 

@@ -446,6 +446,8 @@ void ReabstractionInfo::createSubstitutedAndSpecializedTypes() {
   NumFormalIndirectResults = SubstitutedType->getNumIndirectFormalResults();
   Conversions.resize(NumFormalIndirectResults +
                      SubstitutedType->getParameters().size());
+  DeadParams.resize(NumFormalIndirectResults +
+                    SubstitutedType->getParameters().size());
 
   CanGenericSignature CanSig;
   if (SpecializedGenericSig)
@@ -1572,6 +1574,26 @@ ReabstractionInfo::ReabstractionInfo(SILFunction *Callee,
   finishPartialSpecializationPreparation(FSPS);
 }
 
+ReabstractionInfo::ReabstractionInfo(ApplySite Apply, SILFunction *NewF) {
+  Callee = Apply.getCalleeFunction();
+  CalleeParamSubs = Apply.getSubstitutions();
+  CallerParamSubs = CalleeParamSubs;
+  auto CalleeFnTy = Callee->getLoweredFunctionType();
+  if (CalleeFnTy->getGenericSignature())
+    CallerInterfaceSubs =
+        CalleeFnTy->getGenericSignature()->getSubstitutionMap(CalleeParamSubs);
+  ConvertIndirectToDirect = false;
+
+  NumFormalIndirectResults = CalleeFnTy->getNumIndirectFormalResults();
+
+  DeadParams.resize(CalleeFnTy->getNumIndirectFormalResults() +
+                    CalleeFnTy->getParameters().size());
+  Conversions.resize(CalleeFnTy->getNumIndirectFormalResults() +
+                     CalleeFnTy->getParameters().size());
+  SubstitutedType = NewF->getLoweredFunctionType();
+  SpecializedType = NewF->getLoweredFunctionType();
+}
+
 // =============================================================================
 // GenericFuncSpecializer
 // =============================================================================
@@ -1717,8 +1739,10 @@ static void prepareCallArguments(ApplySite AI, SILBuilder &Builder,
       }
       return false;
     };
-    if (!handleConversion())
-      Arguments.push_back(Op.get());
+
+    if (!ReInfo.isParamDead(ArgIdx - substConv.getSILArgIndexOfFirstParam()))
+      if (!handleConversion())
+        Arguments.push_back(Op.get());
 
     ++ArgIdx;
   }

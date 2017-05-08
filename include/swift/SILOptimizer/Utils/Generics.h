@@ -50,6 +50,9 @@ class ReabstractionInfo {
   /// to direct.
   llvm::SmallBitVector Conversions;
 
+  /// A 1-bit means that this parameter/return value is dead.
+  llvm::SmallBitVector DeadParams;
+
   /// If set, indirect to direct conversions should be performed by the generic
   /// specializer.
   bool ConvertIndirectToDirect;
@@ -141,11 +144,26 @@ public:
   /// conformances or same concrete type requirements.
   ReabstractionInfo(SILFunction *Callee, ArrayRef<Requirement> Requirements);
 
+  /// Constructs the ReabstractionInfo based on the apply site and a new
+  /// specialized function.
+  ReabstractionInfo(ApplySite Apply, SILFunction *NewF);
+
   /// Returns true if the \p ParamIdx'th (non-result) formal parameter is
   /// converted from indirect to direct.
   bool isParamConverted(unsigned ParamIdx) const {
     return ConvertIndirectToDirect &&
            Conversions.test(ParamIdx + NumFormalIndirectResults);
+  }
+
+  bool isParamDead(unsigned ParamIdx) const {
+    return DeadParams.test(ParamIdx + NumFormalIndirectResults);
+  }
+
+  void setParamDead(unsigned ParamIdx, bool value = true) {
+    if (value)
+      DeadParams.set(ParamIdx + NumFormalIndirectResults);
+    else
+      DeadParams.reset(ParamIdx + NumFormalIndirectResults);
   }
 
   /// Returns true if the \p ResultIdx'th formal result is converted from
@@ -174,6 +192,7 @@ public:
     assert(numPartialApplyArgs <= SubstitutedType->getNumParameters());
     assert(numPartialApplyArgs <= Conversions.size());
     Conversions.resize(Conversions.size() - numPartialApplyArgs);
+    DeadParams.resize(Conversions.size() - numPartialApplyArgs);
   }
 
   /// Returns the index of the first argument of an apply site, which may be

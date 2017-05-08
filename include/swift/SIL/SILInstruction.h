@@ -6282,6 +6282,9 @@ public:
   SILFunction *getFunction() const { return Inst->getFunction(); }
   SILBasicBlock *getParent() const { return Inst->getParent(); }
 
+  ValueBase* operator->() const { return Inst; }
+  SILInstruction &operator*() const { return *Inst; }
+
 #define FOREACH_IMPL_RETURN(OPERATION) do {                             \
     switch (Inst->getKind()) {                                          \
     case ValueKind::ApplyInst:                                          \

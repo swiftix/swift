@@ -142,6 +142,8 @@ PASS(FunctionOrderPrinter, "function-order-printer",
      "Print Function Order for Testing")
 PASS(FunctionSignatureOpts, "function-signature-opts",
      "Function Signature Optimization")
+PASS(FunctionSpecialization, "function-specialization",
+     "Function specialization by means of partial evaluation")
 PASS(ARCSequenceOpts, "arc-sequence-opts",
      "ARC Sequence Optimization")
 PASS(ARCLoopOpts, "arc-loop-opts",

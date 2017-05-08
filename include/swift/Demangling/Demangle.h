@@ -106,6 +106,7 @@ enum class SpecializationPass : uint8_t {
   CapturePropagation,
   FunctionSignatureOpts,
   GenericSpecializer,
+  FunctionSpecializer,
 };
 
 static inline char encodeSpecializationPass(SpecializationPass Pass) {

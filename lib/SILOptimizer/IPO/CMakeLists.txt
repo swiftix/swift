@@ -5,6 +5,7 @@ set(IPO_SOURCES
   IPO/DeadFunctionElimination.cpp
   IPO/EagerSpecializer.cpp
   IPO/ExternalDefsToDecls.cpp
+  IPO/FunctionSpecialization.cpp
   IPO/GlobalOpt.cpp
   IPO/GlobalPropertyOpt.cpp
   IPO/LetPropertiesOpts.cpp
