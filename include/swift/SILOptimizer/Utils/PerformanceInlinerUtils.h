@@ -40,6 +40,9 @@ enum class InlineSelection {
 SILFunction *getEligibleFunction(FullApplySite AI,
                                  InlineSelection WhatToInline);
 
+// Returns true if this is a pure call, i.e. the callee has no side-effects
+// and all arguments are constants.
+bool isPureCall(FullApplySite AI);
 } // end swift namespace
 
 //===----------------------------------------------------------------------===//
