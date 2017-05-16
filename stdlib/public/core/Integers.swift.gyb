@@ -2420,7 +2420,8 @@ extension UnsignedInteger {
 
 extension UnsignedInteger where Self : FixedWidthInteger {
   @inline(__always)
-  public init<T : BinaryInteger>(_ source: T) {
+  @_versioned
+  internal func checkInitPreconditions<T : BinaryInteger>(_ source : T) {
     // This check is potentially removable by the optimizer
     if T.isSigned {
       _precondition(source >= (0 as T), "Negative value is not representable")
@@ -2428,23 +2429,38 @@ extension UnsignedInteger where Self : FixedWidthInteger {
     // This check is potentially removable by the optimizer
     if source.bitWidth >= Self.bitWidth {
       _precondition(source <= Self.max,
-        "Not enough bits to represent a signed value")
+                    "Not enough bits to represent a signed value")
     }
+  }
+
+  @_transparent
+  public init<T : BinaryInteger>(_ source: T) {
+    //checkInitPreconditions(source)
     self.init(extendingOrTruncating: source)
+    checkInitPreconditions(source)
   }
 
   @inline(__always)
-  public init?<T : BinaryInteger>(exactly source: T) {
+  @_versioned
+  internal func checkExactlyInitPreconditions<T : BinaryInteger>(_ source : T) -> Bool {
     // This check is potentially removable by the optimizer
     if T.isSigned && source < (0 as T) {
-      return nil
+      return false
     }
     // The width check can be eliminated by the optimizer
     if source.bitWidth >= Self.bitWidth &&
        source > Self.max {
-      return nil
+      return false
     }
+    return true
+  }
+
+  @_transparent
+  public init?<T : BinaryInteger>(exactly source: T) {
     self.init(extendingOrTruncating: source)
+    if !checkExactlyInitPreconditions(source) {
+        return nil
+    }
   }
 
   /// The maximum representable integer in this type.
@@ -2498,34 +2514,50 @@ extension SignedInteger {
 
 extension SignedInteger where Self : FixedWidthInteger {
   @inline(__always)
-  public init<T : BinaryInteger>(_ source: T) {
+  @_versioned
+  internal func checkInitPreconditions<T : BinaryInteger>(_ source: T) {
     // This check is potentially removable by the optimizer
     if T.isSigned && source.bitWidth > Self.bitWidth {
       _precondition(source >= Self.min,
-        "Not enough bits to represent a signed value")
+                    "Not enough bits to represent a signed value")
     }
     // This check is potentially removable by the optimizer
     if (source.bitWidth > Self.bitWidth) ||
-       (source.bitWidth == Self.bitWidth && !T.isSigned) {
+        (source.bitWidth == Self.bitWidth && !T.isSigned) {
       _precondition(source <= Self.max,
-        "Not enough bits to represent a signed value")
+                    "Not enough bits to represent a signed value")
     }
+  }
+
+  @_transparent
+  public init<T : BinaryInteger>(_ source: T) {
+    //checkInitPreconditions(source)
     self.init(extendingOrTruncating: source)
+    checkInitPreconditions(source)
   }
 
   @inline(__always)
-  public init?<T : BinaryInteger>(exactly source: T) {
+  @_versioned
+  internal func checkExactlyInitPreconditions<T : BinaryInteger>(_ source: T) -> Bool {
     // This check is potentially removable by the optimizer
     if T.isSigned && source.bitWidth > Self.bitWidth && source < Self.min {
-      return nil
+      return false
     }
     // The width check can be eliminated by the optimizer
     if (source.bitWidth > Self.bitWidth ||
         (source.bitWidth == Self.bitWidth && !T.isSigned)) &&
-       source > Self.max {
-      return nil
+        source > Self.max {
+      return false
     }
+    return true
+  }
+
+  @_transparent
+  public init?<T : BinaryInteger>(exactly source: T) {
     self.init(extendingOrTruncating: source)
+    if !checkExactlyInitPreconditions(source) {
+        return nil
+    }
   }
 
   /// The maximum representable integer in this type.
