@@ -189,7 +189,7 @@ static bool canAndShouldUnrollLoop(SILLoop *Loop, uint64_t TripCount) {
     for (auto &Inst : *BB) {
       if (!Loop->canDuplicate(&Inst))
         return false;
-      if (instructionInlineCost(Inst) != InlineCost::Free)
+      if (instructionInlineCost(Inst) != (int)InlineCost::Free)
         ++Cost;
       if (Cost * TripCount > SILLoopUnrollThreshold)
         return false;

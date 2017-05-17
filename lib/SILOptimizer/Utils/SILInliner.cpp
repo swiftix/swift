@@ -12,6 +12,7 @@
 
 #define DEBUG_TYPE "sil-inliner"
 #include "swift/SILOptimizer/Utils/SILInliner.h"
+#include "swift/SIL/DebugUtils.h"
 #include "swift/SIL/SILDebugScope.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
@@ -233,7 +234,22 @@ static InlineCost getEnforcementCost(SILAccessEnforcement enforcement) {
 
 /// For now just assume that every SIL instruction is one to one with an LLVM
 /// instruction. This is of course very much so not true.
-InlineCost swift::instructionInlineCost(SILInstruction &I) {
+int swift::instructionInlineCost(SILInstruction &I) {
+  int Cost = 0;
+#if 0
+  if (isDebugInst(&I))
+    return Cost + (int)InlineCost::Free;
+  if (I.hasValue() && I.getType().hasArchetype())
+    if (!I.getType().isLoadable(I.getModule()))
+      Cost += (int)InlineCost::Generic;
+
+  for (auto &Op : I.getAllOperands()) {
+    auto OpType = Op.get()->getType();
+    if (OpType.hasArchetype())
+      if (!OpType.isLoadable(I.getModule()))
+        Cost += (int)InlineCost::Generic;
+  }
+#endif
   switch (I.getKind()) {
     case ValueKind::IntegerLiteralInst:
     case ValueKind::FloatLiteralInst:
@@ -251,20 +267,20 @@ InlineCost swift::instructionInlineCost(SILInstruction &I) {
     case ValueKind::GlobalAddrInst:
     case ValueKind::EndLifetimeInst:
     case ValueKind::UncheckedOwnershipConversionInst:
-      return InlineCost::Free;
+      return Cost + (int)InlineCost::Free;
 
     // Typed GEPs are free.
     case ValueKind::TupleElementAddrInst:
     case ValueKind::StructElementAddrInst:
     case ValueKind::ProjectBlockStorageInst:
-      return InlineCost::Free;
+      return Cost + (int)InlineCost::Free;
 
     // Aggregates are exploded at the IR level; these are effectively no-ops.
     case ValueKind::TupleInst:
     case ValueKind::StructInst:
     case ValueKind::StructExtractInst:
     case ValueKind::TupleExtractInst:
-      return InlineCost::Free;
+      return Cost + (int)InlineCost::Free;
 
     // Unchecked casts are free.
     case ValueKind::AddressToPointerInst:
@@ -287,55 +303,55 @@ InlineCost swift::instructionInlineCost(SILInstruction &I) {
     case ValueKind::ConvertFunctionInst:
 
     case ValueKind::BridgeObjectToWordInst:
-      return InlineCost::Free;
+      return Cost + (int)InlineCost::Free;
 
     // Access instructions are free unless we're dynamically enforcing them.
     case ValueKind::BeginAccessInst:
-      return getEnforcementCost(cast<BeginAccessInst>(I).getEnforcement());
+      return Cost + (int)getEnforcementCost(cast<BeginAccessInst>(I).getEnforcement());
     case ValueKind::EndAccessInst:
-      return getEnforcementCost(cast<EndAccessInst>(I).getBeginAccess()
+      return Cost + (int)getEnforcementCost(cast<EndAccessInst>(I).getBeginAccess()
                                                      ->getEnforcement());
     case ValueKind::BeginUnpairedAccessInst:
-      return getEnforcementCost(cast<BeginUnpairedAccessInst>(I)
+      return Cost + (int)getEnforcementCost(cast<BeginUnpairedAccessInst>(I)
                                   .getEnforcement());
     case ValueKind::EndUnpairedAccessInst:
-      return getEnforcementCost(cast<EndUnpairedAccessInst>(I)
+      return Cost + (int)getEnforcementCost(cast<EndUnpairedAccessInst>(I)
                                   .getEnforcement());
 
     // TODO: These are free if the metatype is for a Swift class.
     case ValueKind::ThickToObjCMetatypeInst:
     case ValueKind::ObjCToThickMetatypeInst:
-      return InlineCost::Expensive;
+      return Cost + (int)InlineCost::Expensive;
       
     // TODO: Bridge object conversions imply a masking operation that should be
     // "hella cheap" but not really expensive
     case ValueKind::BridgeObjectToRefInst:
     case ValueKind::RefToBridgeObjectInst:
-      return InlineCost::Expensive;
+      return Cost + (int)InlineCost::Expensive;
 
     case ValueKind::MetatypeInst:
       // Thin metatypes are always free.
       if (I.getType().castTo<MetatypeType>()->getRepresentation()
             == MetatypeRepresentation::Thin)
-        return InlineCost::Free;
+        return Cost + (int)InlineCost::Free;
       // TODO: Thick metatypes are free if they don't require generic or lazy
       // instantiation.
-      return InlineCost::Expensive;
+      return Cost + (int)InlineCost::Expensive;
 
     // Protocol descriptor references are free.
     case ValueKind::ObjCProtocolInst:
-      return InlineCost::Free;
+      return Cost + (int)InlineCost::Free;
 
     // Metatype-to-object conversions are free.
     case ValueKind::ObjCExistentialMetatypeToObjectInst:
     case ValueKind::ObjCMetatypeToObjectInst:
-      return InlineCost::Free;
+      return Cost + (int)InlineCost::Free;
 
     // Return and unreachable are free.
     case ValueKind::UnreachableInst:
     case ValueKind::ReturnInst:
     case ValueKind::ThrowInst:
-      return InlineCost::Free;
+      return Cost + (int)InlineCost::Free;
 
     case ValueKind::ApplyInst:
     case ValueKind::TryApplyInst:
@@ -439,17 +455,17 @@ InlineCost swift::instructionInlineCost(SILInstruction &I) {
     case ValueKind::SelectEnumInst:
     case ValueKind::SelectValueInst:
     case ValueKind::KeyPathInst:
-      return InlineCost::Expensive;
+      return Cost + (int)InlineCost::Expensive;
 
     case ValueKind::BuiltinInst: {
       auto *BI = cast<BuiltinInst>(&I);
       // Expect intrinsics are 'free' instructions.
       if (BI->getIntrinsicInfo().ID == llvm::Intrinsic::expect)
-        return InlineCost::Free;
+        return Cost + (int)InlineCost::Free;
       if (BI->getBuiltinInfo().ID == BuiltinValueKind::OnFastPath)
-        return InlineCost::Free;
+        return Cost + (int)InlineCost::Free;
 
-      return InlineCost::Expensive;
+      return Cost + (int)InlineCost::Expensive;
     }
     case ValueKind::SILPHIArgument:
     case ValueKind::SILFunctionArgument:
@@ -463,4 +479,45 @@ InlineCost swift::instructionInlineCost(SILInstruction &I) {
   }
 
   llvm_unreachable("Unhandled ValueKind in switch.");
+}
+
+/// Try to estimate the cost of the instruction after inlining of generics.
+/// Every instruction still using an archetype after generic inlining
+/// is considered to be expensive.
+int swift::instructionGenericInlineCost(SILInstruction &I,
+                                        SubstitutionMap &SubsMap) {
+  int Cost = (int)instructionInlineCost(I);
+  if (isDebugInst(&I))
+    return Cost;
+
+  //if (SimpleCost == InlineCost::Expensive)
+  //  return InlineCost::Expensive;
+
+  auto &M = I.getModule();
+
+  // Check if operands became loadable after inlining.
+#if 0
+  if (I.hasValue() && !I.getType().isLoadable(M) &&
+      I.getType().subst(M, SubsMap).isLoadable(M))
+    Cost -= (int)InlineCost::Generic;
+
+
+  for (auto &Op : I.getAllOperands()) {
+    auto OpType = Op.get()->getType();
+    if (!OpType.isLoadable(M) && OpType.subst(M, SubsMap).isLoadable(M))
+      Cost -= (int)InlineCost::Generic;
+  }
+#endif
+
+  if (I.hasValue() && !I.getType().subst(M, SubsMap).isLoadable(M))
+    Cost += (int)InlineCost::Generic;
+
+
+  for (auto &Op : I.getAllOperands()) {
+    auto OpType = Op.get()->getType();
+    if (!OpType.subst(M, SubsMap).isLoadable(M))
+      Cost += (int)InlineCost::Generic;
+  }
+
+  return Cost;
 }

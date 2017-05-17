@@ -273,7 +273,7 @@ static bool isThreadableBlock(SILBasicBlock *BB,
       return false;
 
     // Only thread 'small blocks'.
-    if (instructionInlineCost(Inst) != InlineCost::Free)
+    if (instructionInlineCost(Inst) != (int)InlineCost::Free)
       if (++Cost == 4)
         return false;
   }
@@ -837,7 +837,7 @@ static int getThreadingCost(SILInstruction *I) {
 
   // This is a really trivial cost model, which is only intended as a starting
   // point.
-  if (instructionInlineCost(*I) != InlineCost::Free)
+  if (instructionInlineCost(*I) != (int)InlineCost::Free)
     return 1;
 
   return 0;
@@ -2345,7 +2345,7 @@ static bool shouldTailDuplicate(SILBasicBlock &Block) {
         isa<StrongReleaseInst>(&Inst))
       SawRelease = true;
 
-    if (instructionInlineCost(Inst) != InlineCost::Free)
+    if (instructionInlineCost(Inst) != (int)InlineCost::Free)
       if (++Cost == 12)
         return false;
   }

@@ -218,7 +218,10 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
     for (SILInstruction &I : *block) {
       constTracker.trackInst(&I);
 
-      CalleeCost += (int)instructionInlineCost(I);
+      if (IsGeneric)
+        CalleeCost += instructionGenericInlineCost(I, CalleeSubstMap);
+      else
+        CalleeCost += (int)instructionInlineCost(I);
 
       if (FullApplySite FAI = FullApplySite::isa(&I)) {
         // Check if the callee is passed as an argument. If so, increase the

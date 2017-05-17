@@ -28,12 +28,18 @@ namespace swift {
 // adding more categories.
 enum class InlineCost : unsigned {
   Free = 0,
-  Expensive = 1
+  Expensive = 1,
+  Generic = 1,
 };
 
 /// Return the 'cost' of one instruction. Instructions that are expected to
 /// disappear at the LLVM IR level are assigned a cost of 'Free'.
-InlineCost instructionInlineCost(SILInstruction &I);
+int instructionInlineCost(SILInstruction &I);
+
+/// Return the 'cost' of one instruction if a generic inlining is performed.
+/// Instruction is considered to be expensive if its type or type of its
+/// arguments contains archetypes after substitutions.
+int instructionGenericInlineCost(SILInstruction &I, SubstitutionMap &SubsMap);
 
 class SILInliner : public TypeSubstCloner<SILInliner> {
 public:
