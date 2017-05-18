@@ -519,5 +519,10 @@ int swift::instructionGenericInlineCost(SILInstruction &I,
       Cost += (int)InlineCost::Generic;
   }
 
+  DEBUG(if (Cost > (int)InlineCost::Expensive) {
+    llvm::dbgs() << "\nExpensive generic instruction:\n";
+    I.dump();
+  });
+
   return Cost;
 }
