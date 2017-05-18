@@ -44,6 +44,12 @@ SILFunction *getEligibleFunction(FullApplySite AI,
 // Returns true if this is a pure call, i.e. the callee has no side-effects
 // and all arguments are constants.
 bool isPureCall(FullApplySite AI, SideEffectAnalysis *SEA);
+
+/// Try to estimate of inlining this function would always
+/// result in a code bloat. This may happen with external functions,
+/// public functions, witness methods which are kept alive by their
+/// witness tables, etc.
+bool isBloatingCodeSizeWhenCloned(SILFunction *F);
 } // end swift namespace
 
 //===----------------------------------------------------------------------===//

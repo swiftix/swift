@@ -736,3 +736,22 @@ bool swift::isPureCall(FullApplySite AI, SideEffectAnalysis *SEA) {
   }
   return true;
 }
+
+/// Try to estimate of inlining this function would always
+/// result in a code bloat. This may happen with external functions,
+/// public functions, witness methods which are kept alive by their
+/// witness tables, etc.
+bool swift::isBloatingCodeSizeWhenCloned(SILFunction *F) {
+  // If a function is available externally, then cloning it
+  // would very brobably bloat the code.
+  if (F->isAvailableExternally())
+    return true;
+  // If a function will be kept alive anyways, cloning it
+  // will bloat the code.
+  if (F->isExternallyUsedSymbol())
+    return true;
+  if (F->getLoweredFunctionType()->getRepresentation() ==
+      SILFunctionType::Representation::WitnessMethod)
+    return true;
+  return false;
+}

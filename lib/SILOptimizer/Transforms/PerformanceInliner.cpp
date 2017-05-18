@@ -198,6 +198,14 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
     CalleeSubstMap = Callee->getLoweredFunctionType()
       ->getGenericSignature()
       ->getSubstitutionMap(AI.getSubstitutions());
+
+    // Try to avoid inlining functions which are known
+    // to increase the code size. This may include external functions,
+    // public functions, witness methods which are kept alive by their
+    // witness tables, etc.
+    // TODO: Should we do it even for non-generic inlining?
+    if (isBloatingCodeSizeWhenCloned(Callee))
+      CalleeCost += KeptAliveFunctionInliningCost;
   }
 
   const SILOptions &Opts = Callee->getModule().getOptions();

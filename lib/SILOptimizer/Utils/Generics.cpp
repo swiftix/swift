@@ -15,6 +15,7 @@
 #include "swift/Strings.h"
 #include "swift/SILOptimizer/Utils/Generics.h"
 #include "swift/SILOptimizer/Utils/GenericCloner.h"
+#include "swift/SILOptimizer/Utils/PerformanceInlinerUtils.h"
 #include "swift/SILOptimizer/Utils/SpecializationMangler.h"
 #include "swift/SIL/DebugUtils.h"
 #include "swift/AST/GenericSignatureBuilder.h"
@@ -292,6 +293,12 @@ bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *Callee,
     if (!CalleeGenericEnv)
       return false;
   }
+
+  // Do not partially specialize functions if it would increae the code size a
+  // lot.
+  if (HasUnboundGenericParams &&
+      isBloatingCodeSizeWhenCloned(Callee))
+    return false;
 
   return true;
 }
