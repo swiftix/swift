@@ -10,6 +10,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "sil-inliner"
+#include "swift/Demangling/Demangle.h"
+#include "swift/Strings.h"
 #include "swift/SILOptimizer/Utils/PerformanceInlinerUtils.h"
 
 //===----------------------------------------------------------------------===//
@@ -754,4 +757,81 @@ bool swift::isBloatingCodeSizeWhenCloned(SILFunction *F) {
       SILFunctionType::Representation::WitnessMethod)
     return true;
   return false;
+}
+
+bool swift::isOnoneSupportModule(ModuleDecl *M) {
+  return M->getName().str() == SWIFT_ONONE_SUPPORT;
+}
+
+
+/// The whitelist of classes and functions from the stdlib,
+/// whose specializations we want to preserve.
+static const char *const IntegerProtocols[] = {
+    "SignedInteger",
+    "UnsignedInteger",
+    "BinaryInteger",
+    "SignedNumeric",
+    "Numeric",
+    "FloatingPoint",
+};
+
+/// Check of a given name could be a name of a white-listed
+/// specialization.
+bool isIntegerProtocolsName(StringRef MangledName) {
+  // TODO: Once there is an efficient API to check if
+  // a given symbol is a specialization of a specific type,
+  // use it instead. Doing demangling just for this check
+  // is just wasteful.
+  auto DemangledNameString =
+     swift::Demangle::demangleSymbolAsString(MangledName);
+
+  StringRef DemangledName = DemangledNameString;
+
+  llvm::dbgs() << "\n\n"
+               << " Check if an integer protocol : " << MangledName << " -> "
+               << DemangledName << "\n";
+
+  StringRef OfStr;
+  int pos = 0;
+  if (pos == StringRef::npos) {
+    // Create "(extension in Swift).Swift"
+    llvm::SmallString<64> OfString;
+    llvm::raw_svector_ostream buffer(OfString);
+    buffer << "(extension in " << STDLIB_NAME << "):";
+    buffer << STDLIB_NAME << '.';
+    OfStr = buffer.str();
+    pos = DemangledName.find(OfStr, 0);
+    if (pos == StringRef::npos)
+      return false;
+  }
+
+  pos += OfStr.size();
+
+  for (auto NameStr: IntegerProtocols) {
+    StringRef Name = NameStr;
+    auto pos1 = DemangledName.find(Name, pos);
+    if (pos1 != StringRef::npos &&
+        !isalpha(DemangledName[pos1 + Name.size()])) {
+      llvm::dbgs() << "Found an integer protocol ref: " << MangledName << " -> "
+                   << DemangledName << "\n";
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+// Return true if it is an invocation of a method
+// from an Integer protocol.
+bool swift::isIntegerProtocolsCall(SILFunction *Callee, SubstitutionList Subs) {
+  if (!Callee)
+    return false;
+  if (Callee->getRepresentation() !=
+      SILFunctionType::Representation::WitnessMethod)
+    return false;
+  // It is a fully specific invocation.
+  if (!hasArchetypes(Subs))
+    return false;
+  return isIntegerProtocolsName(Callee->getName());
 }

@@ -50,6 +50,10 @@ bool isPureCall(FullApplySite AI, SideEffectAnalysis *SEA);
 /// public functions, witness methods which are kept alive by their
 /// witness tables, etc.
 bool isBloatingCodeSizeWhenCloned(SILFunction *F);
+
+bool isOnoneSupportModule(ModuleDecl *M);
+
+bool isIntegerProtocolsCall(SILFunction *F, SubstitutionList Subs);
 } // end swift namespace
 
 //===----------------------------------------------------------------------===//

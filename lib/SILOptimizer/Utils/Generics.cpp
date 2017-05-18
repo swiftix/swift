@@ -294,11 +294,24 @@ bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *Callee,
       return false;
   }
 
+#if 0
   // Do not partially specialize functions if it would increae the code size a
   // lot.
   if (HasUnboundGenericParams &&
       isBloatingCodeSizeWhenCloned(Callee))
     return false;
+#endif
+
+  // Do not partially specialize generics for integer protocols.
+  if (!isOnoneSupportModule(Callee->getModule().getSwiftModule()) &&
+      HasUnboundGenericParams && isIntegerProtocolsCall(Callee, ParamSubs)) {
+    return false;
+  }
+
+  if (HasUnboundGenericParams && Apply) {
+    llvm::dbgs() << "\nFound partial specialization candidate:\n";
+    Apply.getInstruction()->dumpInContext();
+  }
 
   return true;
 }

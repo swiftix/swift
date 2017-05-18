@@ -105,7 +105,11 @@ class SILPerformanceInliner {
     OverallCallerBlockLimit = 400,
 
     /// The assumed execution length of a function call.
-    DefaultApplyLength = 10
+    DefaultApplyLength = 10,
+
+    /// The cost of inlining a function that is known to almost surely
+    /// increase the code size when cloned.
+    KeptAliveFunctionInliningCost = 200,
   };
 
 #ifndef NDEBUG
@@ -199,6 +203,7 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
       ->getGenericSignature()
       ->getSubstitutionMap(AI.getSubstitutions());
 
+#if 0
     // Try to avoid inlining functions which are known
     // to increase the code size. This may include external functions,
     // public functions, witness methods which are kept alive by their
@@ -206,6 +211,20 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
     // TODO: Should we do it even for non-generic inlining?
     if (isBloatingCodeSizeWhenCloned(Callee))
       CalleeCost += KeptAliveFunctionInliningCost;
+#endif
+
+    // Do not use inlining of generics for integer protocols.
+    if (!isOnoneSupportModule(AI.getModule().getSwiftModule()) &&
+        isIntegerProtocolsCall(Callee, AI.getSubstitutions())) {
+      // If all arguments are constants its fine.
+      // return !hasArchetypes(AI.getSubstitutions()) && isPureCall(AI, SEA);
+      return false;
+    }
+
+    if (hasArchetypes(AI.getSubstitutions())) {
+      llvm::dbgs() << "\nFound generics inlining candidate:\n";
+      AI.getInstruction()->dumpInContext();
+    }
   }
 
   const SILOptions &Opts = Callee->getModule().getOptions();
@@ -227,7 +246,8 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
       constTracker.trackInst(&I);
 
       if (IsGeneric)
-        CalleeCost += instructionGenericInlineCost(I, CalleeSubstMap);
+        CalleeCost += (int)instructionInlineCost(I);
+      //CalleeCost += instructionGenericInlineCost(I, CalleeSubstMap);
       else
         CalleeCost += (int)instructionInlineCost(I);
 
