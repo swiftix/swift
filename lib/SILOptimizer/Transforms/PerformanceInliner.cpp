@@ -31,7 +31,7 @@ llvm::cl::opt<bool> PrintShortestPathInfo(
     llvm::cl::desc("Print shortest-path information for inlining"));
 
 llvm::cl::opt<bool> EnableSILInliningOfGenerics(
-  "sil-inline-generics", llvm::cl::init(false),
+  "sil-inline-generics", llvm::cl::init(true),
   llvm::cl::desc("Enable inlining of generics"));
 
 //===----------------------------------------------------------------------===//
@@ -172,14 +172,19 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
   SILFunction *Callee = AI.getReferencedFunction();
   bool IsGeneric = !AI.getSubstitutions().empty();
 
+  if (IsGeneric)
+    return false;
+
   assert(EnableSILInliningOfGenerics || !IsGeneric);
 
+#if 0
   // Bail out if this generic call can be optimized by means of
   // the generic specialization, because we prefer generic specialization
   // to inlining of generics.
   if (IsGeneric && canSpecializeGeneric(AI, Callee, AI.getSubstitutions())) {
     return isPureCall(AI, SEA);
   }
+#endif
 
   SILLoopInfo *LI = LA->get(Callee);
   ShortestPathAnalysis *SPA = getSPA(Callee, LI);
@@ -213,6 +218,7 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
       CalleeCost += KeptAliveFunctionInliningCost;
 #endif
 
+#if 0
     // Do not use inlining of generics for integer protocols.
     if (!isOnoneSupportModule(AI.getModule().getSwiftModule()) &&
         isIntegerProtocolsCall(Callee, AI.getSubstitutions())) {
@@ -220,11 +226,19 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
       // return !hasArchetypes(AI.getSubstitutions()) && isPureCall(AI, SEA);
       return false;
     }
+#endif
 
+    if (IsGeneric) {
+      llvm::dbgs() << "\n\nFound generics inlining candidate:\n";
+      AI.getInstruction()->dumpInContext();
+    }
+
+#if 0
     if (hasArchetypes(AI.getSubstitutions())) {
       llvm::dbgs() << "\nFound generics inlining candidate:\n";
       AI.getInstruction()->dumpInContext();
     }
+#endif
   }
 
   const SILOptions &Opts = Callee->getModule().getOptions();

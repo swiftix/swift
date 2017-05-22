@@ -25,7 +25,7 @@ using namespace swift;
 
 /// Set to true to enable the support for partial specialization.
 llvm::cl::opt<bool> EnablePartialSpecialization(
-    "sil-partial-specialization", llvm::cl::init(false),
+    "sil-partial-specialization", llvm::cl::init(true),
     llvm::cl::desc("Enable partial specialization of generics"));
 
 /// If set, then generic specialization tries to specialize using
@@ -308,10 +308,14 @@ bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *Callee,
     return false;
   }
 
+#if 0
   if (HasUnboundGenericParams && Apply) {
     llvm::dbgs() << "\nFound partial specialization candidate:\n";
     Apply.getInstruction()->dumpInContext();
   }
+#endif
+  if (HasUnboundGenericParams)
+    return false;
 
   return true;
 }

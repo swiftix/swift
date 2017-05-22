@@ -26,6 +26,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/TinyPtrVector.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/TargetInfo.h"
@@ -46,6 +47,7 @@
 #include "swift/SIL/SILType.h"
 #include "swift/SIL/SILVisitor.h"
 #include "swift/SIL/InstructionUtils.h"
+#include "swift/SILOptimizer/Utils/SILInliner.h"
 #include "clang/CodeGen/CodeGenABITypes.h"
 
 #include "CallEmission.h"
@@ -76,6 +78,11 @@
 
 using namespace swift;
 using namespace irgen;
+
+llvm::cl::opt<bool> ReportCodeSizeStats(
+    "size-stats", llvm::cl::init(true),
+    llvm::cl::desc(
+        "Report statistics about the size of generated SIL and IR functions"));
 
 namespace {
 
@@ -1485,6 +1492,48 @@ void IRGenModule::emitSILFunction(SILFunction *f) {
   IRGenSILFunction(*this, f).emitSILFunction();
 }
 
+int getFunctionSize(llvm::Function *F) {
+  int size = 0;
+  for (auto &BB : *F) {
+    for (auto &I : BB)
+      ++size;
+  }
+  return size;
+}
+
+int getFunctionSize(SILFunction *F) {
+  int size = 0;
+  for (auto &BB : *F) {
+    for (auto &I : BB)
+      ++size;
+  }
+  return size;
+}
+
+int getFunctionInlineCost(SILFunction *F) {
+  int cost = 0;
+  for (auto &BB : *F) {
+    for (auto &I : BB)
+      cost += instructionInlineCost(I);
+  }
+  return cost;
+}
+
+void reportFunctionSize(llvm::Function *CurFn, SILFunction *CurSILFn) {
+  if (ReportCodeSizeStats) {
+    auto irSize = getFunctionSize(CurFn);
+    auto silSize = getFunctionSize(CurSILFn);
+    auto silInlineCost = getFunctionInlineCost(CurSILFn);
+    llvm::dbgs() << "IRGen created function: " << CurSILFn->getName() << ": "
+                 << "ir.size = " << irSize << " "
+                 << "sil.size = " << silSize
+                 << " (sil/ir = " << int(silSize * 100.0 / irSize) << "%) "
+                 << "sil.inline_cost = " << silInlineCost
+                 << " (cost/ir = " << (int)(silInlineCost * 100.0 / irSize)
+                 << "%)\n\n";
+  }
+}
+
 void IRGenSILFunction::emitSILFunction() {
   DEBUG(llvm::dbgs() << "emitting SIL function: ";
         CurSILFn->printName(llvm::dbgs());
@@ -1594,6 +1643,10 @@ void IRGenSILFunction::emitSILFunction() {
         workQueue.push_back(succBB);
     }
   }
+
+  // Report size stats about the LLVM IR function and the original
+  // SILFunction.
+  reportFunctionSize(CurFn, CurSILFn);
 
   // If there are dead blocks in the SIL function, we might have left
   // invalid blocks in the IR.  Do another pass and kill them off.
