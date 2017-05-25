@@ -172,6 +172,7 @@ bool SILPerformanceInliner::isProfitableToInline(FullApplySite AI,
   SILFunction *Callee = AI.getReferencedFunction();
   bool IsGeneric = !AI.getSubstitutions().empty();
 
+  // Never inline generics!
   if (IsGeneric)
     return false;
 

@@ -314,8 +314,11 @@ bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *Callee,
     Apply.getInstruction()->dumpInContext();
   }
 #endif
+
+#if 0
   if (HasUnboundGenericParams)
     return false;
+#endif
 
   return true;
 }
