@@ -342,11 +342,15 @@ static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
       // callee using the closure.
       CSDesc.extendArgumentLifetime(Arg);
 
+      if (ArgTy.isAddress())
+        continue;
       // Emit the retain that matches the captured argument by the partial_apply
       // in the callee that is consumed by the partial_apply.
       Builder.setInsertionPoint(AI.getInstruction());
       Builder.createRetainValue(Closure->getLoc(), Arg, Builder.getDefaultAtomicity());
     } else {
+      if (ArgTy.isAddress())
+        continue;
       Builder.createRetainValue(Closure->getLoc(), Arg, Builder.getDefaultAtomicity());
     }
   }
@@ -440,8 +444,26 @@ static bool isSupportedClosure(const SILInstruction *Closure) {
     // If any arguments are not objects, return false. This is a temporary
     // limitation.
     for (SILValue Arg : PAI->getArguments())
-      if (!Arg->getType().isObject())
+      if (!Arg->getType().isObject()) {
+        // If the argument is a stack_alloc, it is statically known that it
+        // outlives the closure. Thus it is OK to perform the transformation.
+        if (isa<AllocStackInst>(Arg))
+          continue;
+        // If the argument is a function argument and it is known to be not
+        // consumed inside the function creating the closure, then it is
+        // statically known that it outlives the closure. Thus it is OK to
+        // perform the transformation.
+        if (auto *FuncArg = dyn_cast<SILFunctionArgument>(Arg)) {
+#if 0
+          if (!FuncArg->isIndirectResult() &&
+              FuncArg->getKnownParameterInfo().isFormalIndirect() &&
+              !FuncArg->getKnownParameterInfo().isConsumed())
+#endif
+            continue;
+        }
+        // It is something unsupported.
         return false;
+      }
 
     // Ok, it is a closure we support, set Callee.
     Callee = PAI->getCallee();
@@ -503,23 +525,28 @@ ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
   SILModule &M = ClosureUser->getModule();
 
   // Captured parameters are always appended to the function signature. If the
-  // type of the captured argument is trivial, pass the argument as
-  // Direct_Unowned. Otherwise pass it as Direct_Owned.
+  // type of the captured argument is:
+  // - direct and trivial, pass the argument as Direct_Unowned.
+  // - direct and non-trivial, pass the argument as Direct_Owned.
+  // - indirect, pass the argument using the same parameter convention as in the
+  // original closure.
   //
   // We use the type of the closure here since we allow for the closure to be an
   // external declaration.
   unsigned NumTotalParams = ClosedOverFunConv.getNumParameters();
   unsigned NumNotCaptured = NumTotalParams - CallSiteDesc.getNumArguments();
   for (auto &PInfo : ClosedOverFunConv.getParameters().slice(NumNotCaptured)) {
-    if (ClosedOverFunConv.getSILType(PInfo).isTrivial(M)) {
-      SILParameterInfo NewPInfo(PInfo.getType(),
-                                ParameterConvention::Direct_Unowned);
-      NewParameterInfoList.push_back(NewPInfo);
-      continue;
+    ParameterConvention ParamConv;
+    if (PInfo.isFormalIndirect()) {
+      ParamConv = PInfo.getConvention();
+      assert(!isConsumedParameter(ParamConv));
+    } else {
+      ParamConv = ClosedOverFunConv.getSILType(PInfo).isTrivial(M)
+                      ? ParameterConvention::Direct_Unowned
+                      : ParameterConvention::Direct_Owned;
     }
 
-    SILParameterInfo NewPInfo(PInfo.getType(),
-                              ParameterConvention::Direct_Owned);
+    SILParameterInfo NewPInfo(PInfo.getType(), ParamConv);
     NewParameterInfoList.push_back(NewPInfo);
   }
 
