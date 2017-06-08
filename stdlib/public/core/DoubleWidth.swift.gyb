@@ -73,6 +73,8 @@ public struct DoubleWidth<Base : FixedWidthInteger> :
     self.init(exactly: source)!
   }
 
+  //@_semantics("optimize.sil.specialize.generic.never")
+  @_semantics("optimize.sil.specialize.generic.partial.never")
   public init?<T : BinaryInteger>(exactly source: T) {
     // Can't represent a negative 'source' if Base is unsigned
     guard source >= 0 || DoubleWidth.isSigned else { return nil }

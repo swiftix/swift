@@ -712,6 +712,12 @@ SILFunction *swift::getEligibleFunction(FullApplySite AI,
       return nullptr;
   }
 
+  // Only inline generics at the latest stage of inlining.
+  if (AI.hasSubstitutions() && WhatToInline != InlineSelection::Everything) {
+    if (Callee->getInlineStrategy() != AlwaysInline && !Callee->isTransparent())
+      return nullptr;
+  }
+
   // IRGen cannot handle partial_applies containing opened_existentials
   // in its substitutions list.
   if (calleeHasPartialApplyWithOpenedExistentials(AI)) {
