@@ -295,6 +295,10 @@ static bool isCFBridgingConversion(ModuleDecl *M, SILType sourceType,
             getNSBridgedClassOfCFClass(M, sourceType.getSwiftRValueType()));
 }
 
+static bool isSelfConformingProtocol(CanType proto) {
+  return false;
+}
+
 /// Try to classify the dynamic-cast relationship between two types.
 DynamicCastFeasibility
 swift::classifyDynamicCast(ModuleDecl *M,
@@ -390,11 +394,17 @@ swift::classifyDynamicCast(ModuleDecl *M,
             sourceMetatype.isAnyExistentialType())
       return DynamicCastFeasibility::WillSucceed;
 
+    if (source == target && isa<MetatypeType>(sourceMetatype) &&
+        isa<ExistentialMetatypeType>(targetMetatype)) {
+      return isSelfConformingProtocol(source)
+                 ? DynamicCastFeasibility::WillSucceed
+                 : DynamicCastFeasibility::WillFail;
+    }
+
     if (targetMetatype.isAnyExistentialType() &&
         (isa<ProtocolType>(target) || isa<ProtocolCompositionType>(target))) {
-      auto Feasibility = classifyDynamicCastToProtocol(source,
-                                                       target,
-                                                       isWholeModuleOpts);
+      auto Feasibility =
+          classifyDynamicCastToProtocol(source, target, isWholeModuleOpts);
       // Cast from existential metatype to existential metatype may still
       // succeed, even if we cannot prove anything statically.
       if (Feasibility != DynamicCastFeasibility::WillFail ||
