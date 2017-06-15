@@ -295,8 +295,25 @@ static bool isCFBridgingConversion(ModuleDecl *M, SILType sourceType,
             getNSBridgedClassOfCFClass(M, sourceType.getSwiftRValueType()));
 }
 
-static bool isSelfConformingProtocol(CanType proto) {
-  return false;
+/// Check if a type is an existential conforming to itself.
+static bool existentialConformsToSelf(CanType proto) {
+  if (auto PT = proto->getAs<ProtocolType>())
+    return PT->getDecl()->existentialConformsToSelf();
+
+  // A protocol composition is conforms to self if each of
+  // its components conforms to self.
+  if (auto PCT = proto->getAs<ProtocolCompositionType>()) {
+    // An empty protocol composition does not conform to self.
+    if (PCT->getMembers().empty())
+      return false;
+    for (auto P : PCT->getMembers()) {
+      if (!existentialConformsToSelf(P->getCanonicalType()))
+        return false;
+    }
+    return true;
+  }
+
+  llvm_unreachable("Not a protocol type");
 }
 
 /// Try to classify the dynamic-cast relationship between two types.
@@ -394,9 +411,14 @@ swift::classifyDynamicCast(ModuleDecl *M,
             sourceMetatype.isAnyExistentialType())
       return DynamicCastFeasibility::WillSucceed;
 
-    if (source == target && isa<MetatypeType>(sourceMetatype) &&
+    // If the source and target are the same existential type, but the source is
+    // P.Protocol and the dest is P.Type, then we need to consider whether the
+    // protocol is self-conforming.
+    if (source == target &&
+        (isa<ProtocolType>(target) || isa<ProtocolCompositionType>(target)) &&
+        isa<MetatypeType>(sourceMetatype) &&
         isa<ExistentialMetatypeType>(targetMetatype)) {
-      return isSelfConformingProtocol(source)
+      return existentialConformsToSelf(source)
                  ? DynamicCastFeasibility::WillSucceed
                  : DynamicCastFeasibility::WillFail;
     }
