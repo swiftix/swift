@@ -196,6 +196,34 @@ public func testCastEveryToNonClassType<T>(_ o: T) -> Int.Type {
   return o as! Int.Type
 }
 
+
+func cast<U, V>(_ u: U.Type) -> V? {
+  return u as? V
+}
+
+@inline(never)
+public func testCastAnyObjectProtocolToAnyObjectType() -> AnyObject.Type? {
+  return cast(AnyObject.self)
+}
+
+public protocol P {
+}
+
+@inline(never)
+public func testCastPProtocolToPType() -> ObjCP.Type? {
+  return cast(ObjCP.self)
+}
+
+@objc
+public protocol ObjCP {
+}
+
+@inline(never)
+public func testCastObjCPProtocolToObjCPType() -> ObjCP.Type? {
+  return cast(ObjCP.self)
+}
+
+
 print("test0=\(test0())")
 
 
