@@ -269,7 +269,8 @@ func checkDecodeUTF<Codec : UnicodeCodec>(
   check(expected, "forward, repairing: false")
 
   do {
-    var iterator = utfStr.reversed().makeIterator()
+    let rev = utfStr.reversed()
+    var iterator = rev.makeIterator()
     let errorCount = Codec.ReverseParser._decode(
       &iterator, repairingIllFormedSequences: false, into: output1)
     if expectedRepairedTail.isEmpty {
@@ -304,7 +305,8 @@ func checkDecodeUTF<Codec : UnicodeCodec>(
   }
   check(expected, "forward, repairing: true")
   do {
-    var iterator = utfStr.reversed().makeIterator()
+    let rev = utfStr.reversed()
+    var iterator = rev.makeIterator()
     let errorCount = Codec.ReverseParser._decode(
       &iterator, repairingIllFormedSequences: true, into: output1)
     if expectedRepairedTail.isEmpty { expectEqual(0, errorCount) }

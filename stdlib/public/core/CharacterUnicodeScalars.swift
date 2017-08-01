@@ -125,12 +125,14 @@ extension Character.UnicodeScalarView : BidirectionalCollection {
     
     let small_ = _base._smallUTF16
     if _fastPath(small_ != nil), let u16 = small_ {
-      var i = u16[..<u16.index(u16.startIndex, offsetBy: i._encodedOffset)]
-        .reversed().makeIterator()
+      let rev = u16[..<u16.index(u16.startIndex, offsetBy: i._encodedOffset)]
+      .reversed() 
+      var i = rev.makeIterator()
       r = parser.parseScalar(from: &i)
     }
     else {
-      var i = _base._largeUTF16![..<i._encodedOffset].reversed().makeIterator()
+      let rev = _base._largeUTF16![..<i._encodedOffset].reversed()
+      var i = rev.makeIterator()
       r = parser.parseScalar(from: &i)
     }
     
