@@ -371,6 +371,17 @@ bool ReabstractionInfo::prepareAndCheck(ApplySite Apply, SILFunction *Callee,
   if (shouldNotSpecializeCallee(Callee))
     return false;
 
+  // Transparent functions should be inlined by the performance inliner.
+  // There is no need to specialize them. It would only increase the
+  // code size in most cases.
+  if (Callee->isTransparent()) {
+    // The only situation how it could get here is that the performance inliner
+    // refused to inline it. It may happen e.g. for self-recursive functions,
+    // inlining into thunks, etc.
+    assert(!getEligibleFunction(Apply, InlineSelection::Everything));
+    return false;
+  }
+
   SpecializedGenericEnv = nullptr;
   SpecializedGenericSig = nullptr;
   CalleeParamSubs = ParamSubs;
