@@ -96,7 +96,9 @@ SILFunction::SILFunction(SILModule &Module, SILLinkage Linkage, StringRef Name,
       Serialized(isSerialized), Thunk(isThunk),
       ClassSubclassScope(unsigned(classSubclassScope)), GlobalInitFlag(false),
       InlineStrategy(inlineStrategy), Linkage(unsigned(Linkage)),
-      KeepAsPublic(false), EffectsKindAttr(E), EntryCount(entryCount) {
+      KeepAsPublic(false), KeepAsAnchor(false), EffectsKindAttr(E),
+      EntryCount(entryCount) {
+
   if (InsertBefore)
     Module.functions.insert(SILModule::iterator(InsertBefore), this);
   else
