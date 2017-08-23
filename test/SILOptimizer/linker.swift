@@ -11,7 +11,7 @@ doSomething2()
 
 // CHECK: sil public_external [serialized] [noinline] @_T0s16callDoSomething3yyF
 
-// CHECK: sil @unknown
+// CHECK: sil [serialized] @unknown
 
 // CHECK: sil [noinline] @_T0s12doSomething3yxlF
 // CHECK-NOT: return
