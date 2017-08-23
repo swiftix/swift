@@ -303,6 +303,8 @@ SILFunction *SILModule::getOrCreateFunction(SILLocation loc,
       if (isAvailableExternally(fn->getLinkage())) {
         fn->setLinkage(constant.getLinkage(ForDefinition));
       }
+
+      //fn->setSerialized(constant.isSerialized());
     }
     return fn;
   }
@@ -311,6 +313,9 @@ SILFunction *SILModule::getOrCreateFunction(SILLocation loc,
                             ? IsTransparent
                             : IsNotTransparent;
   IsSerialized_t IsSer = constant.isSerialized();
+
+  //IsSerialized_t IsSer =
+  //    (forDefinition || IsTrans) ? constant.isSerialized() : IsNotSerialized;
 
   EffectsKind EK = constant.hasEffectsAttribute()
                    ? constant.getEffectsAttribute()

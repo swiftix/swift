@@ -27,8 +27,13 @@ class ExternalDefsToDecls : public SILModuleTransform {
       SILLinkage linkage = F.getLinkage();
       if (isAvailableExternally(linkage) && F.isDefinition() &&
           !hasSharedVisibility(linkage) && !F.isTransparent()) {
-        if (!hasPublicVisibility(linkage))
+#if 0
+        // Do not rely on the existence of external non-public symbols.
+        if (!hasPublicVisibility(linkage) &&
+            getModule().getOptions().Optimization >=
+                SILOptions::SILOptMode::Debug)
           continue;
+#endif
         F.convertToDeclaration();
         invalidateAnalysis(&F, SILAnalysis::InvalidationKind::FunctionBody);
       }
