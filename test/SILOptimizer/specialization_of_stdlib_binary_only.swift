@@ -9,7 +9,7 @@
 public func unknown() -> ()
 
 @inline(never)
-@_semantics("stdlib_binary_only")
+@_versioned
 public func doSomething3<T>(_ a:T) {
     unknown()
 }

@@ -203,7 +203,7 @@ struct testVarDeclShortenedSyntax {
 
 
 // Check that @_versioned entities have public linkage.
-// CHECK-LABEL: sil @_T021transparent_attribute25referencedFromTransparentyyF : $@convention(thin) () -> () {
+// CHECK-LABEL: sil [versioned] @_T021transparent_attribute25referencedFromTransparentyyF : $@convention(thin) () -> () {
 @_versioned func referencedFromTransparent() {}
 
 // CHECK-LABEL: sil [transparent] [serialized] @_T021transparent_attribute23referencesVersionedFuncyycyF : $@convention(thin) () -> @owned @callee_owned () -> () {

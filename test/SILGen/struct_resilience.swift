@@ -231,7 +231,7 @@ public func functionWithMyResilientTypes(_ s: MySize, f: (MySize) -> MySize) -> 
   }
 }
 
-// CHECK-LABEL: sil [transparent] [serialized] @_T017struct_resilience27useVersionedResilientStructAA0deF0VADF : $@convention(thin) (@in VersionedResilientStruct) -> @out VersionedResilientStruct
+// CHECK-LABEL: sil [transparent] [serialized] [versioned] @_T017struct_resilience27useVersionedResilientStructAA0deF0VADF : $@convention(thin) (@in VersionedResilientStruct) -> @out VersionedResilientStruct
 @_versioned
 @_transparent func useVersionedResilientStruct(_ s: VersionedResilientStruct)
     -> VersionedResilientStruct {
