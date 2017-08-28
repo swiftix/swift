@@ -452,7 +452,12 @@ SILFunction *SILGenModule::getEmittedFunction(SILDeclRef constant,
         F->setLinkage(constant.getLinkage(ForDefinition));
       }
       if (isMakeModuleFragile()) {
-        F->setSerialized(IsSerialized);
+        // If it is a -sil-serialize-all, then any function which is not
+        // @_versioned is also serialiable. If function is @_versions, it is
+        // serialized only if it is explicitly or implicitly @_inlineable.
+        if (!constant.isVersioned() || constant.isInlineable() ||
+            !constant.isNoinline())
+          F->setSerialized(IsSerialized);
       }
     }
     return F;
@@ -501,7 +506,12 @@ SILFunction *SILGenModule::getFunction(SILDeclRef constant,
   if (isMakeModuleFragile()) {
     SILLinkage linkage = constant.getLinkage(forDefinition);
     if (linkage != SILLinkage::PublicExternal) {
-      F->setSerialized(IsSerialized);
+      // If it is a -sil-serialize-all, then any function which is not
+      // @_versioned is also serialiable. If function is @_versions, it is
+      // serialized only if it is explicitly or implicitly @_inlineable.
+      if (!constant.isVersioned() || constant.isInlineable() ||
+          !constant.isNoinline())
+        F->setSerialized(IsSerialized);
     }
   }
 

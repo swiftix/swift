@@ -541,6 +541,20 @@ bool SILDeclRef::isVersioned() const {
   return false;
 }
 
+bool SILDeclRef::isInlineable() const {
+  if (hasDecl()) {
+    if (auto *AFD = dyn_cast<AbstractFunctionDecl>(getDecl())) {
+      if (AFD->getAttrs().getAttribute<InlineableAttr>())
+        return true;
+      if (isTransparent())
+        return true;
+      if (isAlwaysInline())
+        return true;
+    }
+  }
+
+  return false;
+}
 /// \brief True if the function should have its body serialized.
 IsSerialized_t SILDeclRef::isSerialized() const {
   DeclContext *dc;

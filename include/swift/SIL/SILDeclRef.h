@@ -271,7 +271,10 @@ struct SILDeclRef {
   bool isNoinline() const;
   /// \brief True if the function has __always inline attribute.
   bool isAlwaysInline() const;
-  
+  /// \brief True if the function has an explicit _inlineable attribute or is
+  /// implicitly inlineable because of @_transparent or @inline(__always).
+  bool isInlineable() const;
+
   /// \return True if the function has an effects attribute.
   bool hasEffectsAttribute() const;
 

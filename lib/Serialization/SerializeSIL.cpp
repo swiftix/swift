@@ -2163,6 +2163,13 @@ bool SILSerializer::shouldEmitFunctionBody(const SILFunction *F,
       !(isReference && hasSharedVisibility(F->getLinkage())))
     return false;
 
+  // Never emit non-serialized versioned functions in the -sil-serialize-all
+  // mode.
+  if (F->getModule().getOptions().SILSerializeAll && F->isVersioned() &&
+      F->isSerialized() != IsSerialized) {
+    return false;
+  }
+
   // If we are asked to serialize everything, go ahead and do it.
   if (ShouldSerializeAll)
     return true;

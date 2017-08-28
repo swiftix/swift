@@ -33,16 +33,9 @@ STATISTIC(NumFuncLinked, "Number of SIL functions linked");
 /// \return True if the function \p F should be imported into the current
 /// module.
 static bool shouldImportFunction(SILFunction *F) {
-  // Skip functions that are marked with the 'no import' tag. These
-  // are functions that we don't want to copy from the module.
-  if (F->hasSemanticsAttr("stdlib_binary_only")) {
-    // If we are importing a function declaration mark it as external since we
-    // are not importing the body.
-    if (F->isExternalDeclaration())
-      F->setLinkage(SILLinkage::PublicExternal);
-    return false;
-  }
-
+  assert(!F->hasSemanticsAttr("stdlib_binary_only") &&
+         "@_semantics(\"stdlib_binary_only\") is deprecated. Use "
+         "@_versioned instead");
   return true;
 }
 
