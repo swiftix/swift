@@ -79,7 +79,6 @@ func _fatalErrorFlags() -> UInt32 {
 /// bloats code.
 @_versioned
 @inline(never)
-@_semantics("stdlib_binary_only")
 func _assertionFailure(
   _ prefix: StaticString, _ message: StaticString,
   file: StaticString, line: UInt,
@@ -110,7 +109,6 @@ func _assertionFailure(
 /// bloats code.
 @_versioned
 @inline(never)
-@_semantics("stdlib_binary_only")
 func _assertionFailure(
   _ prefix: StaticString, _ message: String,
   file: StaticString, line: UInt,
@@ -141,7 +139,6 @@ func _assertionFailure(
 /// bloats code.
 @_versioned
 @inline(never)
-@_semantics("stdlib_binary_only")
 @_semantics("arc.programtermination_point")
 func _fatalErrorMessage(
   _ prefix: StaticString, _ message: StaticString,

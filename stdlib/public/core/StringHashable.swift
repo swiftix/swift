@@ -67,7 +67,7 @@ extension Unicode {
   }
 }
 
-@inline(never) @_semantics("stdlib_binary_only") // Hide the CF dependency
+@inline(never) @_versioned // Hide the CF dependency
 internal func _hashString(_ string: String) -> Int {
   let core = string._core
 #if _runtime(_ObjC)

@@ -343,7 +343,6 @@ internal func _adHocPrint_unlocked<T, TargetStream : TextOutputStream>(
 @_versioned
 @inline(never)
 @_semantics("optimize.sil.specialize.generic.never")
-@_semantics("stdlib_binary_only")
 internal func _print_unlocked<T, TargetStream : TextOutputStream>(
   _ value: T, _ target: inout TargetStream
 ) {

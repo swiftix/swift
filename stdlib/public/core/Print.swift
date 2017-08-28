@@ -50,7 +50,7 @@
 ///   - terminator: The string to print after all items have been printed. The
 ///     default is a newline (`"\n"`).
 @inline(never)
-@_semantics("stdlib_binary_only")
+@_versioned
 public func print(
   _ items: Any...,
   separator: String = " ",
@@ -110,7 +110,7 @@ public func print(
 ///   - terminator: The string to print after all items have been printed. The
 ///     default is a newline (`"\n"`).
 @inline(never)
-@_semantics("stdlib_binary_only")
+@_versioned
 public func debugPrint(
   _ items: Any...,
   separator: String = " ",
@@ -226,7 +226,6 @@ public func debugPrint<Target : TextOutputStream>(
 
 @_versioned
 @inline(never)
-@_semantics("stdlib_binary_only")
 internal func _print<Target : TextOutputStream>(
   _ items: [Any],
   separator: String = " ",
@@ -246,7 +245,6 @@ internal func _print<Target : TextOutputStream>(
 
 @_versioned
 @inline(never)
-@_semantics("stdlib_binary_only")
 internal func _debugPrint<Target : TextOutputStream>(
   _ items: [Any],
   separator: String = " ",

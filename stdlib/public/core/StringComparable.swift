@@ -75,7 +75,7 @@ extension String {
 
   /// Compares two strings with the Unicode Collation Algorithm.
   @inline(never)
-  @_semantics("stdlib_binary_only") // Hide the CF/ICU dependency
+  @_versioned // Hide the CF/ICU dependency
   public  // @testable
   func _compareDeterministicUnicodeCollation(_ rhs: String) -> Int {
     // Note: this operation should be consistent with equality comparison of

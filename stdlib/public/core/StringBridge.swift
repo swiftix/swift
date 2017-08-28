@@ -44,7 +44,7 @@ func _stdlib_binary_CFStringGetCharactersPtr(
 
 /// Bridges `source` to `Swift.String`, assuming that `source` has non-ASCII
 /// characters (does not apply ASCII optimizations).
-@inline(never) @_semantics("stdlib_binary_only") // Hide the CF dependency
+@inline(never) @_versioned // Hide the CF dependency
 func _cocoaStringToSwiftString_NonASCII(
   _ source: _CocoaString
 ) -> String {
@@ -65,7 +65,7 @@ func _cocoaStringToSwiftString_NonASCII(
 
 /// Produces a `_StringBuffer` from a given subrange of a source
 /// `_CocoaString`, having the given minimum capacity.
-@inline(never) @_semantics("stdlib_binary_only") // Hide the CF dependency
+@inline(never) @_versioned // Hide the CF dependency
 internal func _cocoaStringToContiguous(
   source: _CocoaString, range: Range<Int>, minimumCapacity: Int
 ) -> _StringBuffer {
@@ -87,7 +87,7 @@ internal func _cocoaStringToContiguous(
 
 /// Reads the entire contents of a _CocoaString into contiguous
 /// storage of sufficient capacity.
-@inline(never) @_semantics("stdlib_binary_only") // Hide the CF dependency
+@inline(never) @_versioned // Hide the CF dependency
 internal func _cocoaStringReadAll(
   _ source: _CocoaString, _ destination: UnsafeMutablePointer<UTF16.CodeUnit>
 ) {
@@ -96,7 +96,7 @@ internal func _cocoaStringReadAll(
       location: 0, length: _swift_stdlib_CFStringGetLength(source)), destination)
 }
 
-@inline(never) @_semantics("stdlib_binary_only") // Hide the CF dependency
+@inline(never) @_versioned // Hide the CF dependency
 internal func _cocoaStringSlice(
   _ target: _StringCore, _ bounds: Range<Int>
 ) -> _StringCore {
@@ -116,7 +116,7 @@ internal func _cocoaStringSlice(
 }
 
 @_versioned
-@inline(never) @_semantics("stdlib_binary_only") // Hide the CF dependency
+@inline(never) // Hide the CF dependency
 internal func _cocoaStringSubscript(
   _ target: _StringCore, _ position: Int
 ) -> UTF16.CodeUnit {
@@ -137,7 +137,7 @@ internal var kCFStringEncodingASCII : _swift_shims_CFStringEncoding {
 }
 
 extension String {
-  @inline(never) @_semantics("stdlib_binary_only") // Hide the CF dependency
+  @inline(never) @_versioned // Hide the CF dependency
   public // SPI(Foundation)
   init(_cocoaString: AnyObject) {
     if let wrapped = _cocoaString as? _NSContiguousString {
@@ -323,7 +323,7 @@ extension String {
     return _NSContiguousString(_core)
   }
 
-  @inline(never) @_semantics("stdlib_binary_only") // Hide the CF dependency
+  @inline(never) @_versioned // Hide the CF dependency
   public func _bridgeToObjectiveCImpl() -> AnyObject {
     return _stdlib_binary_bridgeToObjectiveCImpl()
   }

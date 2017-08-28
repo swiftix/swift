@@ -18,7 +18,7 @@ func _replPrintLiteralString(_ text: String) {
 
 /// Print the debug representation of `value`, followed by a newline.
 @inline(never)
-@_semantics("stdlib_binary_only")
+@_versioned
 public // COMPILER_INTRINSIC
 func _replDebugPrintln<T>(_ value: T) {
   debugPrint(value)
