@@ -427,8 +427,9 @@ SILLinkage swift::getSpecializedLinkage(SILFunction *F, SILLinkage L) {
   // Treat stdlib_binary_only specially. We don't serialize the body of
   // stdlib_binary_only functions so we can't mark them as Shared (making
   // their visibility in the dylib hidden).
-  return F->hasSemanticsAttr("stdlib_binary_only") ? SILLinkage::Public
-                                                   : SILLinkage::Shared;
+  return F->isSerialized() == IsNotSerialized && F->isVersioned()
+             ? SILLinkage::Public
+             : SILLinkage::Shared;
 }
 
 /// Remove all instructions in the body of \p BB in safe manner by using
