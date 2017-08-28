@@ -27,6 +27,14 @@ class ExternalDefsToDecls : public SILModuleTransform {
       SILLinkage linkage = F.getLinkage();
       if (isAvailableExternally(linkage) && F.isDefinition() &&
           !hasSharedVisibility(linkage) && !F.isTransparent()) {
+#if 1
+        if (!hasPublicVisibility(F.getLinkage()) &&
+            !F.getName().startswith("globalinit_")) {
+          // Convert into a non-external object so that IRGen emits it?
+          //F.setLinkage(SILLinkage::Shared);
+          continue;
+        }
+#endif
         F.convertToDeclaration();
         invalidateAnalysis(&F, SILAnalysis::InvalidationKind::FunctionBody);
       }

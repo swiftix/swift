@@ -863,6 +863,14 @@ class ExternalFunctionDefinitionsElimination : FunctionLivenessComputation {
     // that an implementation is available elsewhere.
     if (hasSharedVisibility(F->getLinkage()))
       return false;
+    // Bail if it does not have a public visibility, as such symbols
+    // should not be exposed elsewhere.
+    if (!hasPublicVisibility(F->getLinkage())) {
+      // Convert into a non-external object?
+      //F->setLinkage(SILLinkage::Shared);
+      //F->setLinkage(stripExternalFromLinkage(F->getLinkage()));
+      return false;
+    }
     // Make this definition a declaration by removing the body of a function.
 
     DEBUG(llvm::dbgs() << "  removed external function " << F->getName()
@@ -899,6 +907,12 @@ public:
           if (F->getRefCount() == 0)
             F->getModule().eraseFunction(F);
         }
+      } else if (F->isDefinition() && F->isAvailableExternally() &&
+                 !hasSharedVisibility(F->getLinkage()) &&
+                 !hasPublicVisibility(F->getLinkage())
+                 && !F->getName().startswith("globalinit_")) {
+        // Convert into a non-external object so that IRGen emits it?
+        //F->setLinkage(SILLinkage::Shared);
       }
     }
   }
@@ -912,6 +926,7 @@ class AliveFunctionsMarker : FunctionLivenessComputation {
   /// transparent functions, because bodies of external transparent functions
   /// should never be removed.
   void findAnchorsInTables() override {
+#if 0
     // Check vtable methods.
     for (SILVTable &vTable : Module->getVTableList()) {
       for (auto &entry : vTable.getEntries()) {
@@ -948,9 +963,10 @@ class AliveFunctionsMarker : FunctionLivenessComputation {
           ensureAlive(F);
       }
     }
-
+#endif
   }
 
+#if 0
   bool findAliveFunctions() {
     for (SILFunction &F : *Module) {
       if (isAvailableExternally(F.getLinkage()))
@@ -970,6 +986,7 @@ class AliveFunctionsMarker : FunctionLivenessComputation {
 
     return FunctionLivenessComputation::findAliveFunctions();
   }
+#endif
 
 public:
   AliveFunctionsMarker(SILModule *module)
