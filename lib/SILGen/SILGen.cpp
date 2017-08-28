@@ -982,13 +982,12 @@ SILFunction *SILGenModule::emitLazyGlobalInitializer(StringRef funcName,
                       .withRepresentation(FunctionType::Representation::Thin));
   auto initSILType = getLoweredType(initType).castTo<SILFunctionType>();
 
-  auto *f =
-      M.createFunction(SILLinkage::Private,
-                       funcName, initSILType, nullptr,
-                       SILLocation(binding), IsNotBare, IsNotTransparent,
-                       isMakeModuleFragile()
-                           ? IsSerialized
-                           : IsNotSerialized);
+  auto *f = M.createFunction(
+      isMakeModuleFragile() ? SILLinkage::Public : SILLinkage::Private,
+      funcName, initSILType, nullptr, SILLocation(binding), IsNotBare,
+      IsNotTransparent,
+      isMakeModuleFragile() ? IsNotSerialized : IsNotSerialized,
+      isMakeModuleFragile() ? IsVersioned : IsNotVersioned);
   f->setDebugScope(new (M) SILDebugScope(RegularLocation(binding), f));
   SILGenFunction(*this, *f).emitLazyGlobalInitializer(binding, pbdEntry);
   f->verify();
