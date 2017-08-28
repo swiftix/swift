@@ -4349,6 +4349,16 @@ public:
 
     assert(!F->hasForeignBody());
 
+    if (F->hasSemanticsAttr("stdlib_binary_only")) {
+      require(false, "@_semantics(\"stdlib_binary_only\") is deprecated. To "
+                     "achieve the same effect do not mark your function as "
+                     "@_inlineable");
+    }
+
+    if (F->isTransparent()) {
+      require(F->isDefinition(), "@_transparent functions should have a body");
+    }
+
     // Make sure that our SILFunction only has context generic params if our
     // SILFunctionType is non-polymorphic.
     if (F->getGenericEnvironment()) {
