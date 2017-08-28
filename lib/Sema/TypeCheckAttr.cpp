@@ -1895,11 +1895,22 @@ void AttributeChecker::visitVersionedAttr(VersionedAttr *attr) {
     return;
   }
 
-  // @_versioned can only be applied to internal declarations.
+  // @_versioned can only be applied to internal declarations or public
+  // declarations of functions.
   if (VD->getFormalAccess() != AccessLevel::Internal) {
-    TC.diagnose(attr->getLocation(), diag::versioned_attr_with_explicit_access,
-                VD->getFullName(),
-                VD->getFormalAccess())
+    // It is OK to use @_versions for public functions if we are not
+    // in a resilient mode.
+    // FIXME: May be we should always allow @_versioned used for public
+    // functions? After all, public implies @_versioned, because public symbols
+    // are guaranteed to exist in the object file and clients can refernce them.
+    if (VD->getModuleContext()->getParentModule()->getResilienceStrategy() ==
+            ResilienceStrategy::Fragile &&
+        VD->getFormalAccess() == AccessLevel::Public &&
+        isa<AbstractFunctionDecl>(VD))
+      return;
+    TC.diagnose(attr->getLocation(),
+                diag::versioned_attr_with_explicit_access,
+                VD->getFullName(), VD->getFormalAccess())
         .fixItRemove(attr->getRangeWithAt());
     attr->setInvalid();
     return;
