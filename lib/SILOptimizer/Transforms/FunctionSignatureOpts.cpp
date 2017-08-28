@@ -651,7 +651,7 @@ void FunctionSignatureTransform::createFunctionSignatureOptimizedFunction() {
 
   NewF = M.createFunction(
       linkage, Name, NewFTy, NewFGenericEnv, F->getLocation(), F->isBare(),
-      F->isTransparent(), F->isSerialized(), F->isThunk(),
+      F->isTransparent(), F->isSerialized(), F->isVersioned(), F->isThunk(),
       F->getClassSubclassScope(), F->getInlineStrategy(), F->getEffectsKind(),
       nullptr, F->getDebugScope());
   if (F->hasUnqualifiedOwnership()) {
@@ -688,6 +688,10 @@ void FunctionSignatureTransform::createFunctionSignatureOptimizedFunction() {
   // the signature optimized function without additional setup on the
   // caller side.
   F->setInlineStrategy(AlwaysInline);
+  // If the new callee is versioned, it is fine to call it, because
+  // it will be exposed as a public symbol in the object file.
+  if (F->getModule().getOptions().SILSerializeAll && NewF->isVersioned())
+    F->setSerialized(IsSerialized);
   SILBasicBlock *ThunkBody = F->createBasicBlock();
   for (auto &ArgDesc : ArgumentDescList) {
     ThunkBody->createFunctionArgument(ArgDesc.Arg->getType(), ArgDesc.Decl);

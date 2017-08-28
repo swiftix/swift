@@ -2801,6 +2801,7 @@ static SILFunction *getOrCreateKeyPathGetter(SILGenFunction &SGF,
                                                    IsBare,
                                                    IsNotTransparent,
                                                    IsNotSerialized,
+                                                   IsNotVersioned,
                                                    IsThunk);
   if (!thunk->empty())
     return thunk;
@@ -2902,6 +2903,7 @@ SILFunction *getOrCreateKeyPathSetter(SILGenFunction &SGF,
                                                    IsBare,
                                                    IsNotTransparent,
                                                    IsNotSerialized,
+                                                   IsNotVersioned,
                                                    IsThunk);
   if (!thunk->empty())
     return thunk;

@@ -57,7 +57,8 @@ SILFunction *SILFunction::create(
     SILModule &M, SILLinkage linkage, StringRef name,
     CanSILFunctionType loweredType, GenericEnvironment *genericEnv,
     Optional<SILLocation> loc, IsBare_t isBareSILFunction,
-    IsTransparent_t isTrans, IsSerialized_t isSerialized, IsThunk_t isThunk,
+    IsTransparent_t isTrans, IsSerialized_t isSerialized,
+    IsVersioned_t isVersioned, IsThunk_t isThunk,
     SubclassScope classSubclassScope, Inline_t inlineStrategy, EffectsKind E,
     SILFunction *insertBefore, const SILDebugScope *debugScope) {
   // Get a StringMapEntry for the function.  As a sop to error cases,
@@ -72,7 +73,8 @@ SILFunction *SILFunction::create(
 
   auto fn = new (M) SILFunction(M, linkage, name, loweredType, genericEnv, loc,
                                 isBareSILFunction, isTrans, isSerialized,
-                                isThunk, classSubclassScope, inlineStrategy, E,
+                                isVersioned, isThunk, classSubclassScope,
+                                inlineStrategy, E,
                                 insertBefore, debugScope);
 
   if (entry) entry->setValue(fn);
@@ -84,6 +86,7 @@ SILFunction::SILFunction(SILModule &Module, SILLinkage Linkage, StringRef Name,
                          GenericEnvironment *genericEnv,
                          Optional<SILLocation> Loc, IsBare_t isBareSILFunction,
                          IsTransparent_t isTrans, IsSerialized_t isSerialized,
+                         IsVersioned_t isVersioned,
                          IsThunk_t isThunk, SubclassScope classSubclassScope,
                          Inline_t inlineStrategy, EffectsKind E,
                          SILFunction *InsertBefore,
@@ -91,7 +94,8 @@ SILFunction::SILFunction(SILModule &Module, SILLinkage Linkage, StringRef Name,
     : Module(Module), Name(Name), LoweredType(LoweredType),
       GenericEnv(genericEnv), SpecializationInfo(nullptr),
       DebugScope(DebugScope), Bare(isBareSILFunction),
-      Transparent(isTrans), Serialized(isSerialized), Thunk(isThunk),
+      Transparent(isTrans), Serialized(isSerialized),
+      Versioned(isVersioned), Thunk(isThunk),
       ClassSubclassScope(unsigned(classSubclassScope)), GlobalInitFlag(false),
       InlineStrategy(inlineStrategy), Linkage(unsigned(Linkage)),
       KeepAsPublic(false), EffectsKindAttr(E) {

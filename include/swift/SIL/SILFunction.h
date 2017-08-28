@@ -37,6 +37,7 @@ enum IsBare_t { IsNotBare, IsBare };
 enum IsTransparent_t { IsNotTransparent, IsTransparent };
 enum Inline_t { InlineDefault, NoInline, AlwaysInline };
 enum IsThunk_t { IsNotThunk, IsThunk, IsReabstractionThunk };
+enum IsVersioned_t { IsNotVersioned, IsVersioned };
 
 class SILSpecializeAttr final {
   friend SILFunction;
@@ -140,6 +141,11 @@ private:
   /// The function's serialized attribute.
   unsigned Serialized : 2;
 
+  /// The functions's versioned attribute.
+  /// Used by -sil-serialize-all to decide that function body should not be
+  /// serialized.
+  unsigned Versioned : 1;
+
   /// Specifies if this function is a thunk or a reabstraction thunk.
   ///
   /// The inliner uses this information to avoid inlining (non-trivial)
@@ -204,9 +210,9 @@ private:
               CanSILFunctionType loweredType, GenericEnvironment *genericEnv,
               Optional<SILLocation> loc, IsBare_t isBareSILFunction,
               IsTransparent_t isTrans, IsSerialized_t isSerialized,
-              IsThunk_t isThunk, SubclassScope classSubclassScope,
-              Inline_t inlineStrategy, EffectsKind E,
-              SILFunction *insertBefore,
+              IsVersioned_t isVersioned, IsThunk_t isThunk,
+              SubclassScope classSubclassScope, Inline_t inlineStrategy,
+              EffectsKind E, SILFunction *insertBefore,
               const SILDebugScope *debugScope);
 
   static SILFunction *
@@ -214,6 +220,7 @@ private:
          CanSILFunctionType loweredType, GenericEnvironment *genericEnv,
          Optional<SILLocation> loc, IsBare_t isBareSILFunction,
          IsTransparent_t isTrans, IsSerialized_t isSerialized,
+         IsVersioned_t isVersioned = IsNotVersioned,
          IsThunk_t isThunk = IsNotThunk,
          SubclassScope classSubclassScope = SubclassScope::NotApplicable,
          Inline_t inlineStrategy = InlineDefault,
@@ -498,6 +505,10 @@ public:
   /// Get this function's thunk attribute.
   IsThunk_t isThunk() const { return IsThunk_t(Thunk); }
   void setThunk(IsThunk_t isThunk) { Thunk = isThunk; }
+
+  /// Get this function's versioned attribute.
+  IsVersioned_t isVersioned() const { return IsVersioned_t(Versioned); }
+  void setVersioned(IsVersioned_t isV) { Versioned = isV; }
 
   /// Get the class visibility (relevant for class methods).
   SubclassScope getClassSubclassScope() const {

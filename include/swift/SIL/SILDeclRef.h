@@ -265,6 +265,8 @@ struct SILDeclRef {
   bool isTransparent() const;
   /// \brief True if the function should have its body serialized.
   IsSerialized_t isSerialized() const;
+  /// \brief True if the function should be treated as versioned.
+  bool isVersioned() const;
   /// \brief True if the function has noinline attribute.
   bool isNoinline() const;
   /// \brief True if the function has __always inline attribute.

@@ -431,8 +431,8 @@ SILFunction *SILGenModule::emitTopLevelFunction(SILLocation Loc) {
 
   return M.createFunction(SILLinkage::Public, SWIFT_ENTRY_POINT_FUNCTION,
                           topLevelType, nullptr, Loc, IsBare,
-                          IsNotTransparent, IsNotSerialized, IsNotThunk,
-                          SubclassScope::NotApplicable);
+                          IsNotTransparent, IsNotSerialized, IsNotVersioned,
+                          IsNotThunk, SubclassScope::NotApplicable);
 }
 
 SILType SILGenModule::getConstantType(SILDeclRef constant) {

@@ -236,6 +236,7 @@ SILFunction *SILModule::getOrCreateFunction(SILLocation loc,
                                             IsBare_t isBareSILFunction,
                                             IsTransparent_t isTransparent,
                                             IsSerialized_t isSerialized,
+                                            IsVersioned_t isVersioned,
                                             IsThunk_t isThunk,
                                             SubclassScope subclassScope) {
   if (auto fn = lookUpFunction(name)) {
@@ -247,7 +248,8 @@ SILFunction *SILModule::getOrCreateFunction(SILLocation loc,
 
   auto fn = SILFunction::create(*this, linkage, name, type, nullptr,
                                 loc, isBareSILFunction, isTransparent,
-                                isSerialized, isThunk, subclassScope);
+                                isSerialized, isVersioned, isThunk,
+                                subclassScope);
   fn->setDebugScope(new (*this) SILDebugScope(loc, fn));
   return fn;
 }
@@ -310,6 +312,10 @@ SILFunction *SILModule::getOrCreateFunction(SILLocation loc,
                             : IsNotTransparent;
   IsSerialized_t IsSer = constant.isSerialized();
 
+  IsVersioned_t IsVer = (constant.isVersioned())
+    ? IsVersioned_t::IsVersioned
+    : IsVersioned_t::IsNotVersioned;
+
   EffectsKind EK = constant.hasEffectsAttribute()
                    ? constant.getEffectsAttribute()
                    : EffectsKind::Unspecified;
@@ -322,7 +328,8 @@ SILFunction *SILModule::getOrCreateFunction(SILLocation loc,
 
   auto *F = SILFunction::create(*this, linkage, name,
                                 constantType, nullptr,
-                                None, IsNotBare, IsTrans, IsSer, IsNotThunk,
+                                None, IsNotBare, IsTrans, IsSer,
+                                IsVer, IsNotThunk,
                                 constant.getSubclassScope(),
                                 inlineStrategy, EK);
   F->setDebugScope(new (*this) SILDebugScope(loc, F));
@@ -371,22 +378,25 @@ SILFunction *SILModule::getOrCreateSharedFunction(SILLocation loc,
                                                   IsBare_t isBareSILFunction,
                                                   IsTransparent_t isTransparent,
                                                   IsSerialized_t isSerialized,
+                                                  IsVersioned_t isVersioned,
                                                   IsThunk_t isThunk) {
   return getOrCreateFunction(loc, name, SILLinkage::Shared,
                              type, isBareSILFunction, isTransparent, isSerialized,
-                             isThunk, SubclassScope::NotApplicable);
+                             isVersioned, isThunk, SubclassScope::NotApplicable);
 }
 
 SILFunction *SILModule::createFunction(
     SILLinkage linkage, StringRef name, CanSILFunctionType loweredType,
     GenericEnvironment *genericEnv, Optional<SILLocation> loc,
     IsBare_t isBareSILFunction, IsTransparent_t isTrans,
-    IsSerialized_t isSerialized, IsThunk_t isThunk, SubclassScope subclassScope,
+    IsSerialized_t isSerialized, IsVersioned_t isVersioned,
+    IsThunk_t isThunk, SubclassScope subclassScope,
     Inline_t inlineStrategy, EffectsKind EK, SILFunction *InsertBefore,
     const SILDebugScope *DebugScope) {
   return SILFunction::create(*this, linkage, name, loweredType, genericEnv, loc,
-                             isBareSILFunction, isTrans, isSerialized, isThunk,
-                             subclassScope, inlineStrategy, EK, InsertBefore,
+                             isBareSILFunction, isTrans, isSerialized,
+                             isVersioned, isThunk, subclassScope,
+                             inlineStrategy, EK, InsertBefore,
                              DebugScope);
 }
 

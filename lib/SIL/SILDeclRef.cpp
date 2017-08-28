@@ -531,6 +531,16 @@ bool SILDeclRef::isTransparent() const {
   return false;
 }
 
+/// \brief True if the function should be treated as versioned.
+bool SILDeclRef::isVersioned() const {
+  if (hasDecl()) {
+    if (auto *AFD = dyn_cast<AbstractFunctionDecl>(getDecl()))
+      return AFD->getAttrs().getAttribute<VersionedAttr>() != nullptr;
+  }
+
+  return false;
+}
+
 /// \brief True if the function should have its body serialized.
 IsSerialized_t SILDeclRef::isSerialized() const {
   DeclContext *dc;

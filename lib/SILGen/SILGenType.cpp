@@ -692,7 +692,7 @@ SILGenModule::emitProtocolWitness(ProtocolConformance *conformance,
   auto *f = M.createFunction(
       linkage, nameBuffer, witnessSILFnType,
       genericEnv, SILLocation(witnessRef.getDecl()),
-      IsNotBare, IsTransparent, isSerialized, IsThunk,
+      IsNotBare, IsTransparent, isSerialized, IsNotVersioned, IsThunk,
       SubclassScope::NotApplicable, InlineStrategy);
 
   f->setDebugScope(new (M)

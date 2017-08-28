@@ -489,6 +489,7 @@ public:
                                          IsBare_t isBareSILFunction,
                                          IsTransparent_t isTransparent,
                                          IsSerialized_t isSerialized,
+                                         IsVersioned_t isVersioned,
                                          IsThunk_t isThunk);
 
   /// \brief Return the declaration of a function, or create it if it doesn't
@@ -497,6 +498,7 @@ public:
       SILLocation loc, StringRef name, SILLinkage linkage,
       CanSILFunctionType type, IsBare_t isBareSILFunction,
       IsTransparent_t isTransparent, IsSerialized_t isSerialized,
+      IsVersioned_t isVersioned = IsNotVersioned,
       IsThunk_t isThunk = IsNotThunk,
       SubclassScope subclassScope = SubclassScope::NotApplicable);
 
@@ -515,7 +517,9 @@ public:
       SILLinkage linkage, StringRef name, CanSILFunctionType loweredType,
       GenericEnvironment *genericEnv, Optional<SILLocation> loc,
       IsBare_t isBareSILFunction, IsTransparent_t isTrans,
-      IsSerialized_t isSerialized, IsThunk_t isThunk = IsNotThunk,
+      IsSerialized_t isSerialized,
+      IsVersioned_t isVersioned = IsNotVersioned,
+      IsThunk_t isThunk = IsNotThunk,
       SubclassScope subclassScope = SubclassScope::NotApplicable,
       Inline_t inlineStrategy = InlineDefault,
       EffectsKind EK = EffectsKind::Unspecified,

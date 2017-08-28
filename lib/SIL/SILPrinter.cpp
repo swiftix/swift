@@ -2057,6 +2057,11 @@ void SILFunction::print(SILPrintContext &PrintCtx) const {
   case IsSerialized: OS << "[serialized] "; break;
   }
 
+  switch(isVersioned()) {
+   case IsNotVersioned: break;
+   case IsVersioned: OS << "[versioned] "; break;
+  }
+
   switch (isThunk()) {
   case IsNotThunk: break;
   case IsThunk: OS << "[thunk] "; break;
