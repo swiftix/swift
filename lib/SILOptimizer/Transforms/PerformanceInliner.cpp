@@ -636,7 +636,9 @@ bool SILPerformanceInliner::inlineCallsIntoFunction(SILFunction *Caller) {
     if (!Callee->shouldOptimize()) {
       continue;
     }
-    
+
+    adjustThunkInliningAttributes(Caller, Callee);
+
     SmallVector<SILValue, 8> Args;
     for (const auto &Arg : AI.getArguments())
       Args.push_back(Arg);

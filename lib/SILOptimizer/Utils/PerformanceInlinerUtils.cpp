@@ -781,3 +781,46 @@ bool swift::isPureCall(FullApplySite AI, SideEffectAnalysis *SEA) {
   }
   return true;
 }
+
+void swift::adjustThunkInliningAttributes(SILFunction *Caller, SILFunction *Callee) {
+  // If we inline a non-transparent function into a transparent thunk we
+  // should mark the thunk non-transparent.
+  if (Caller->isThunk() == IsThunk) {
+#if 0
+    if (Caller->getName() == "_T0SSs9EquatablessAAP2eeoiSbx_xtFZTW" ||
+        Callee->getName() == "_T0SSs9EquatablessAAP2eeoiSbx_xtFZTW") {
+      llvm::dbgs() << "Got you!\n";
+    }
+#endif
+    // If the thunk has more than a single BB, it means that
+    // something was inlined into it already.
+    if (Caller->size() > 1)
+      return;
+    // It is always OK to inline a single BB into the thunk,
+    // because it does not increase the number of BBs in the thunk.
+    if (Callee->size() == 1)
+      return;
+
+    bool Changed = false;
+    if (Caller->isTransparent() == IsTransparent &&
+        Callee->isTransparent() == IsNotTransparent) {
+      llvm::dbgs() << "\n\nRemoving @_transparent from a thunk:\n";
+      Caller->setTransparent(IsNotTransparent);
+      Caller->setInlineStrategy(Inline_t::InlineDefault);
+      Changed = true;
+    }
+    if (Caller->getInlineStrategy() == Inline_t::AlwaysInline &&
+        Callee->getInlineStrategy() != Inline_t::AlwaysInline &&
+        Callee->isTransparent() == IsNotTransparent) {
+      llvm::dbgs() << "\n\nRemoving @inline(__always) from a thunk:\n";
+      Caller->setInlineStrategy(Inline_t::InlineDefault);
+      Changed = true;
+    }
+    if (Changed) {
+      llvm::dbgs() << "The caller is:\n";
+      Caller->dump();
+      llvm::dbgs() << "The callee is:\n";
+      Callee->dump();
+    }
+  }
+}

@@ -18,6 +18,7 @@
 #include "swift/SILOptimizer/Utils/CFG.h"
 #include "swift/SILOptimizer/Utils/Devirtualize.h"
 #include "swift/SILOptimizer/Utils/Local.h"
+#include "swift/SILOptimizer/Utils/PerformanceInlinerUtils.h"
 #include "swift/SILOptimizer/Utils/SILInliner.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ImmutableSet.h"
@@ -376,7 +377,6 @@ runOnFunctionRecursively(SILFunction *F, FullApplySite AI,
 
         InnerAI = NewAI;
       }
-
       SILLocation Loc = InnerAI.getLoc();
       SILValue CalleeValue = InnerAI.getCallee();
       bool IsThick;
@@ -388,6 +388,14 @@ runOnFunctionRecursively(SILFunction *F, FullApplySite AI,
       if (!CalleeFunction ||
           CalleeFunction->isTransparent() == IsNotTransparent)
         continue;
+
+#if 0
+      if (NewInstPair.first) {
+        // Check if the devirualized callee is too complex.
+        if (CalleeFunction->size() > 4)
+          continue;
+      }
+#endif
 
       if (F->isSerialized() &&
           !CalleeFunction->hasValidLinkageForFragileRef()) {
@@ -417,6 +425,15 @@ runOnFunctionRecursively(SILFunction *F, FullApplySite AI,
         }
         return false;
       }
+
+#if 1
+      if (CalleeFunction->isTransparent() == IsNotTransparent)
+        continue;
+#endif
+
+      auto *CallerFunction = InnerAI.getFunction();
+
+      adjustThunkInliningAttributes(CallerFunction, CalleeFunction);
 
       // Inline function at I, which also changes I to refer to the first
       // instruction inlined in the case that it succeeds. We purposely

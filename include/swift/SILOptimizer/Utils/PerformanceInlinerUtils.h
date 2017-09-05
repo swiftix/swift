@@ -44,6 +44,10 @@ SILFunction *getEligibleFunction(FullApplySite AI,
 // Returns true if this is a pure call, i.e. the callee has no side-effects
 // and all arguments are constants.
 bool isPureCall(FullApplySite AI, SideEffectAnalysis *SEA);
+
+// When inlining into a thunk, adjust its @_transparent and always_inline
+// flags.
+void adjustThunkInliningAttributes(SILFunction *Caller, SILFunction *Callee);
 } // end swift namespace
 
 //===----------------------------------------------------------------------===//
