@@ -363,10 +363,6 @@ final internal class _VaListBuilder {
 
   @_inlineable // FIXME(sil-serialize-all)
   @_versioned // FIXME(sil-serialize-all)
-  deinit {}
-
-  @_inlineable // FIXME(sil-serialize-all)
-  @_versioned // FIXME(sil-serialize-all)
   internal func append(_ arg: CVarArg) {
     // Write alignment padding if necessary.
     // This is needed on architectures where the ABI alignment of some
@@ -455,6 +451,8 @@ final internal class _VaListBuilder {
     Builtin.deallocRaw(storage._rawValue, rawSize, rawAlignment)
   }
 
+  @_inlineable // FIXME(sil-serialize-all)
+  @_versioned // FIXME(sil-serialize-all)
   deinit {
     if let allocatedStorage = storage {
       deallocStorage(wordCount: allocated, storage: allocatedStorage)
