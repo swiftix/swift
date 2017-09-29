@@ -258,7 +258,8 @@ namespace {
 void SILSerializer::addMandatorySILFunction(const SILFunction *F,
                                             bool emitDeclarationsForOnoneSupport) {
   // If this function is not fragile, don't do anything.
-  if (!shouldEmitFunctionBody(F, /* isReference */ false))
+  if (!emitDeclarationsForOnoneSupport &&
+      !shouldEmitFunctionBody(F, /* isReference */ false))
     return;
 
   auto iter = FuncsToEmit.find(F);
@@ -273,7 +274,10 @@ void SILSerializer::addMandatorySILFunction(const SILFunction *F,
   // We haven't seen this function before. Record that we want to
   // emit its body, and add it to the worklist.
   FuncsToEmit[F] = emitDeclarationsForOnoneSupport;
-  if (!emitDeclarationsForOnoneSupport)
+
+  // Function body should be serialized unless it is a KeepAsPublic function
+  // (which is typically a pre-specialization).
+  if (!emitDeclarationsForOnoneSupport && !F->isKeepAsPublic())
     Worklist.push_back(F);
 }
 
@@ -2194,6 +2198,12 @@ bool SILSerializer::shouldEmitFunctionBody(const SILFunction *F,
   if (ShouldSerializeAll)
     return true;
 
+#if 0
+  // Bodies of KeepAsPublic functions should never be serialized.
+  if (F->isKeepAsPublic())
+    return false;
+#endif
+
   // If F is serialized, we should always emit its body.
   if (F->isSerialized() == IsSerialized)
     return true;
@@ -2258,7 +2268,7 @@ void SILSerializer::writeSILBlock(const SILModule *SILMod) {
   const DeclContext *assocDC = SILMod->getAssociatedContext();
   assert(assocDC && "cannot serialize SIL without an associated DeclContext");
   for (const SILVTable &vt : SILMod->getVTables()) {
-    if (ShouldSerializeAll &&
+    if ((ShouldSerializeAll || SILMod->getOptions().SILSerializeVTables) &&
         vt.getClass()->isChildContextOf(assocDC))
       writeSILVTable(vt);
   }
@@ -2281,8 +2291,7 @@ void SILSerializer::writeSILBlock(const SILModule *SILMod) {
   // Emit only declarations if it is a module with pre-specializations.
   // And only do it in optimized builds.
   bool emitDeclarationsForOnoneSupport =
-      SILMod->getSwiftModule()->getName().str() == SWIFT_ONONE_SUPPORT &&
-      SILMod->getOptions().Optimization > SILOptions::SILOptMode::Debug;
+      SILMod->isOptimizedOnoneSupportModule();
 
   // Go through all the SILFunctions in SILMod and write out any
   // mandatory function bodies.

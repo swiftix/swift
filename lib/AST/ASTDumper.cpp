@@ -2730,6 +2730,7 @@ void ProtocolConformance::dump() const {
 }
 
 void ProtocolConformance::dump(llvm::raw_ostream &out, unsigned indent) const {
+  return;
   auto printCommon = [&](StringRef kind) {
     out.indent(indent);
     PrintWithColorRAII(out, ParenthesisColor) << '(';
