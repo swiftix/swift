@@ -2276,14 +2276,16 @@ void SILSerializer::writeSILBlock(const SILModule *SILMod) {
   const DeclContext *assocDC = SILMod->getAssociatedContext();
   assert(assocDC && "cannot serialize SIL without an associated DeclContext");
   for (const SILVTable &vt : SILMod->getVTables()) {
-    if ((ShouldSerializeAll || SILMod->getOptions().SILSerializeVTables) &&
+    if ((ShouldSerializeAll ||
+         SILMod->getASTContext().LangOpts.SILSerializeVTables) &&
         vt.getClass()->isChildContextOf(assocDC))
       writeSILVTable(vt);
   }
 
   // Write out fragile WitnessTables.
   for (const SILWitnessTable &wt : SILMod->getWitnessTables()) {
-    if ((ShouldSerializeAll || SILMod->getOptions().SILSerializeWitnessTables ||
+    if ((ShouldSerializeAll ||
+         SILMod->getASTContext().LangOpts.SILSerializeWitnessTables ||
          wt.isSerialized()) &&
         wt.getConformance()->getDeclContext()->isChildContextOf(assocDC))
       writeSILWitnessTable(wt);

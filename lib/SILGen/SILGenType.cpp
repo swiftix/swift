@@ -376,13 +376,13 @@ public:
 
     // Serialize the witness table if we're serializing everything with
     // -sil-serialize-witness-tables....
-    if (SGM.M.getOptions().SILSerializeWitnessTables)
+    if (SGM.M.getASTContext().LangOpts.SILSerializeWitnessTables)
       Serialized = IsSerialized;
 
     // ... or if the conformance itself thinks it should be.
     if (SILWitnessTable::conformanceIsSerialized(
             Conformance, SGM.M.getSwiftModule()->getResilienceStrategy(),
-            SGM.M.getOptions().SILSerializeWitnessTables))
+            SGM.M.getASTContext().LangOpts.SILSerializeWitnessTables))
       Serialized = IsSerialized;
 
     // Not all protocols use witness tables; in this case we just skip
@@ -482,9 +482,10 @@ public:
     if (witnessSerialized &&
         fixmeWitnessHasLinkageThatNeedsToBePublic(witnessLinkage)) {
       witnessLinkage = SILLinkage::Public;
-      witnessSerialized = (SGM.M.getOptions().SILSerializeWitnessTables
-                           ? IsSerialized
-                           : IsNotSerialized);
+      witnessSerialized =
+          (SGM.M.getASTContext().LangOpts.SILSerializeWitnessTables
+               ? IsSerialized
+               : IsNotSerialized);
     } else {
       // This is the "real" rule; the above case should go away once we
       // figure out what's going on.

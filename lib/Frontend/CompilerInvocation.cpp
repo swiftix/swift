@@ -1141,6 +1141,10 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
 
   Opts.EnableSILOpaqueValues |= Args.hasArg(OPT_enable_sil_opaque_values);
 
+  Opts.SILSerializeWitnessTables |=
+      Args.hasArg(OPT_sil_serialize_witness_tables);
+  Opts.SILSerializeVTables |= Args.hasArg(OPT_sil_serialize_vtables);
+
   // Must be processed after any other language options that could affect
   // platform conditions.
   bool UnsupportedOS, UnsupportedArch;
@@ -1372,11 +1376,6 @@ static bool ParseSILArgs(SILOptions &Opts, ArgList &Args,
 
   if (Args.hasArg(OPT_sil_merge_partial_modules))
     Opts.MergePartialModules = true;
-
-  Opts.SILSerializeWitnessTables |=
-    Args.hasArg(OPT_sil_serialize_witness_tables);
-  Opts.SILSerializeVTables |=
-    Args.hasArg(OPT_sil_serialize_vtables);
 
   // Parse the optimization level.
   // Default to Onone settings if no option is passed.

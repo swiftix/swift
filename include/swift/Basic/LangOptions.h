@@ -247,6 +247,18 @@ namespace swift {
     /// coloring.
     bool KeepTokensInSourceFile = false;
 
+    /// If set, SIL witness tables will be serialized.
+    ///
+    /// It is supposed to be used only for compiling overlays.
+    /// User code should never be compiled with this flag set.
+    bool SILSerializeWitnessTables = false;
+
+    /// If set, SIL vtables will be serialized.
+    ///
+    /// It is supposed to be used only for compiling overlays.
+    /// User code should never be compiled with this flag set.
+    bool SILSerializeVTables = false;
+
     /// Sets the target we are building for and updates platform conditions
     /// to match.
     ///
