@@ -374,11 +374,6 @@ public:
 
     Serialized = IsNotSerialized;
 
-    // Serialize the witness table if we're serializing everything with
-    // -sil-serialize-witness-tables....
-    if (SGM.M.getASTContext().LangOpts.SILSerializeWitnessTables)
-      Serialized = IsSerialized;
-
     // ... or if the conformance itself thinks it should be.
     if (SILWitnessTable::conformanceIsSerialized(
             Conformance, SGM.M.getSwiftModule()->getResilienceStrategy(),
