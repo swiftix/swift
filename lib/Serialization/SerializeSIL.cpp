@@ -202,8 +202,6 @@ namespace {
                          << " for layout " << Layout::Code << "\n");
     }
 
-    bool ShouldSerializeAll;
-
     void addMandatorySILFunction(const SILFunction *F,
                                  bool emitDeclarationsForOnoneSupport);
     void addReferencedSILFunction(const SILFunction *F,
@@ -248,8 +246,8 @@ namespace {
 
   public:
     SILSerializer(Serializer &S, ASTContext &Ctx,
-                  llvm::BitstreamWriter &Out, bool serializeAll)
-      : S(S), Ctx(Ctx), Out(Out), ShouldSerializeAll(serializeAll) {}
+                  llvm::BitstreamWriter &Out)
+      : S(S), Ctx(Ctx), Out(Out) {}
 
     void writeSILModule(const SILModule *SILMod);
   };
@@ -2216,12 +2214,12 @@ bool SILSerializer::shouldEmitFunctionBody(const SILFunction *F,
       !(isReference && hasSharedVisibility(F->getLinkage())))
     return false;
 
-  // If we are asked to serialize everything, go ahead and do it.
-  if (ShouldSerializeAll)
-    return true;
-
   // If F is serialized, we should always emit its body.
   if (F->isSerialized() == IsSerialized)
+    return true;
+
+  // Always serialize the entry point function.
+  if (F->getName() == SWIFT_ENTRY_POINT_FUNCTION)
     return true;
 
   return false;
@@ -2284,16 +2282,14 @@ void SILSerializer::writeSILBlock(const SILModule *SILMod) {
   const DeclContext *assocDC = SILMod->getAssociatedContext();
   assert(assocDC && "cannot serialize SIL without an associated DeclContext");
   for (const SILVTable &vt : SILMod->getVTables()) {
-    if ((ShouldSerializeAll ||
-         SILMod->getASTContext().LangOpts.SILSerializeVTables) &&
+    if ((SILMod->getASTContext().LangOpts.SILSerializeVTables) &&
         vt.getClass()->isChildContextOf(assocDC))
       writeSILVTable(vt);
   }
 
   // Write out fragile WitnessTables.
   for (const SILWitnessTable &wt : SILMod->getWitnessTables()) {
-    if ((ShouldSerializeAll ||
-         SILMod->getASTContext().LangOpts.SILSerializeWitnessTables ||
+    if ((SILMod->getASTContext().LangOpts.SILSerializeWitnessTables ||
          wt.isSerialized()) &&
         wt.getConformance()->getDeclContext()->isChildContextOf(assocDC))
       writeSILWitnessTable(wt);
@@ -2349,10 +2345,10 @@ void SILSerializer::writeSILModule(const SILModule *SILMod) {
   writeIndexTables();
 }
 
-void Serializer::writeSIL(const SILModule *SILMod, bool serializeAllSIL) {
+void Serializer::writeSIL(const SILModule *SILMod) {
   if (!SILMod)
     return;
 
-  SILSerializer SILSer(*this, M->getASTContext(), Out, serializeAllSIL);
+  SILSerializer SILSer(*this, M->getASTContext(), Out);
   SILSer.writeSILModule(SILMod);
 }

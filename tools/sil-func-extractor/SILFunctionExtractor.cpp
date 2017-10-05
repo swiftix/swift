@@ -372,7 +372,6 @@ int main(int argc, char **argv) {
 
     SerializationOptions serializationOpts;
     serializationOpts.OutputPath = OutputFile.c_str();
-    serializationOpts.SerializeAllSIL = true;
     serializationOpts.IsSIB = true;
 
     serialize(CI.getMainModule(), serializationOpts, CI.getSILModule());

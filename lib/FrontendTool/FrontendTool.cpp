@@ -815,7 +815,6 @@ static bool performCompile(CompilerInstance &Instance,
     if (!opts.ModuleOutputPath.empty()) {
       SerializationOptions serializationOpts;
       serializationOpts.OutputPath = opts.ModuleOutputPath.c_str();
-      serializationOpts.SerializeAllSIL = true;
       serializationOpts.IsSIB = true;
 
       serialize(DC, serializationOpts, SM.get());
@@ -910,7 +909,6 @@ static bool performCompile(CompilerInstance &Instance,
     if (!opts.ModuleOutputPath.empty()) {
       SerializationOptions serializationOpts;
       serializationOpts.OutputPath = opts.ModuleOutputPath.c_str();
-      serializationOpts.SerializeAllSIL = true;
       serializationOpts.IsSIB = true;
 
       serialize(DC, serializationOpts, SM.get());
