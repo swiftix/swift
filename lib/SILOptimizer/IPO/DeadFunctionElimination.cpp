@@ -145,9 +145,6 @@ protected:
       return true;
     }
 
-    if (F->isVersioned())
-      return true;
-
     return false;
   }
 
