@@ -172,6 +172,11 @@ protected:
 
   /// Marks a function as alive.
   void makeAlive(SILFunction *F) {
+    // Do not mark functions that do not need to be serialized as alive.
+    // We don't need to scan their bodies.
+    //if (!shouldBeSerializedOrEmitted(F))
+    //  return;
+    DEBUG(llvm::dbgs() << "    makeAlive " << F->getName() << '\n');
     AliveFunctionsAndTables.insert(F);
     assert(F && "function does not exist");
     Worklist.insert(F);
@@ -368,8 +373,15 @@ protected:
   void scanFunction(SILFunction *F) {
     // Don't scan functions that are not going to be SIL serialized or emitted
     // by IRGen, because they do not keep anything alive.
-    if (!shouldBeSerializedOrEmitted(F))
-      return;
+    // FIXME: It does not make any sense to scan functions that are not going to
+    // be serialized or emitted. But if we don't do it here, then some of the
+    // functions that they call are going to be marked as alive and will be
+    // removed, even though they are referenced from these non-serialized or
+    // non-emitted functions. I.e. a removed function may be referenced from a
+    // non-removed one.
+
+    // if (!shouldBeSerializedOrEmitted(F))
+    //  return;
 
     DEBUG(llvm::dbgs() << "    scan function " << F->getName() << '\n');
 
