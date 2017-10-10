@@ -1035,6 +1035,16 @@ class SILDeadFuncElimination : public SILModuleTransform {
   void run() override {
     DEBUG(llvm::dbgs() << "Running DeadFuncElimination\n");
 
+    // Link all non-public external functions, because they have to be emitted
+    // into the client.
+    SILModule &M = *getModule();
+
+    for (auto &F : M) {
+      if (F.isExternalDeclaration() && !hasPublicVisibility(F.getLinkage()))
+          if (M.linkFunction(&F, SILModule::LinkingMode::LinkAll))
+            invalidateAnalysis(&F, SILAnalysis::InvalidationKind::Everything);
+    }
+
     // The deserializer caches functions that it deserializes so that if it is
     // asked to deserialize that function again, it does not do extra work. This
     // causes the function's reference count to be incremented causing it to be

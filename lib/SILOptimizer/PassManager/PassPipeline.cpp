@@ -538,6 +538,9 @@ SILPassPipelinePlan::getPerformancePassPipeline(const SILOptions &Options) {
 SILPassPipelinePlan SILPassPipelinePlan::getOnonePassPipeline() {
   SILPassPipelinePlan P;
 
+  // TODO: Recursively link all external non-public functions, because they
+  // need to be emitted into the client.
+
   // First specialize user-code.
   P.startPipeline("Prespecialization");
   P.addUsePrespecialized();

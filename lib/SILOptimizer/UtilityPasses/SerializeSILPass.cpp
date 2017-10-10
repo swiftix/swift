@@ -20,11 +20,33 @@ using namespace swift;
 /// A utility pass to serialize a SILModule at any place inside the optimization
 /// pipeline.
 class SerializeSILPass : public SILModuleTransform {
+  /// Removes [serialized] from all functions. This allows for more
+  /// optimizations and for a better dead function elimination.
+  void removeSerializedFlagFromAllFunctions(SILModule &M) {
+    for (auto &F : M) {
+      if (!F.isAvailableExternally())
+        F.setSerialized(IsSerialized_t::IsNotSerialized);
+    }
+  }
+
+  /// Make all non-external [serialized] functions shared, which ensures that
+  /// they are always emitted into the module that uses them and can never be
+  /// used as public_external.
+  void makeAllSerializedFunctionsShared(SILModule &M) {
+    for (auto &F : M) {
+      if (F.isSerialized() != IsSerialized_t::IsNotSerialized &&
+          !F.isAvailableExternally()
+          //&& !hasPublicVisibility(F.getLinkage())
+      )
+        F.setLinkage(SILLinkage::Shared);
+    }
+  }
+
 public:
   SerializeSILPass() {}
   void run() override {
     auto &M = *getModule();
-
+    makeAllSerializedFunctionsShared(M);
     // Mark all reachable functions as "anchors" so that they are not
     // removed later by the dead function elimination pass. This
     // is required, because clients may reference any of the
@@ -34,6 +56,8 @@ public:
     markAllReachableFunctionsAsAnchors(&M);
     DEBUG(llvm::dbgs() << "Serializing SILModule in SerializeSILPass\n");
     getModule()->serialize();
+    // Remove the serialized bit from all functions after serialization.
+    removeSerializedFlagFromAllFunctions(M);
   }
 };
 
