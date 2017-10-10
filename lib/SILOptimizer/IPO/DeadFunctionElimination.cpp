@@ -36,7 +36,11 @@ static bool shouldBeSerializedOrEmitted(SILFunction *F) {
   if (F->isAvailableExternally() && hasPublicVisibility(F->getLinkage()) &&
       !F->isTransparent())
     return false;
-  return true;
+
+  if (F->isSerialized())
+    return true;
+
+  return false;
 }
 
 /// This is a base class for passes that are based on function liveness
@@ -116,14 +120,9 @@ protected:
   /// Checks is a function is alive, e.g. because it is visible externally.
   bool isAnchorFunction(SILFunction *F) {
 
-    // Remove internal functions that are not referenced by anything.
+    // Functions that may be used externally cannot be removed.
     if (isPossiblyUsedExternally(F->getLinkage(), Module->isWholeModule()))
       return true;
-
-    // Do not consider public_external functions that do not need to be emitted
-    // into the client as anchors.
-    if (!shouldBeSerializedOrEmitted(F))
-      return false;
 
     // ObjC functions are called through the runtime and are therefore alive
     // even if not referenced inside SIL.
@@ -144,6 +143,11 @@ protected:
                          << F->getName() << '\n');
       return true;
     }
+
+    // Do not consider public_external functions that do not need to be emitted
+    // into the client as anchors.
+    if (!shouldBeSerializedOrEmitted(F))
+      return false;
 
     return false;
   }
