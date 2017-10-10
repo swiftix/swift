@@ -16,7 +16,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_arrayDownCastIndirect")
 public func _arrayDownCastIndirect<SourceValue, TargetValue>(
   _ source: UnsafePointer<Array<SourceValue>>,
@@ -69,7 +69,7 @@ extension Optional {
   }
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_arrayDownCastConditionalIndirect")
 public func _arrayDownCastConditionalIndirect<SourceValue, TargetValue>(
   _ source: UnsafePointer<Array<SourceValue>>,

@@ -98,7 +98,7 @@ public protocol Hashable : Equatable {
 public enum _RuntimeHelpers {}
 
 extension _RuntimeHelpers {
-  @_inlineable // FIXME(sil-serialize-all)
+  //@_inlineable // FIXME(sil-serialize-all)
   @_silgen_name("swift_stdlib_Hashable_isEqual_indirect")
   public static func Hashable_isEqual_indirect<T : Hashable>(
     _ lhs: UnsafePointer<T>,
@@ -107,7 +107,7 @@ extension _RuntimeHelpers {
     return lhs.pointee == rhs.pointee
   }
 
-  @_inlineable // FIXME(sil-serialize-all)
+  //@_inlineable // FIXME(sil-serialize-all)
   @_silgen_name("swift_stdlib_Hashable_hashValue_indirect")
   public static func Hashable_hashValue_indirect<T : Hashable>(
     _ value: UnsafePointer<T>

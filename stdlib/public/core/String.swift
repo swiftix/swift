@@ -928,7 +928,7 @@ extension String {
   ///
   /// Low-level construction interface used by introspection
   /// implementation in the runtime library.
-  @_inlineable
+  //@_inlineable
   @_silgen_name("swift_stringFromUTF8InRawMemory")
   public // COMPILER_INTRINSIC
   static func _fromUTF8InRawMemory(
@@ -1035,12 +1035,12 @@ extension BidirectionalCollection where Iterator.Element == String {
 }
 
 #if _runtime(_ObjC)
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_stdlib_NSStringLowercaseString")
 internal func _stdlib_NSStringLowercaseString(_ str: AnyObject) -> _CocoaString
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_stdlib_NSStringUppercaseString")
 internal func _stdlib_NSStringUppercaseString(_ str: AnyObject) -> _CocoaString

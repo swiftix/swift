@@ -68,7 +68,7 @@ public protocol _Mirror {
 /// An entry point that can be called from C++ code to get the summary string
 /// for an arbitrary object. The memory pointed to by "out" is initialized with
 /// the summary string.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_getSummary")
 public // COMPILER_INTRINSIC
 func _getSummary<T>(_ out: UnsafeMutablePointer<String>, x: T) {
@@ -77,14 +77,14 @@ func _getSummary<T>(_ out: UnsafeMutablePointer<String>, x: T) {
 
 /// Produce a mirror for any value.  The runtime produces a mirror that
 /// structurally reflects values of any type.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_reflectAny")
 internal func _reflect<T>(_ x: T) -> _Mirror
 
 // -- Implementation details for the runtime's _Mirror implementation
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_MagicMirrorData_summary")
 internal func _swift_MagicMirrorData_summaryImpl(
@@ -168,7 +168,7 @@ internal struct _OpaqueMirror : _Mirror {
   internal var disposition: _MirrorDisposition { return .aggregate }
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_TupleMirror_count")
 internal func _getTupleCount(_: _MagicMirrorData) -> Int
@@ -181,7 +181,7 @@ internal func _getTupleCount(_: _MagicMirrorData) -> Int
 // ABI rules on most platforms.  Therefore, we make this function generic,
 // which has the disadvantage of passing the String type metadata as an
 // extra argument, but does force the string to be returned indirectly.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_TupleMirror_subscript")
 internal func _getTupleChild<T>(_: Int, _: _MagicMirrorData) -> (T, _Mirror)
@@ -221,12 +221,12 @@ internal struct _TupleMirror : _Mirror {
   internal var disposition: _MirrorDisposition { return .tuple }
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_StructMirror_count")
 internal func _getStructCount(_: _MagicMirrorData) -> Int
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_StructMirror_subscript")
 internal func _getStructChild<T>(_: Int, _: _MagicMirrorData) -> (T, _Mirror)
@@ -269,17 +269,17 @@ internal struct _StructMirror : _Mirror {
   internal var disposition: _MirrorDisposition { return .`struct` }
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_EnumMirror_count")
 internal func _getEnumCount(_: _MagicMirrorData) -> Int
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_EnumMirror_subscript")
 internal func _getEnumChild<T>(_: Int, _: _MagicMirrorData) -> (T, _Mirror)
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_EnumMirror_caseName")
 internal func _swift_EnumMirror_caseName(
@@ -333,22 +333,22 @@ internal struct _EnumMirror : _Mirror {
   internal var disposition: _MirrorDisposition { return .`enum` }
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_ClassMirror_count")
 internal func _getClassCount(_: _MagicMirrorData) -> Int
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_ClassMirror_subscript")
 internal func _getClassChild<T>(_: Int, _: _MagicMirrorData) -> (T, _Mirror)
 
 #if _runtime(_ObjC)
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_ClassMirror_quickLookObject")
 public func _swift_ClassMirror_quickLookObject(_: _MagicMirrorData) -> AnyObject
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("_swift_stdlib_NSObject_isKindOfClass")
 internal func _swift_NSObject_isImpl(_ object: AnyObject, kindOf: AnyObject) -> Bool

@@ -13,11 +13,11 @@
 import SwiftShims
 
 #if _runtime(_ObjC)
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_ObjCMirror_count") 
 internal func _getObjCCount(_: _MagicMirrorData) -> Int
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("swift_ObjCMirror_subscript") 
 internal func _getObjCChild<T>(_: Int, _: _MagicMirrorData) -> (T, _Mirror)

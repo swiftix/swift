@@ -171,7 +171,7 @@ public func _bridgeAnythingToObjectiveC<T>(_ x: T) -> AnyObject {
 }
 
 /// COMPILER_INTRINSIC
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_bridgeAnythingNonVerbatimToObjectiveC")
 public func _bridgeAnythingNonVerbatimToObjectiveC<T>(_ x: T) -> AnyObject
 
@@ -214,7 +214,7 @@ public func _forceBridgeFromObjectiveC<T>(_ x: AnyObject, _: T.Type) -> T {
 
 /// Convert `x` from its Objective-C representation to its Swift
 /// representation.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_forceBridgeFromObjectiveC_bridgeable")
 public func _forceBridgeFromObjectiveC_bridgeable<T:_ObjectiveCBridgeable> (
   _ x: T._ObjectiveCType,
@@ -253,7 +253,7 @@ public func _conditionallyBridgeFromObjectiveC<T>(
 
 /// Attempt to convert `x` from its Objective-C representation to its Swift
 /// representation.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_conditionallyBridgeFromObjectiveC_bridgeable")
 public func _conditionallyBridgeFromObjectiveC_bridgeable<T:_ObjectiveCBridgeable>(
   _ x: T._ObjectiveCType,
@@ -264,7 +264,7 @@ public func _conditionallyBridgeFromObjectiveC_bridgeable<T:_ObjectiveCBridgeabl
   return result
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("_swift_bridgeNonVerbatimFromObjectiveC")
 internal func _bridgeNonVerbatimFromObjectiveC<T>(
@@ -276,7 +276,7 @@ internal func _bridgeNonVerbatimFromObjectiveC<T>(
 /// Helper stub to upcast to Any and store the result to an inout Any?
 /// on the C++ runtime's behalf.
 // COMPILER_INTRINSIC
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_bridgeNonVerbatimFromObjectiveCToAny")
 public func _bridgeNonVerbatimFromObjectiveCToAny(
     _ x: AnyObject,
@@ -287,7 +287,7 @@ public func _bridgeNonVerbatimFromObjectiveCToAny(
 
 /// Helper stub to upcast to Optional on the C++ runtime's behalf.
 // COMPILER_INTRINSIC
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_bridgeNonVerbatimBoxedValue")
 public func _bridgeNonVerbatimBoxedValue<NativeType>(
     _ x: UnsafePointer<NativeType>,
@@ -303,7 +303,7 @@ public func _bridgeNonVerbatimBoxedValue<NativeType>(
 ///   unchanged otherwise.
 ///
 /// - Returns: `true` to indicate success, `false` to indicate failure.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("_swift_bridgeNonVerbatimFromObjectiveCConditional")
 internal func _bridgeNonVerbatimFromObjectiveCConditional<T>(
@@ -325,7 +325,7 @@ public func _isBridgedToObjectiveC<T>(_: T.Type) -> Bool {
   return _isBridgedNonVerbatimToObjectiveC(T.self)
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("_swift_isBridgedNonVerbatimToObjectiveC")
 internal func _isBridgedNonVerbatimToObjectiveC<T>(_: T.Type) -> Bool
@@ -348,7 +348,7 @@ public func _getBridgedObjectiveCType<T>(_: T.Type) -> Any.Type? {
   return _getBridgedNonVerbatimObjectiveCType(T.self)
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_versioned // FIXME(sil-serialize-all)
 @_silgen_name("_swift_getBridgedNonVerbatimObjectiveCType")
 internal func _getBridgedNonVerbatimObjectiveCType<T>(_: T.Type) -> Any.Type?

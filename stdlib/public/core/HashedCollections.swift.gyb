@@ -1407,7 +1407,7 @@ public func _setBridgeToObjectiveC<SwiftValue, ObjCValue>(
 
 #endif
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_setDownCastIndirect")
 public func _setDownCastIndirect<SourceValue, TargetValue>(
   _ source: UnsafePointer<Set<SourceValue>>,
@@ -1440,7 +1440,7 @@ public func _setDownCast<BaseValue, DerivedValue>(_ source: Set<BaseValue>)
   return _setDownCastConditional(source)!
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_setDownCastConditionalIndirect")
 public func _setDownCastConditionalIndirect<SourceValue, TargetValue>(
   _ source: UnsafePointer<Set<SourceValue>>,
@@ -2919,7 +2919,7 @@ public func _dictionaryBridgeToObjectiveC<
 }
 #endif
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_dictionaryDownCastIndirect")
 public func _dictionaryDownCastIndirect<SourceKey, SourceValue,
                                         TargetKey, TargetValue>(
@@ -2959,7 +2959,7 @@ public func _dictionaryDownCast<BaseKey, BaseValue, DerivedKey, DerivedValue>(
   return _dictionaryDownCastConditional(source)!
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_dictionaryDownCastConditionalIndirect")
 public func _dictionaryDownCastConditionalIndirect<SourceKey, SourceValue,
                                                    TargetKey, TargetValue>(

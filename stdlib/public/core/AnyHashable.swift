@@ -325,7 +325,7 @@ extension AnyHashable : CustomReflectable {
 ///
 /// Completely ignores the `_HasCustomAnyHashableRepresentation`
 /// conformance, if it exists.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_stdlib_makeAnyHashableUsingDefaultRepresentation")
 public // COMPILER_INTRINSIC (actually, called from the runtime)
 func _stdlib_makeAnyHashableUsingDefaultRepresentation<H : Hashable>(
@@ -343,14 +343,14 @@ internal func _stdlib_makeAnyHashableUpcastingToHashableBaseType<H : Hashable>(
   storingResultInto result: UnsafeMutablePointer<AnyHashable>
 )
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_convertToAnyHashable")
 public // COMPILER_INTRINSIC
 func _convertToAnyHashable<H : Hashable>(_ value: H) -> AnyHashable {
   return AnyHashable(value)
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_convertToAnyHashableIndirect")
 public // COMPILER_INTRINSIC (actually, called from the runtime)
 func _convertToAnyHashableIndirect<H : Hashable>(
@@ -360,7 +360,7 @@ func _convertToAnyHashableIndirect<H : Hashable>(
   target.initialize(to: AnyHashable(value))
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("_swift_anyHashableDownCastConditionalIndirect")
 public // COMPILER_INTRINSIC (actually, called from the runtime)
 func _anyHashableDownCastConditionalIndirect<T>(

@@ -134,14 +134,14 @@ extension Error {
 #if _runtime(_ObjC)
 // Helper functions for the C++ runtime to have easy access to embedded error,
 // domain, code, and userInfo as Objective-C values.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_stdlib_getErrorDomainNSString")
 public func _stdlib_getErrorDomainNSString<T : Error>(_ x: UnsafePointer<T>)
 -> AnyObject {
   return x.pointee._domain._bridgeToObjectiveCImpl()
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_stdlib_getErrorCode")
 public func _stdlib_getErrorCode<T : Error>(_ x: UnsafePointer<T>) -> Int {
   return x.pointee._code
@@ -149,14 +149,14 @@ public func _stdlib_getErrorCode<T : Error>(_ x: UnsafePointer<T>) -> Int {
 
 // Helper functions for the C++ runtime to have easy access to domain and
 // code as Objective-C values.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_stdlib_getErrorUserInfoNSDictionary")
 public func _stdlib_getErrorUserInfoNSDictionary<T : Error>(_ x: UnsafePointer<T>)
 -> AnyObject? {
   return x.pointee._userInfo.map { $0 as AnyObject }
 }
 
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_stdlib_getErrorEmbeddedNSErrorIndirect")
 public func _stdlib_getErrorEmbeddedNSErrorIndirect<T : Error>(
     _ x: UnsafePointer<T>) -> AnyObject? {
@@ -164,7 +164,7 @@ public func _stdlib_getErrorEmbeddedNSErrorIndirect<T : Error>(
 }
 
 /// FIXME: Quite unfortunate to have both of these.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_stdlib_getErrorEmbeddedNSError")
 public func _stdlib_getErrorEmbeddedNSError<T : Error>(_ x: T)
 -> AnyObject? {
@@ -182,14 +182,14 @@ public func _bridgeErrorToNSError(_ error: Error) -> AnyObject
 
 /// Invoked by the compiler when the subexpression of a `try!` expression
 /// throws an error.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_unexpectedError")
 public func _unexpectedError(_ error: Error) {
   preconditionFailure("'try!' expression unexpectedly raised an error: \(String(reflecting: error))")
 }
 
 /// Invoked by the compiler when code at top level throws an uncaught error.
-@_inlineable // FIXME(sil-serialize-all)
+//@_inlineable // FIXME(sil-serialize-all)
 @_silgen_name("swift_errorInMain")
 public func _errorInMain(_ error: Error) {
   fatalError("Error raised at top level: \(String(reflecting: error))")
